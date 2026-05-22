@@ -83,15 +83,12 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
 
     /// <summary>
     /// Converts a markdown string to HTML suitable for email.
-    /// Handles: headings, tables (with proper thead/tbody), ordered/unordered lists,
-    /// code blocks, paragraphs, bold, italic, inline code.
+    /// Handles: h1/h2/h3, tables (class="data", thead/tbody), blockquotes,
+    /// ordered/unordered lists, code blocks, inline bold/italic/code, paragraphs.
     /// </summary>
     private static string MarkdownToHtml(string markdown)
     {
-        // Normalise line endings
         var lines = markdown.Replace("\r\n", "\n").Split('\n');
-
-        // Collect table blocks first — parse them as a unit
         var sb = new StringBuilder();
         int i = 0;
 
@@ -99,23 +96,22 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
         {
             var line = lines[i];
 
-            // --- Code block ---
+            // ── Fenced code block ──────────────────────────────────────────
             if (line.TrimStart().StartsWith("```"))
             {
                 sb.AppendLine("<pre>");
                 i++;
                 while (i < lines.Length && !lines[i].TrimStart().StartsWith("```"))
                 {
-                    sb.AppendLine(System.Net.WebUtility.HtmlEncode(lines[i]));
+                    sb.AppendLine(Encode(lines[i]));
                     i++;
                 }
-
                 sb.AppendLine("</pre>");
                 i++; // skip closing ```
                 continue;
             }
 
-            // --- Table block: collect all consecutive | lines ---
+            // ── Markdown table ─────────────────────────────────────────────
             if (line.TrimStart().StartsWith("|"))
             {
                 var tableLines = new List<string>();
@@ -124,81 +120,102 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
                     tableLines.Add(lines[i]);
                     i++;
                 }
-
                 sb.Append(RenderTable(tableLines));
                 continue;
             }
 
-            // --- Headings ---
+            // ── Blockquote ─────────────────────────────────────────────────
+            if (line.TrimStart().StartsWith("> "))
+            {
+                sb.AppendLine("<blockquote>");
+                while (i < lines.Length && lines[i].TrimStart().StartsWith("> "))
+                {
+                    var content = Regex.Replace(lines[i].TrimStart(), @"^>\s?", "");
+                    sb.AppendLine($"  <p>{InlineFormat(Encode(content))}</p>");
+                    i++;
+                }
+                sb.AppendLine("</blockquote>");
+                continue;
+            }
+
+            // ── Headings ───────────────────────────────────────────────────
             if (line.StartsWith("### "))
             {
                 sb.AppendLine($"<h3>{InlineFormat(Encode(line[4..]))}</h3>");
-                i++;
-                continue;
+                i++; continue;
             }
-
             if (line.StartsWith("## "))
             {
                 sb.AppendLine($"<h2>{InlineFormat(Encode(line[3..]))}</h2>");
-                i++;
-                continue;
+                i++; continue;
             }
-
             if (line.StartsWith("# "))
             {
                 sb.AppendLine($"<h2>{InlineFormat(Encode(line[2..]))}</h2>");
-                i++;
-                continue;
+                i++; continue;
             }
 
-            // --- Horizontal rule ---
-            if (Regex.IsMatch(line.Trim(), @"^-{3,}$"))
+            // ── Horizontal rule ────────────────────────────────────────────
+            if (Regex.IsMatch(line.Trim(), @"^[-*]{3,}$"))
             {
-                sb.AppendLine("<hr/>");
-                i++;
-                continue;
+                sb.AppendLine("<hr class=\"rule\">");
+                i++; continue;
             }
 
-            // --- Unordered list block ---
-            if (line.StartsWith("- ") || line.StartsWith("* "))
+            // ── Unordered list ─────────────────────────────────────────────
+            if (Regex.IsMatch(line.TrimStart(), @"^[-*] "))
             {
                 sb.AppendLine("<ul>");
-                while (i < lines.Length && (lines[i].StartsWith("- ") || lines[i].StartsWith("* ")))
+                while (i < lines.Length && Regex.IsMatch(lines[i].TrimStart(), @"^[-*] "))
                 {
-                    var text = lines[i].StartsWith("- ") ? lines[i][2..] : lines[i][2..];
+                    var text = Regex.Replace(lines[i].TrimStart(), @"^[-*] ", "");
                     sb.AppendLine($"  <li>{InlineFormat(Encode(text))}</li>");
                     i++;
                 }
-
                 sb.AppendLine("</ul>");
                 continue;
             }
 
-            // --- Ordered list block ---
-            if (Regex.IsMatch(line, @"^\d+\. "))
+            // ── Ordered list ───────────────────────────────────────────────
+            if (Regex.IsMatch(line.TrimStart(), @"^\d+[\.\)] "))
             {
                 sb.AppendLine("<ol>");
-                while (i < lines.Length && Regex.IsMatch(lines[i], @"^\d+\. "))
+                while (i < lines.Length && Regex.IsMatch(lines[i].TrimStart(), @"^\d+[\.\)] "))
                 {
-                    var text = Regex.Replace(lines[i], @"^\d+\. ", "");
+                    var text = Regex.Replace(lines[i].TrimStart(), @"^\d+[\.\)] ", "");
                     sb.AppendLine($"  <li>{InlineFormat(Encode(text))}</li>");
                     i++;
                 }
-
                 sb.AppendLine("</ol>");
                 continue;
             }
 
-            // --- Blank line (skip) ---
+            // ── Blank line ─────────────────────────────────────────────────
             if (string.IsNullOrWhiteSpace(line))
             {
-                i++;
-                continue;
+                i++; continue;
             }
 
-            // --- Paragraph ---
-            sb.AppendLine($"<p>{InlineFormat(Encode(line))}</p>");
-            i++;
+            // ── Paragraph — group consecutive plain lines ──────────────────
+            var para = new StringBuilder();
+            while (i < lines.Length
+                   && !string.IsNullOrWhiteSpace(lines[i])
+                   && !lines[i].TrimStart().StartsWith("|")
+                   && !lines[i].TrimStart().StartsWith("```")
+                   && !lines[i].TrimStart().StartsWith("> ")
+                   && !lines[i].StartsWith("# ")
+                   && !lines[i].StartsWith("## ")
+                   && !lines[i].StartsWith("### ")
+                   && !Regex.IsMatch(lines[i].TrimStart(), @"^[-*] ")
+                   && !Regex.IsMatch(lines[i].TrimStart(), @"^\d+[\.\)] ")
+                   && !Regex.IsMatch(lines[i].Trim(), @"^[-*]{3,}$"))
+            {
+                if (para.Length > 0) para.Append(' ');
+                para.Append(lines[i].Trim());
+                i++;
+            }
+            if (para.Length > 0)
+                sb.AppendLine($"<p>{InlineFormat(Encode(para.ToString()))}</p>");
         }
 
         return sb.ToString();
@@ -208,34 +225,45 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
     {
         if (tableLines.Count == 0) return "";
 
-        // Split a row into cells, trimming pipes and whitespace
-        string[] SplitRow(string row) =>
-            row.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        // Split a row into trimmed cells, stripping leading/trailing pipes
+        string[] SplitRow(string row)
+        {
+            var trimmed = row.Trim().Trim('|');
+            return trimmed.Split('|').Select(c => c.Trim()).ToArray();
+        }
+
+        bool IsSeparator(string row) =>
+            row.Replace("|", "").Replace("-", "").Replace(":", "").Replace(" ", "").Length == 0;
 
         var sb = new StringBuilder();
-        sb.AppendLine("<table>");
+        sb.AppendLine("<table class=\"data\">");
 
-        // First row = header
-        sb.AppendLine("  <thead><tr>");
-        foreach (var cell in SplitRow(tableLines[0]))
-            sb.AppendLine($"    <th>{InlineFormat(Encode(cell))}</th>");
-        sb.AppendLine("  </tr></thead>");
+        // Header row
+        var headerCells = SplitRow(tableLines[0]);
+        sb.AppendLine("  <thead>");
+        sb.AppendLine("    <tr>");
+        foreach (var cell in headerCells)
+            sb.AppendLine($"      <th>{InlineFormat(Encode(cell))}</th>");
+        sb.AppendLine("    </tr>");
+        sb.AppendLine("  </thead>");
 
-        // Skip separator row (line 1 is header, line 2 is ---)
-        int dataStart = tableLines.Count > 1 && tableLines[1].Contains("---") ? 2 : 1;
-
-        if (dataStart < tableLines.Count)
+        // Body rows — skip separator lines
+        var bodyRows = tableLines.Skip(1).Where(r => !IsSeparator(r)).ToList();
+        if (bodyRows.Count > 0)
         {
             sb.AppendLine("  <tbody>");
-            for (int r = dataStart; r < tableLines.Count; r++)
+            foreach (var row in bodyRows)
             {
-                if (tableLines[r].Contains("---")) continue; // safety skip
+                var cells = SplitRow(row);
                 sb.AppendLine("    <tr>");
-                foreach (var cell in SplitRow(tableLines[r]))
-                    sb.AppendLine($"      <td>{InlineFormat(Encode(cell))}</td>");
+                for (int c = 0; c < cells.Length; c++)
+                {
+                    // Pad missing cells, trim extra cells to match header width
+                    var content = c < cells.Length ? cells[c] : "";
+                    sb.AppendLine($"      <td>{InlineFormat(Encode(content))}</td>");
+                }
                 sb.AppendLine("    </tr>");
             }
-
             sb.AppendLine("  </tbody>");
         }
 
