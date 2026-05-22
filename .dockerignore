@@ -1,0 +1,14 @@
+**/.git
+**/.gitignore
+**/bin
+**/obj
+**/*.user
+**/.idea
+.env
+.env.*
+!.env.example
+**/appsettings.Development.json
+nginx/
+README.md
+*.sln
+*.slnx

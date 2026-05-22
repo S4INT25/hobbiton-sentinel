@@ -1,0 +1,90 @@
+services:
+
+  fraud-detector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fraud-detector
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+
+      # DigitalOcean Serverless Inference
+      DigitalOcean__InferenceKey: ${DO_INFERENCE_KEY}
+      DigitalOcean__InferenceEndpoint: ${DO_INFERENCE_ENDPOINT:-https://inference.do-ai.run/v1}
+      DigitalOcean__ModelName: ${DO_MODEL_NAME:-llama3-3-70b-instruct}
+
+      # ClickHouse
+      ClickHouse__Host: ${CLICKHOUSE_HOST}
+      ClickHouse__User: ${CLICKHOUSE_USER}
+      ClickHouse__Password: ${CLICKHOUSE_PASSWORD}
+      ClickHouse__MaxResultLength: ${CLICKHOUSE_MAX_RESULT_LENGTH:-10000}
+
+      # Redis
+      Redis__ConnectionString: redis:6379,password=${REDIS_PASSWORD},abortConnect=false
+
+      # Email (Gmail SMTP)
+      Email__From: ${EMAIL_FROM}
+      Email__To__0: ${EMAIL_TO}
+      Email__SubjectPrefix: ${EMAIL_SUBJECT_PREFIX:-[FRAUD DETECTOR]}
+      Email__Smtp__Host: smtp.gmail.com
+      Email__Smtp__Port: 587
+      Email__Smtp__User: ${GMAIL_USER}
+      Email__Smtp__Password: ${GMAIL_APP_PASSWORD}
+
+      # Hangfire dashboard
+      Dashboard__Username: ${DASHBOARD_USERNAME:-admin}
+      Dashboard__Password: ${DASHBOARD_PASSWORD}
+
+      # Tuning
+      FraudDetector__CronSchedule: ${CRON_SCHEDULE:-0 * * * *}
+      FraudDetector__LookbackMinutes: ${LOOKBACK_MINUTES:-70}
+      FraudDetector__MaxIterations: ${MAX_ITERATIONS:-60}
+
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - fraud-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  redis:
+    image: redis:7-alpine
+    container_name: fraud-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1
+      --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks:
+      - fraud-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+volumes:
+  redis-data:
+    driver: local
+
+networks:
+  fraud-net:
+    driver: bridge

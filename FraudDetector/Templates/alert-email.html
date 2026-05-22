@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: #f2f2f2;
+      padding: 32px 16px;
+      color: #111;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .wrapper { max-width: 680px; margin: 0 auto; }
+    .header {
+      padding: 0 0 16px 0;
+      border-bottom: 2px solid #111;
+      margin-bottom: 24px;
+    }
+    .header .brand {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #555;
+    }
+    .header h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #111;
+      margin-top: 6px;
+    }
+    .header .meta {
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
+    }
+    .severity-bar {
+      height: 3px;
+      background: {{COLOR}};
+      margin-bottom: 28px;
+      border-radius: 2px;
+    }
+    .card {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+    h2 {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #555;
+      border-bottom: 1px solid #e5e5e5;
+      padding-bottom: 6px;
+      margin: 20px 0 10px;
+    }
+    h2:first-child { margin-top: 0; }
+    h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: #111;
+      margin: 14px 0 4px;
+    }
+    p { margin: 4px 0; color: #333; }
+    ul { padding-left: 16px; margin: 6px 0; }
+    li { color: #333; margin-bottom: 2px; }
+    pre, code {
+      background: #f7f7f7;
+      border-left: 3px solid #bbb;
+      padding: 10px 14px;
+      font-size: 12px;
+      font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+      overflow-x: auto;
+      display: block;
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin: 8px 0;
+      color: #333;
+      border-radius: 0 3px 3px 0;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 10px 0;
+      font-size: 12px;
+    }
+    th {
+      background: #f0f0f0;
+      color: #111;
+      padding: 7px 10px;
+      text-align: left;
+      font-weight: 600;
+      border-bottom: 2px solid #ddd;
+    }
+    td {
+      padding: 6px 10px;
+      border-bottom: 1px solid #eee;
+      color: #333;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 2px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border: 1px solid currentColor;
+    }
+    .badge-critical  { color: #b91c1c; }
+    .badge-warning   { color: #92400e; }
+    .badge-watching  { color: #1e40af; }
+    .badge-clean     { color: #166534; }
+    .badge-info      { color: #166534; }
+    .footer {
+      font-size: 11px;
+      color: #999;
+      padding-top: 16px;
+      border-top: 1px solid #ddd;
+      margin-top: 24px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <div class="brand">Lipila Payment Gateway</div>
+      <h1>{{SUBJECT}}</h1>
+      <div class="meta">{{TIMESTAMP}} UTC &nbsp;·&nbsp; <span class="badge badge-{{SEVERITY}}">{{SEVERITY}}</span></div>
+    </div>
+    <div class="severity-bar"></div>
+    <div class="card">
+      {{BODY}}
+    </div>
+    <div class="footer">
+      Fraud Detector · Automated report · Do not reply
+    </div>
+  </div>
+</body>
+</html>
