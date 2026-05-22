@@ -12,6 +12,15 @@ using FraudDetector.Memory;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Logging.AddFilter<Microsoft.Extensions.Logging.Console.ConsoleLoggerProvider>(
+    (category, level) =>
+    {
+        if (category == "Microsoft.AspNetCore.Routing.EndpointMiddleware" ||
+            category == "Microsoft.AspNetCore.Hosting.Diagnostics")
+            return false;
+        return level >= LogLevel.Information;
+    });
+
 builder.Configuration
     .AddJsonFile("appsettings.json", optional: false)
     .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true)
