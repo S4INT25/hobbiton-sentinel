@@ -18,11 +18,11 @@ public class ClickHouseClient(HttpClient http, IConfiguration config, ILogger<Cl
 
         try
         {
-            logger.LogDebug("Querying ClickHouse: {Query}", sql[..Math.Min(100, sql.Length)]);
+            logger.LogDebug("Querying ClickHouse: {Query}", sql);
             var host = config["ClickHouse:Host"]!;
             var user = config["ClickHouse:User"]!;
             var password = config["ClickHouse:Password"]!;
-            var maxLength = config.GetValue<int>("ClickHouse:MaxResultLength", 10000);
+            var maxLength = config.GetValue("ClickHouse:MaxResultLength", 10000);
 
             // Use POST to avoid URL length limits on complex queries
             var url = $"{host}/?default_format=JSON";

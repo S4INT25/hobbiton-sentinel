@@ -68,7 +68,10 @@ public class FraudAgent(
         Current UTC time: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC (Zambia = UTC+2)
         Look back: {lookbackMinutes} minutes
 
-        **Step 0 — Discover schema.** SHOW DATABASES → SHOW TABLES → DESCRIBE key tables.
+        **Step 0 — Discover schema.**
+        The database is **lipila_blaze** — always use this database. Do not query any other database.
+        Run: `SHOW TABLES FROM lipila_blaze` → then `DESCRIBE lipila_blaze.<table>` before querying any table.
+        All queries must be qualified as `lipila_blaze.<table>`.
 
         **Step 1 — Follow up on open cases.**
         Run follow-up queries for each open case. Escalate if worsening, watching if stable, resolve if stopped.
@@ -118,7 +121,8 @@ public class FraudAgent(
         - The reader will decide what action to take. Your job is to surface patterns accurately.
 
         ## Query Guidelines
-        - Always qualify: `<database>.<table>`
+        - Database is always **lipila_blaze** — never query any other database
+        - Always qualify: `lipila_blaze.<table>`
         - Time filter: `created_at >= now() - INTERVAL {lookbackMinutes} MINUTE`
         - Max 50 rows per query
         - ClickHouse uses single quotes for strings
