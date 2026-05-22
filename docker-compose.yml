@@ -56,7 +56,7 @@ services:
         max-file: "5"
 
   redis:
-    image: redis:7-alpine
+    image: redis/redis-stack:latest
     container_name: fraud-redis
     restart: unless-stopped
     command: >
