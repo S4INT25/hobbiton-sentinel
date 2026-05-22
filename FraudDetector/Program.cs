@@ -1,6 +1,8 @@
 using Hangfire;
 using Hangfire.Dashboard.BasicAuthorization;
 using Hangfire.Redis.StackExchange;
+using Microsoft.Extensions.Logging.Console;
+using Microsoft.Extensions.Options;
 using OpenAI;
 using StackExchange.Redis;
 using System.ClientModel;
@@ -12,14 +14,13 @@ using FraudDetector.Memory;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Logging.AddFilter<Microsoft.Extensions.Logging.Console.ConsoleLoggerProvider>(
-    (category, level) =>
-    {
-        if (category == "Microsoft.AspNetCore.Routing.EndpointMiddleware" ||
-            category == "Microsoft.AspNetCore.Hosting.Diagnostics")
-            return false;
-        return level >= LogLevel.Information;
-    });
+builder.Services.AddHttpContextAccessor();
+builder.Logging.ClearProviders();
+builder.Services.AddSingleton<ILoggerProvider>(sp =>
+    new PathFilteredLoggerProvider(
+        sp.GetRequiredService<IHttpContextAccessor>(),
+        sp.GetRequiredService<IOptionsMonitor<ConsoleLoggerOptions>>(),
+        sp.GetRequiredService<IEnumerable<ConsoleFormatter>>()));
 
 builder.Configuration
     .AddJsonFile("appsettings.json", optional: false)
@@ -84,8 +85,6 @@ if (!app.Environment.IsDevelopment())
     ];
 }
 
-
-app.MapGet("trigger", async (FraudDetectorJob job) => { await job.RunAsync(); });
 app.UseHangfireDashboard("/hangfire", dashOptions);
 
 app.Run();

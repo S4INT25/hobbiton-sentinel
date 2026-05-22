@@ -19,23 +19,23 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
     {
         try
         {
-            var from   = config["Email:From"]!;
-            var toList = config.GetSection("Email:To").Get<string[]>() ?? ["security@hobbiton.co.zm"];
+            var from = config["Email:From"]!;
+            var toEmail = config["Email:To"] ?? "security@hobbiton.co.zm";
             var prefix = config["Email:SubjectPrefix"] ?? "[FRAUD DETECTOR]";
-            var host   = config["Email:Smtp:Host"] ?? "smtp.gmail.com";
-            var port   = config.GetValue<int>("Email:Smtp:Port", 587);
-            var user   = config["Email:Smtp:User"]!;
-            var pass   = config["Email:Smtp:Password"]!;
+            var host = config["Email:Smtp:Host"] ?? "smtp.gmail.com";
+            var port = config.GetValue("Email:Smtp:Port", 587);
+            var user = config["Email:Smtp:User"]!;
+            var pass = config["Email:Smtp:Password"]!;
 
-            var htmlBody    = BuildHtml(subject, body, severity);
+            var htmlBody = BuildHtml(subject, body, severity);
             var fullSubject = $"{prefix} {subject}";
 
             var message = new MimeMessage();
             message.From.Add(MailboxAddress.Parse(from));
-            foreach (var to in toList)
-                message.To.Add(MailboxAddress.Parse(to));
+            message.To.Add(MailboxAddress.Parse(toEmail));
             message.Subject = fullSubject;
-            message.Body    = new BodyBuilder { HtmlBody = htmlBody, TextBody = body }.ToMessageBody();
+            message.Body = new BodyBuilder { HtmlBody = htmlBody, TextBody = body }.ToMessageBody();
+
 
             using var smtp = new SmtpClient();
             await smtp.ConnectAsync(host, port, SecureSocketOptions.StartTls);
@@ -44,7 +44,7 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
             await smtp.DisconnectAsync(true);
 
             logger.LogInformation("Alert sent [{Severity}]: {Subject}", severity, fullSubject);
-            return $"Alert sent to {string.Join(", ", toList)}";
+            return $"Alert sent to {string.Join(", ", message.To)}";
         }
         catch (Exception ex)
         {
@@ -58,24 +58,24 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
         var color = severity switch
         {
             "critical" => "#b91c1c",
-            "warning"  => "#d97706",
+            "warning" => "#d97706",
             "watching" => "#2563eb",
-            _          => "#16a34a"
+            _ => "#16a34a"
         };
 
         var zambiaTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, ZambiaZone);
-        var timestamp  = zambiaTime.ToString("dddd, dd MMMM yyyy 'at' HH:mm") + " CAT";
+        var timestamp = zambiaTime.ToString("dddd, dd MMMM yyyy 'at' HH:mm") + " CAT";
 
         var template = File.Exists(TemplatePath)
             ? File.ReadAllText(TemplatePath)
             : FallbackTemplate;
 
         return template
-            .Replace("{{COLOR}}",     color)
-            .Replace("{{SUBJECT}}",   System.Net.WebUtility.HtmlEncode(subject))
-            .Replace("{{SEVERITY}}",  severity)
+            .Replace("{{COLOR}}", color)
+            .Replace("{{SUBJECT}}", System.Net.WebUtility.HtmlEncode(subject))
+            .Replace("{{SEVERITY}}", severity)
             .Replace("{{TIMESTAMP}}", timestamp)
-            .Replace("{{BODY}}",      MarkdownToHtml(markdownBody));
+            .Replace("{{BODY}}", MarkdownToHtml(markdownBody));
     }
 
     /// <summary>
@@ -106,6 +106,7 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
                     sb.AppendLine(System.Net.WebUtility.HtmlEncode(lines[i]));
                     i++;
                 }
+
                 sb.AppendLine("</pre>");
                 i++; // skip closing ```
                 continue;
@@ -120,6 +121,7 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
                     tableLines.Add(lines[i]);
                     i++;
                 }
+
                 sb.Append(RenderTable(tableLines));
                 continue;
             }
@@ -128,24 +130,30 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
             if (line.StartsWith("### "))
             {
                 sb.AppendLine($"<h3>{InlineFormat(Encode(line[4..]))}</h3>");
-                i++; continue;
+                i++;
+                continue;
             }
+
             if (line.StartsWith("## "))
             {
                 sb.AppendLine($"<h2>{InlineFormat(Encode(line[3..]))}</h2>");
-                i++; continue;
+                i++;
+                continue;
             }
+
             if (line.StartsWith("# "))
             {
                 sb.AppendLine($"<h2>{InlineFormat(Encode(line[2..]))}</h2>");
-                i++; continue;
+                i++;
+                continue;
             }
 
             // --- Horizontal rule ---
             if (Regex.IsMatch(line.Trim(), @"^-{3,}$"))
             {
                 sb.AppendLine("<hr/>");
-                i++; continue;
+                i++;
+                continue;
             }
 
             // --- Unordered list block ---
@@ -158,6 +166,7 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
                     sb.AppendLine($"  <li>{InlineFormat(Encode(text))}</li>");
                     i++;
                 }
+
                 sb.AppendLine("</ul>");
                 continue;
             }
@@ -172,6 +181,7 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
                     sb.AppendLine($"  <li>{InlineFormat(Encode(text))}</li>");
                     i++;
                 }
+
                 sb.AppendLine("</ol>");
                 continue;
             }
@@ -179,7 +189,8 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
             // --- Blank line (skip) ---
             if (string.IsNullOrWhiteSpace(line))
             {
-                i++; continue;
+                i++;
+                continue;
             }
 
             // --- Paragraph ---
@@ -221,6 +232,7 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
                     sb.AppendLine($"      <td>{InlineFormat(Encode(cell))}</td>");
                 sb.AppendLine("    </tr>");
             }
+
             sb.AppendLine("  </tbody>");
         }
 
@@ -233,20 +245,20 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
     private static string InlineFormat(string text)
     {
         text = Regex.Replace(text, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
-        text = Regex.Replace(text, @"\*(.+?)\*",     "<em>$1</em>");
-        text = Regex.Replace(text, @"`(.+?)`",        "<code>$1</code>");
+        text = Regex.Replace(text, @"\*(.+?)\*", "<em>$1</em>");
+        text = Regex.Replace(text, @"`(.+?)`", "<code>$1</code>");
         return text;
     }
 
     private const string FallbackTemplate = """
-        <html><body style="font-family:sans-serif;max-width:680px;margin:0 auto;padding:24px;color:#111">
-        <div style="border-bottom:2px solid {{COLOR}};padding-bottom:10px;margin-bottom:20px">
-          <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#666">Lipila Payment Gateway</div>
-          <h1 style="font-size:18px;margin:6px 0 4px">{{SUBJECT}}</h1>
-          <p style="font-size:12px;color:#999">{{TIMESTAMP}} &nbsp;·&nbsp; {{SEVERITY}}</p>
-        </div>
-        {{BODY}}
-        <p style="font-size:11px;color:#bbb;margin-top:24px;border-top:1px solid #eee;padding-top:10px">Fraud Detector · Automated report · Do not reply</p>
-        </body></html>
-        """;
+                                            <html><body style="font-family:sans-serif;max-width:680px;margin:0 auto;padding:24px;color:#111">
+                                            <div style="border-bottom:2px solid {{COLOR}};padding-bottom:10px;margin-bottom:20px">
+                                              <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#666">Lipila Payment Gateway</div>
+                                              <h1 style="font-size:18px;margin:6px 0 4px">{{SUBJECT}}</h1>
+                                              <p style="font-size:12px;color:#999">{{TIMESTAMP}} &nbsp;·&nbsp; {{SEVERITY}}</p>
+                                            </div>
+                                            {{BODY}}
+                                            <p style="font-size:11px;color:#bbb;margin-top:24px;border-top:1px solid #eee;padding-top:10px">Fraud Detector · Automated report · Do not reply</p>
+                                            </body></html>
+                                            """;
 }
