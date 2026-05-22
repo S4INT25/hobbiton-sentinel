@@ -76,6 +76,19 @@ public class FraudAgent(
         **Step 2 — Fresh investigation.**
         Check all {FraudPatternRegistry.GetEnabled().Count()} patterns above against recent data using actual column names from discovery.
 
+        **Step 2b — User activity log review.**
+        Always query the user_activity_logs table for the lookback window. Look for:
+        - Logins from foreign, VPS, or datacenter IPs (non-Zambian ISPs)
+        - Multiple failed logins followed by a successful login (brute force)
+        - Logins at unusual hours (midnight–5am CAT)
+        - Sensitive non-auth actions: wallet updates, API key changes, merchant edits, user updates
+        - Any action performed by a user who logged in from a suspicious IP in the same session
+        - Wallet created, then funded, then disbursed in a short window
+        - "No changes made" wallet/merchant updates — may indicate reconnaissance browsing
+        - Internal IP actions (::ffff:10.x.x.x) with no corresponding portal user login — may indicate backend manipulation
+        Cross-reference: if a suspicious IP logged in, check what transactions occurred from that IP or
+        from the affected merchant's wallets in the same time window.
+
         **Step 3 — Interesting observations.**
         Beyond fraud patterns, flag anything unusual worth knowing — even if not clearly malicious:
         - Unusually high transaction volume for a merchant compared to their normal rate
