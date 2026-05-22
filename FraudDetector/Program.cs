@@ -15,12 +15,6 @@ using FraudDetector.Memory;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHttpContextAccessor();
-builder.Logging.ClearProviders();
-builder.Services.AddSingleton<ILoggerProvider>(sp =>
-    new PathFilteredLoggerProvider(
-        sp.GetRequiredService<IHttpContextAccessor>(),
-        sp.GetRequiredService<IOptionsMonitor<ConsoleLoggerOptions>>(),
-        sp.GetRequiredService<IEnumerable<ConsoleFormatter>>()));
 
 builder.Configuration
     .AddJsonFile("appsettings.json", optional: false)
