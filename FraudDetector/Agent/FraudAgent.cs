@@ -55,45 +55,7 @@ public class FraudAgent(
 
         ## Payment Gateway Fraud Patterns
 
-        1. **Crafted reference IDs** — legitimate gateway generates proper UUIDs
-           Fraud: hand-crafted prefixes with a shared suffix across multiple transactions
-           e.g. "pay001-e6e5-4527-971e-f50bcc1c2a11", "pay002-e6e5-4527-971e-f50bcc1c2a11"
-
-        2. **Unverified merchant disbursing** — merchants in awaiting_verification/suspended status
-           should never disburse; if they are, API controls are bypassed
-
-        3. **Velocity abuse** — more than 5 disbursements in 1 hour from same merchant/wallet
-           Legitimate merchants disburse in controlled batches; fraud is rapid-fire
-
-        4. **Round amount sweeping** — exact round amounts (10000, 5000, 50000) sent to
-           multiple different recipients — classic mobile money cash-out pattern
-
-        5. **Known fraud recipients** (Zambian mobile money numbers, March-May 2026 fraud ring):
-           260961441191, 260961678290, 260962406188, 260963580399, 260964104396,
-           260964586604, 260965002533, 260966064891, 260966461615, 260966836104,
-           260967095991, 260968327963, 260969099370, 260969261748, 260970137943,
-           260970413460, 260971084084, 260971378460, 260972089326, 260972209994,
-           260973119302, 260973404970, 260974096574, 260975061461, 260975528553,
-           260976236827, 260977182288
-
-        6. **Compromised portal access** — admin logins from VPS/datacenter IPs
-           Legitimate staff use Zambian ISP IPs; suspicious: 79.135.x.x (Datacamp FR),
-           185.220.x.x (Tor exit), any DigitalOcean/AWS/Azure IP not matching known app servers
-
-        7. **Bare narrations** — fraud uses: "payment", "pay", "refund", "transfer"
-           Legitimate disbursements are specific: "Policy refund P/01/...", "Commission for [Name]"
-
-        8. **API key allowlist tampering** — activity logs showing attacker IPs added to
-           merchant API key allowed_ips — pre-stages future fraud access
-
-        9. **New merchant + immediate large disbursement** — merchant created < 7 days ago
-           disbursing large amounts; legitimate merchants take time to onboard
-
-        10. **Wallet draining** — wallet balance dropping significantly in a short window
-            Compare current balance to recent transactions total
-
-        11. **Off-hours transactions** — large disbursements between midnight and 5am Zambia time (UTC+2)
-            when no staff are monitoring
+        {FraudPatternRegistry.ToPromptBlock()}
 
         ## Your Memory — Open Cases
 
@@ -112,7 +74,7 @@ public class FraudAgent(
         Run follow-up queries for each open case. Escalate if worsening, watching if stable, resolve if stopped.
 
         **Step 2 — Fresh investigation.**
-        Check all 11 patterns above against recent data using actual column names from discovery.
+        Check all {FraudPatternRegistry.GetEnabled().Count()} patterns above against recent data using actual column names from discovery.
 
         **Step 3 — Interesting observations.**
         Beyond fraud patterns, flag anything unusual worth knowing — even if not clearly malicious:
@@ -135,6 +97,13 @@ public class FraudAgent(
         Use "None this run." / "No open cases." / "No actions required." for empty sections.
         All timestamps must be in CAT (UTC+2). All ZMW amounts must use comma separators.
 
+        ## Tone Guidelines
+        - Findings are observations, not verdicts. Use "appears to", "may indicate", "pattern suggests".
+        - Never state that fraud has definitely occurred — you are flagging anomalies for human review.
+        - Recommended Actions must be framed as suggestions: "consider", "may be worth", "if confirmed".
+        - A finding can be suspicious without being confirmed fraud — label it clearly.
+        - The reader will decide what action to take. Your job is to surface patterns accurately.
+
         ## Query Guidelines
         - Always qualify: `<database>.<table>`
         - Time filter: `created_at >= now() - INTERVAL {lookbackMinutes} MINUTE`
@@ -147,7 +116,7 @@ public class FraudAgent(
     public async Task RunAsync()
     {
         var runId = DateTime.UtcNow.ToString("yyyyMMddHHmm");
-        var lookback = config.GetValue<int>("FraudDetector:LookbackMinutes", 70);
+        var lookback = config.GetValue("FraudDetector:LookbackMinutes", 70);
         var modelName = config["DigitalOcean:ModelName"]!;
 
         logger.LogInformation("Fraud agent run {RunId} started", runId);
@@ -178,7 +147,7 @@ public class FraudAgent(
         var tools = FraudAgentTools.GetToolDefinitions();
         var chatClient = ai.GetChatClient(modelName);
         var iteration = 0;
-        var maxIterations = config.GetValue<int>("FraudDetector:MaxIterations", 60);
+        var maxIterations = config.GetValue("FraudDetector:MaxIterations", 60);
 
         while (iteration++ < maxIterations)
         {

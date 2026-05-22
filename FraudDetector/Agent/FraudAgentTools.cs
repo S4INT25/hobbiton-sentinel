@@ -209,15 +209,24 @@ public static class FraudAgentTools
 
                 ## Recommended Actions
                 If nothing to do: write "No actions required."
-                Otherwise numbered list, ordered by priority:
+                Otherwise numbered list, ordered by priority.
 
-                1. 🔴 **[URGENT]** <action> — <who should do it> — <why>
-                2. 🟠 **[HIGH]** <action> — <who> — <why>
-                3. 🟡 **[MEDIUM]** <action> — <who> — <why>
+                These are SUGGESTIONS based on observed patterns — not confirmed facts.
+                Each action must acknowledge uncertainty and avoid stating fraud as definite.
+                Use language like: "consider reviewing", "may be worth investigating",
+                "if confirmed fraudulent", "recommended if pattern continues".
+
+                1. [URGENT] <suggested action> — <who> — <why this may be needed>
+                2. [HIGH] <suggested action> — <who> — <why>
+                3. [MEDIUM] <suggested action> — <who> — <why>
+
+                Always end the section with this note:
+                > These recommendations are based on automated pattern detection and may include false positives. Human review is required before taking any action.
 
                 ════════════════════════════════════════
                 FORMATTING RULES — non-negotiable:
                 ════════════════════════════════════════
+                - No emojis anywhere in the report — not in headings, labels, bullets, or anywhere else
                 - Every table must have a header row AND a separator row (|---|---|)
                 - Use **bold** for: merchant names, ZMW amounts, IP addresses, account numbers
                 - Use `backticks` for: reference IDs, case IDs, phone numbers, SQL identifiers

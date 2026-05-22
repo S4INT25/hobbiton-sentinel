@@ -70,9 +70,12 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
             ? File.ReadAllText(TemplatePath)
             : FallbackTemplate;
 
+        var pillClass = $"badge badge-{severity.ToLower()}";
+
         return template
             .Replace("{{COLOR}}", color)
             .Replace("{{SUBJECT}}", System.Net.WebUtility.HtmlEncode(subject))
+            .Replace("{{PILL_CLASS}}", pillClass)
             .Replace("{{SEVERITY}}", severity)
             .Replace("{{TIMESTAMP}}", timestamp)
             .Replace("{{BODY}}", MarkdownToHtml(markdownBody));
