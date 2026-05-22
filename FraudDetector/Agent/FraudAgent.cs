@@ -233,7 +233,7 @@ public class FraudAgent(
             }
 
             // Fallback if agent still didn't send an alert
-            if (!summaryCompletion.ToolCalls.Any(t => t.FunctionName == "send_alert"))
+            if (summaryCompletion.ToolCalls.All(t => t.FunctionName != "send_alert"))
             {
                 await email.SendAsync(
                     "Fraud Detector: Partial Run Summary",
