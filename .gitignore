@@ -6,4 +6,6 @@ riderModule.iml
 .env.example
 /Sentinel/appsettings.Development.json
 .idea/*
-.idea/.idea.Sentinel/.idea/*
+.idea/.idea.Sentinel/.idea/encodings.xml
+.idea/.idea.Sentinel/.idea/vcs.xml
+.idea/.idea.Sentinel/.idea/indexLayout.xml
