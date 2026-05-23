@@ -40,8 +40,18 @@ public static class FraudPatternRegistry
 
         new(3, "Velocity abuse",
             """
-            More than 5 disbursements in 1 hour from the same merchant or wallet.
-            Legitimate merchants disburse in controlled batches; fraud is rapid-fire.
+            More than 5 disbursements in 1 hour from the same merchant or wallet — but ONLY flag this
+            if the rate meaningfully exceeds that merchant's historical baseline.
+
+            REQUIRED: Before flagging, query the merchant's transaction history over the past 30 days
+            to establish their normal hourly disbursement rate. Compare current rate against the baseline.
+
+            Context: Some merchants are betting companies (sports betting, online gaming). These
+            legitimately disburse winnings at high frequency — 50–200+ disbursements per hour is normal
+            for them. A betting merchant running at 80 disbursements/hour is not suspicious if their
+            30-day average is 70/hour. Only flag if current rate is significantly above their own baseline
+            (e.g. >3x their normal peak), or if the pattern is unusual in other ways (new recipients,
+            round amounts, sequential account numbers).
             """,
             PatternCategory.VelocityAbuse),
 
@@ -165,6 +175,11 @@ public static class FraudPatternRegistry
             """
             Hundreds of small disbursements (under ZMW 100) to unique recipients in a short window.
             May indicate structuring to avoid detection thresholds or bulk commission fraud.
+
+            REQUIRED: Check merchant's 30-day history first. Betting companies routinely pay out small
+            winnings to many recipients — this is expected behaviour for them. Only flag if the volume
+            is significantly above the merchant's own historical norm, or if recipients overlap with
+            other suspicious patterns (sequential accounts, same IPs, etc.).
             """,
             PatternCategory.VelocityAbuse),
 
@@ -184,9 +199,19 @@ public static class FraudPatternRegistry
 
         new(22, "Sudden merchant volume spike",
             """
-            A merchant's transaction count or total ZMW amount in the last hour is more than 5x
-            their 7-day hourly average. Sharp spikes outside normal operating patterns warrant
-            investigation even if individual transactions look clean.
+            A merchant's transaction count or total ZMW amount in the last hour is significantly above
+            their historical norm. Sharp spikes outside normal operating patterns warrant investigation
+            even if individual transactions look clean.
+
+            REQUIRED: Always query the merchant's 30-day hourly transaction history to establish their
+            baseline before flagging. The threshold should be relative to each merchant's own history —
+            not an absolute number.
+
+            Context: Betting companies have naturally high and variable volumes, especially around
+            major sporting events (football matches, end-of-season fixtures). A spike on a Saturday
+            evening during a Champions League match is expected for a betting merchant. Cross-check
+            timing against typical peak hours for that merchant. Only flag if the spike is anomalous
+            relative to their own comparable periods (same day-of-week, same time-of-day).
             """,
             PatternCategory.VelocityAbuse),
 

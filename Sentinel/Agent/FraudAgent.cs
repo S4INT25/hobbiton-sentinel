@@ -53,6 +53,34 @@ public class FraudAgent(
 
         Table names may be prefixed (e.g. `public_transactions`) — check SHOW TABLES first.
 
+        ## Merchant Context
+
+        Lipila's merchant base includes **betting and online gaming companies**. These merchants have
+        legitimately high transaction volumes and disbursement rates that would look suspicious on a
+        standard merchant but are entirely normal for them:
+        - High-frequency disbursements (winnings payouts) — 50–200+ per hour is common
+        - Many small disbursements to unique mobile money numbers
+        - Volume spikes during major sporting events (weekends, evenings, Champions League, AFCON, etc.)
+
+        **For any velocity-based pattern, you MUST query the merchant's 30-day transaction history
+        first to establish their baseline before deciding whether the current behaviour is anomalous.**
+        A suggested baseline query:
+        ```sql
+        SELECT
+            toStartOfHour(created_at) AS hour,
+            count() AS txn_count,
+            sum(amount) AS total_amount
+        FROM lipila_blaze.<transactions_table>
+        WHERE merchant_id = <id>
+          AND type = 'disbursement'
+          AND status = 'successful'
+          AND created_at >= now() - INTERVAL 30 DAY
+        GROUP BY hour
+        ORDER BY hour DESC
+        ```
+        Use the avg and max of `txn_count` from this result as the baseline.
+        Only flag velocity patterns if the current rate is a meaningful outlier from that merchant's own history.
+
         ## Payment Gateway Fraud Patterns
 
         {FraudPatternRegistry.ToPromptBlock()}
