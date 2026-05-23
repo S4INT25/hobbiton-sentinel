@@ -1,6 +1,6 @@
 using Hangfire;
 
-namespace FraudDetector.Jobs;
+namespace Sentinel.Jobs;
 
 public class FraudSchedulerService(
     IRecurringJobManager jobs,
@@ -9,9 +9,9 @@ public class FraudSchedulerService(
 {
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        var cron = config["FraudDetector:CronSchedule"] ?? Cron.Hourly();
+        var cron = config["Sentinel:CronSchedule"] ?? Cron.Hourly();
 
-        jobs.AddOrUpdate<FraudDetectorJob>(
+        jobs.AddOrUpdate<SentinelJob>(
             recurringJobId: "fraud-detector-hourly",
             methodCall: job => job.RunAsync(),
             cronExpression: cron,

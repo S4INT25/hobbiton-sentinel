@@ -1,10 +1,10 @@
-using FraudDetector.Agent;
+using Sentinel.Agent;
 using Hangfire;
 
-namespace FraudDetector.Jobs;
+namespace Sentinel.Jobs;
 
 [Queue("fraud")]
-public class FraudDetectorJob(FraudAgent agent, ILogger<FraudDetectorJob> logger)
+public class SentinelJob(FraudAgent agent, ILogger<SentinelJob> logger)
 {
     public async Task RunAsync()
     {

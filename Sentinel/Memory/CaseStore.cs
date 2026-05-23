@@ -1,7 +1,7 @@
 using System.Text.Json;
 using StackExchange.Redis;
 
-namespace FraudDetector.Memory;
+namespace Sentinel.Memory;
 
 /// <summary>
 /// Persists fraud cases in Redis so the agent can track patterns across hourly runs.

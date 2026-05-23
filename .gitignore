@@ -4,5 +4,7 @@ obj/
 riderModule.iml
 /_ReSharper.Caches/.idea/
 .env.example
-/FraudDetector/appsettings.Development.json
+/Sentinel/appsettings.Development.json
 .idea/.idea.FraudDetector/.idea/*
+.idea/.idea.Sentinel/.idea/*
+.idea/*

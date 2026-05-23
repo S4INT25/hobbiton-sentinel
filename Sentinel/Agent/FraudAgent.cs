@@ -1,10 +1,10 @@
 using System.Text.Json;
-using FraudDetector.Infrastructure;
-using FraudDetector.Memory;
+using Sentinel.Infrastructure;
+using Sentinel.Memory;
 using OpenAI;
 using OpenAI.Chat;
 
-namespace FraudDetector.Agent;
+namespace Sentinel.Agent;
 
 public class FraudAgent(
     OpenAIClient ai,
@@ -139,7 +139,7 @@ public class FraudAgent(
     public async Task RunAsync()
     {
         var runId = DateTime.UtcNow.ToString("yyyyMMddHHmm");
-        var lookback = config.GetValue("FraudDetector:LookbackMinutes", 70);
+        var lookback = config.GetValue("Sentinel:LookbackMinutes", 70);
         var modelName = config["DigitalOcean:ModelName"]!;
 
         logger.LogInformation("Fraud agent run {RunId} started", runId);
@@ -170,7 +170,7 @@ public class FraudAgent(
         var tools = FraudAgentTools.GetToolDefinitions();
         var chatClient = ai.GetChatClient(modelName);
         var iteration = 0;
-        var maxIterations = config.GetValue("FraudDetector:MaxIterations", 60);
+        var maxIterations = config.GetValue("Sentinel:MaxIterations", 60);
         var alertSent = false;
 
         while (iteration++ < maxIterations)

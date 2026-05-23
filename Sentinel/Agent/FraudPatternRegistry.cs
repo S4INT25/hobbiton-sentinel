@@ -1,4 +1,4 @@
-namespace FraudDetector.Agent;
+namespace Sentinel.Agent;
 
 public enum PatternCategory
 {

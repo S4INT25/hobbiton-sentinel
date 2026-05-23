@@ -1,6 +1,6 @@
 using OpenAI.Chat;
 
-namespace FraudDetector.Agent;
+namespace Sentinel.Agent;
 
 public static class FraudAgentTools
 {

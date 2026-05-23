@@ -1,4 +1,4 @@
-namespace FraudDetector.Infrastructure;
+namespace Sentinel.Infrastructure;
 
 public class ClickHouseClient(HttpClient http, IConfiguration config, ILogger<ClickHouseClient> logger)
 {

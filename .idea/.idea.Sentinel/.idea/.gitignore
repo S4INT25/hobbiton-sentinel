@@ -5,7 +5,7 @@
 /modules.xml
 /contentModel.xml
 /projectSettingsUpdater.xml
-/.idea.FraudDetector.iml
+/.idea.Sentinel.iml
 # Editor-based HTTP Client requests
 /httpRequests/
 # Ignored default folder with query files

@@ -1,4 +1,4 @@
-namespace FraudDetector.Memory;
+namespace Sentinel.Memory;
 
 public interface ICaseStore
 {

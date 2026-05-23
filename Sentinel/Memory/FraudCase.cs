@@ -1,4 +1,4 @@
-namespace FraudDetector.Memory;
+namespace Sentinel.Memory;
 
 /// <summary>
 /// Represents an ongoing fraud investigation case tracked across multiple hourly runs.

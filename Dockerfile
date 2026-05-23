@@ -7,15 +7,15 @@ EXPOSE 8081
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
-COPY ["FraudDetector/FraudDetector.csproj", "FraudDetector/"]
-RUN dotnet restore "FraudDetector/FraudDetector.csproj"
+COPY ["Sentinel/Sentinel.csproj", "FraudDetector/"]
+RUN dotnet restore "Sentinel/Sentinel.csproj"
 COPY . .
-WORKDIR "/src/FraudDetector"
-RUN dotnet build "./FraudDetector.csproj" -c $BUILD_CONFIGURATION -o /app/build
+WORKDIR "/src/Sentinel"
+RUN dotnet build "./Sentinel.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
 FROM build AS publish
 ARG BUILD_CONFIGURATION=Release
-RUN dotnet publish "./FraudDetector.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "./Sentinel.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
 WORKDIR /app

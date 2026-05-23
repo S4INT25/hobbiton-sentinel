@@ -6,10 +6,10 @@ using Microsoft.Extensions.Options;
 using OpenAI;
 using StackExchange.Redis;
 using System.ClientModel;
-using FraudDetector.Agent;
-using FraudDetector.Infrastructure;
-using FraudDetector.Jobs;
-using FraudDetector.Memory;
+using Sentinel.Agent;
+using Sentinel.Infrastructure;
+using Sentinel.Jobs;
+using Sentinel.Memory;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -56,7 +56,7 @@ builder.Services.AddHangfireServer(options =>
 });
 
 builder.Services.AddScoped<FraudAgent>();
-builder.Services.AddScoped<FraudDetectorJob>();
+builder.Services.AddScoped<SentinelJob>();
 builder.Services.AddHostedService<FraudSchedulerService>();
 
 var app = builder.Build();

@@ -4,7 +4,7 @@ using MimeKit;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace FraudDetector.Infrastructure;
+namespace Sentinel.Infrastructure;
 
 public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
 {

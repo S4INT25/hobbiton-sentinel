@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace FraudDetector.Memory;
+namespace Sentinel.Memory;
 
 /// <summary>
 /// In-memory ICaseStore for local development — no Redis required.
