@@ -2,7 +2,7 @@ services:
 
   fraud-detector:
     build:
-      context: .
+      context: ./Sentinel
       dockerfile: Dockerfile
     container_name: fraud-detector
     restart: unless-stopped
