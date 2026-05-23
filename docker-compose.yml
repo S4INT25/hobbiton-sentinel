@@ -48,8 +48,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    networks:
-      - sentinel-net
+
     logging:
       driver: json-file
       options:
@@ -64,8 +63,6 @@ services:
       - REDIS_ARGS=--requirepass ${Redis__Password}
     volumes:
       - redis-data:/data
-    networks:
-      - sentinel-net
     healthcheck:
       test: [ "CMD", "redis-cli", "-a", "${Redis__Password}", "ping" ]
       interval: 10s
@@ -81,6 +78,3 @@ volumes:
   redis-data:
     driver: local
 
-networks:
-  sentinel-net:
-    driver: bridge
