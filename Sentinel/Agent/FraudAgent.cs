@@ -10,6 +10,7 @@ public class FraudAgent(
     OpenAIClient ai,
     ClickHouseClient ch,
     EmailClient email,
+    IpLookupClient ipLookup,
     ICaseStore caseStore,
     IConfiguration config,
     ILogger<FraudAgent> logger)
@@ -119,6 +120,7 @@ public class FraudAgent(
         - Internal IP actions (::ffff:10.x.x.x) with no corresponding portal user login — may indicate backend manipulation
         Cross-reference: if a suspicious IP logged in, check what transactions occurred from that IP or
         from the affected merchant's wallets in the same time window.
+        For any IP that appears suspicious, call lookup_ip to get country, ISP, ASN, and proxy/datacenter flags.
 
         **Step 3 — Interesting observations.**
         Beyond fraud patterns, flag anything unusual worth knowing — even if not clearly malicious:
@@ -292,6 +294,9 @@ public class FraudAgent(
                     root.GetProperty("subject").GetString()!,
                     root.GetProperty("body").GetString()!,
                     root.TryGetProperty("severity", out var sev) ? sev.GetString()! : "watching"),
+
+                "lookup_ip" => await ipLookup.LookupAsync(
+                    root.GetProperty("ips").EnumerateArray().Select(e => e.GetString()!)),
 
                 _ => $"Unknown tool: {toolCall.FunctionName}"
             };

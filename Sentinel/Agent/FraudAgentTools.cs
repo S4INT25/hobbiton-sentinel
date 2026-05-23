@@ -265,6 +265,33 @@ public static class FraudAgentTools
                     "required": ["subject", "body", "severity"]
                 }
                 """)
+        ),
+
+        ChatTool.CreateFunctionTool(
+            functionName: "lookup_ip",
+            functionDescription: """
+                Look up geolocation and threat intelligence for an IP address.
+                Returns country, region, ISP, organisation, ASN, and flags for
+                proxy, VPN, and hosting/datacenter origin.
+
+                Only call this for IPs you have already identified as suspicious or
+                worth investigating — not for every IP you encounter.
+                You can pass multiple IPs in one call (up to 10).
+                """,
+            functionParameters: BinaryData.FromString("""
+                {
+                    "type": "object",
+                    "properties": {
+                        "ips": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "List of IPv4 or IPv6 addresses to look up (max 10).",
+                            "maxItems": 10
+                        }
+                    },
+                    "required": ["ips"]
+                }
+                """)
         )
     ];
 }

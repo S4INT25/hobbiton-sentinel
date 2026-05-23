@@ -33,6 +33,7 @@ builder.Services.AddSingleton(_ =>
 });
 
 builder.Services.AddHttpClient<ClickHouseClient>();
+builder.Services.AddHttpClient<IpLookupClient>();
 builder.Services.AddSingleton<EmailClient>();
 
 if (useInMemory)
