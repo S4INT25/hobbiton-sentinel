@@ -106,10 +106,16 @@ public class FraudAgent(
         **Step 4 — Case management.**
         Create new cases for new patterns, update existing, resolve stopped ones.
 
-        **Step 5 — Send alert.**
-        Always call send_alert at the end. Even if nothing suspicious, send a clean report.
-        You MUST follow the exact report structure defined in the send_alert tool description — every section,
-        every table, every run. Do not invent your own format. Do not skip sections.
+        **Step 5 — Send alert (only when warranted).**
+        Call send_alert ONLY if one or more of the following is true:
+        - Severity is Warning or Critical (one or more fraud findings this run)
+        - There are open cases that require attention (even if this run was clean)
+        - A previously open case has just been resolved (notify that it cleared)
+
+        Do NOT send an alert if the run is fully clean with no findings and no open cases — just finish silently.
+
+        When you do send an alert, you MUST follow the exact report structure defined in the send_alert tool
+        description. Do not invent your own format. Do not skip sections.
         Use "None this run." / "No open cases." / "No actions required." for empty sections.
         All timestamps must be in CAT (UTC+2). All ZMW amounts must use comma separators.
 
@@ -165,6 +171,7 @@ public class FraudAgent(
         var chatClient = ai.GetChatClient(modelName);
         var iteration = 0;
         var maxIterations = config.GetValue("FraudDetector:MaxIterations", 60);
+        var alertSent = false;
 
         while (iteration++ < maxIterations)
         {
@@ -189,6 +196,7 @@ public class FraudAgent(
                     logger.LogInformation("Tool: {Name}", toolCall.FunctionName);
                     var result = await ExecuteToolAsync(toolCall, runId);
                     messages.Add(new ToolChatMessage(toolCall.Id, result));
+                    if (toolCall.FunctionName == "send_alert") alertSent = true;
                 }
             }
         }
@@ -201,32 +209,36 @@ public class FraudAgent(
             var options = new ChatCompletionOptions { MaxOutputTokenCount = 2048, Temperature = 0.1f };
             messages.Add(new UserChatMessage(
                 "You have reached the iteration limit. Do NOT run any more queries. " +
-                "Based only on what you have already found in this run, call send_alert now with " +
-                "a complete report using the EXACT structure defined in the send_alert tool: " +
-                "Run Summary table, Fraud Findings, Interesting Observations, Open Cases, Recommended Actions. " +
-                "Follow every formatting rule. Mark severity accurately. This is the final report for this run."));
+                "If this run found any suspicious activity, open cases, or resolved cases, call send_alert now " +
+                "with a complete report using the EXACT structure defined in the send_alert tool. " +
+                "If the run was fully clean with no findings and no open cases, do NOT call send_alert — just stop."));
 
             foreach (var tool in tools) options.Tools.Add(tool);
             var summaryResponse = await chatClient.CompleteChatAsync(messages, options);
             var summaryCompletion = summaryResponse.Value;
             messages.Add(new AssistantChatMessage(summaryCompletion));
 
-            // Execute any tool calls (should be send_alert)
             foreach (var toolCall in summaryCompletion.ToolCalls)
             {
                 var result = await ExecuteToolAsync(toolCall, runId);
                 logger.LogInformation("Max-iteration summary tool: {Tool} → {Result}", toolCall.FunctionName, result);
+                if (toolCall.FunctionName == "send_alert") alertSent = true;
             }
 
-            // Fallback if agent still didn't send an alert
-            if (summaryCompletion.ToolCalls.All(t => t.FunctionName != "send_alert"))
+            // Only send the fallback email if the run was genuinely incomplete (no alert and hit the ceiling)
+            if (!alertSent)
             {
+                logger.LogWarning("Run {RunId} hit iteration limit with no alert sent — sending ops notification", runId);
                 await email.SendAsync(
-                    "Fraud Detector: Partial Run Summary",
-                    $"Run {runId} reached the iteration limit ({maxIterations} steps). " +
-                    "The investigation was incomplete. Review Hangfire logs for partial findings.",
+                    "Fraud Detector: Run Incomplete",
+                    $"Run {runId} reached the iteration limit ({maxIterations} steps) without completing. " +
+                    "Review Hangfire logs for partial findings.",
                     "warning");
             }
+        }
+        else if (!alertSent)
+        {
+            logger.LogInformation("Run {RunId} completed cleanly — no alert warranted", runId);
         }
 
         logger.LogInformation("Run {RunId} completed after {N} iterations", runId, iteration);

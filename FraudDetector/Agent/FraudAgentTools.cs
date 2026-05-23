@@ -138,10 +138,17 @@ public static class FraudAgentTools
             functionName: "send_alert",
             functionDescription: """
                 Send an email alert with your fraud investigation findings.
-                Call this ONCE at the very end of your investigation — always, even if everything is clean.
+                Only call this when warranted — do NOT send on clean runs with no findings and no open cases.
+
+                Call this when ANY of the following is true:
+                - Severity is Warning or Critical (fraud findings exist)
+                - There are open cases needing attention
+                - A case was resolved this run (send one final notification)
+
+                If the run is fully clean with no findings and no open cases, do NOT call this tool.
 
                 ════════════════════════════════════════
-                MANDATORY REPORT STRUCTURE — follow exactly, every single run:
+                MANDATORY REPORT STRUCTURE — follow exactly whenever you do send:
                 ════════════════════════════════════════
 
                 ## Run Summary
