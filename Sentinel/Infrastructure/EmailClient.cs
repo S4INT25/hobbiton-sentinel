@@ -29,7 +29,7 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
             var pass = config["Email:Smtp:Password"]!;
 
             var htmlBody = BuildHtml(subject, body, severity);
-            var fullSubject = $"{subject}";
+            var fullSubject = $"{prefix} {subject}";
 
             var message = new MimeMessage
             {

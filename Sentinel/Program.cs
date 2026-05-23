@@ -81,10 +81,4 @@ if (!app.Environment.IsDevelopment())
 
 app.UseHangfireDashboard("/hangfire", dashOptions);
 
-app.MapGet("/email", async (EmailClient client) =>
-{
-
-await    client.SendAsync("Test", "Test");
-});
-
 app.Run();

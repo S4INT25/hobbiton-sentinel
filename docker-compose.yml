@@ -1,10 +1,10 @@
 services:
 
-  fraud-detector:
+  sentinel:
     build:
       context: ./
       dockerfile: Dockerfile
-    container_name: fraud-detector
+    container_name: sentinel
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:8080"
@@ -28,8 +28,9 @@ services:
 
       # Email (Gmail SMTP)
       Email__From: ${EMAIL_FROM}
+      Email__FromName: ${EMAIL_FROM_NAME:-Sentinel · Hobbiton}
       Email__To__0: ${EMAIL_TO}
-      Email__SubjectPrefix: ${EMAIL_SUBJECT_PREFIX:-[FRAUD DETECTOR]}
+      Email__SubjectPrefix: ${EMAIL_SUBJECT_PREFIX:-[SENTINEL]}
       Email__Smtp__Host: smtp.gmail.com
       Email__Smtp__Port: 587
       Email__Smtp__User: ${GMAIL_USER}
@@ -39,16 +40,16 @@ services:
       Dashboard__Username: ${DASHBOARD_USERNAME:-admin}
       Dashboard__Password: ${DASHBOARD_PASSWORD}
 
-      # Tuning
-      FraudDetector__CronSchedule: ${CRON_SCHEDULE:-0 * * * *}
-      FraudDetector__LookbackMinutes: ${LOOKBACK_MINUTES:-70}
-      FraudDetector__MaxIterations: ${MAX_ITERATIONS:-60}
+      # Sentinel tuning
+      Sentinel__CronSchedule: ${CRON_SCHEDULE:-0 * * * *}
+      Sentinel__LookbackMinutes: ${LOOKBACK_MINUTES:-70}
+      Sentinel__MaxIterations: ${MAX_ITERATIONS:-60}
 
     depends_on:
       redis:
         condition: service_healthy
     networks:
-      - fraud-net
+      - sentinel-net
     logging:
       driver: json-file
       options:
@@ -57,16 +58,16 @@ services:
 
   redis:
     image: redis/redis-stack:latest
-    container_name: fraud-redis
+    container_name: sentinel-redis
     restart: unless-stopped
     environment:
-      - REDIS_ARGS=--requirepass ${REDIS_PASSWORD}
+      - REDIS_ARGS=--requirepass ${Redis__Password}
     volumes:
       - redis-data:/data
     networks:
-      - fraud-net
+      - sentinel-net
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: [ "CMD", "redis-cli", "-a", "${Redis__Password}", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -81,5 +82,5 @@ volumes:
     driver: local
 
 networks:
-  fraud-net:
+  sentinel-net:
     driver: bridge
