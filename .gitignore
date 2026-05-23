@@ -5,6 +5,5 @@ riderModule.iml
 /_ReSharper.Caches/.idea/
 .env.example
 /Sentinel/appsettings.Development.json
-.idea/.idea.FraudDetector/.idea/*
-.idea/.idea.Sentinel/.idea/*
 .idea/*
+.idea/.idea.Sentinel/.idea/*
