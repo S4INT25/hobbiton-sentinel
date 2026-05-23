@@ -60,11 +60,11 @@ services:
     container_name: sentinel-redis
     restart: unless-stopped
     environment:
-      - REDIS_ARGS=--requirepass ${Redis__Password}
+      - REDIS_ARGS=--requirepass ${REDIS_PASSWORD}
     volumes:
       - redis-data:/data
     healthcheck:
-      test: [ "CMD", "redis-cli", "-a", "${Redis__Password}", "ping" ]
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
