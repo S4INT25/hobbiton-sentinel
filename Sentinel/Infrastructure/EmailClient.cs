@@ -20,22 +20,26 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
         try
         {
             var from = config["Email:From"]!;
+            var fromName = config["Email:FromName"] ?? "Sentinel";
             var toEmail = config["Email:To"] ?? "security@hobbiton.co.zm";
-            var prefix = config["Email:SubjectPrefix"] ?? "[FRAUD DETECTOR]";
+            var prefix = config["Email:SubjectPrefix"] ?? "[SENTINEL]";
             var host = config["Email:Smtp:Host"] ?? "smtp.gmail.com";
             var port = config.GetValue("Email:Smtp:Port", 587);
             var user = config["Email:Smtp:User"]!;
             var pass = config["Email:Smtp:Password"]!;
 
             var htmlBody = BuildHtml(subject, body, severity);
-            var fullSubject = $"{prefix} {subject}";
+            var fullSubject = $"{subject}";
 
-            var message = new MimeMessage();
-            message.From.Add(MailboxAddress.Parse(from));
-            message.To.Add(MailboxAddress.Parse(toEmail));
-            message.Subject = fullSubject;
-            message.Body = new BodyBuilder { HtmlBody = htmlBody, TextBody = body }.ToMessageBody();
-
+            var message = new MimeMessage
+            {
+                Subject = fullSubject,
+                Body = new BodyBuilder { HtmlBody = htmlBody, TextBody = body }.ToMessageBody(),
+                Sender = new MailboxAddress(fromName, from),
+                To = { MailboxAddress.Parse(toEmail) },
+                From = { new MailboxAddress(fromName, from) }
+            };
+           
 
             using var smtp = new SmtpClient();
             await smtp.ConnectAsync(host, port, SecureSocketOptions.StartTls);
