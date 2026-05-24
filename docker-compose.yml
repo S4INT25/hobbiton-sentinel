@@ -52,9 +52,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      seq:
-        condition: service_healthy
-        
     logging:
       driver: loki
       options:
