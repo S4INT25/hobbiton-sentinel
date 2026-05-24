@@ -18,7 +18,6 @@ public class ClickHouseClient(HttpClient http, IConfiguration config, ILogger<Cl
 
         try
         {
-            logger.LogDebug("Querying ClickHouse: {Query}", sql);
             var host = config["ClickHouse:Host"]!;
             var user = config["ClickHouse:User"]!;
             var password = config["ClickHouse:Password"]!;
