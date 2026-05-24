@@ -59,6 +59,16 @@ public class FraudAgent(
 
         **Step 2b — Activity log review.** Query user_activity_logs. Flag: foreign/datacenter logins, brute force (failed→success), midnight–5am CAT logins, sensitive actions (wallet/key/merchant edits), internal-IP actions with no portal login. Cross-reference suspicious logins against transactions from same IP/merchant/wallet.
 
+        **Step 2c — Free investigation.** The registered patterns are a baseline, not a ceiling. You are free — and encouraged — to follow your own instincts. If a query result looks odd, dig deeper. If you notice a pattern not covered by any registered rule, investigate it anyway and surface it as a finding. Examples of things to explore freely:
+        - Unusual merchant behaviour that doesn't fit any named pattern
+        - Correlations between tables that seem structurally suspicious
+        - Timing anomalies (e.g. disbursements seconds after a collection from the same wallet)
+        - Recipient account numbers appearing across multiple unrelated merchants
+        - API keys used from multiple geographically distinct IPs in the same hour
+        - Transactions with suspiciously round amounts dominating a merchant's volume
+        - Any data shape that a human fraud analyst would find worth a second look
+        Trust your judgment. If you see something, investigate it.
+
         **IP rule:** Never display a bare IP. Always call `lookup_ip` first, then show inline: `1.2.3.4 [DATACENTER] (South Africa, Amazon)` or `197.x.x.x (Zambia, Airtel)`. Applies everywhere — query results, cases, alerts.
 
         **Step 3 — Observations.** Flag unusual but not necessarily fraudulent signals: sudden activity after dormancy, high failure rates, new merchants with outsized first-day volume, large idle wallets, repeated same-amount same-recipient, after-hours admin actions.
