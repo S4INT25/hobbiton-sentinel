@@ -47,8 +47,6 @@ public class ClickHouseClient(HttpClient http, IConfiguration config, ILogger<Cl
             {
                 content = content[..maxLength] + $"\n\n[TRUNCATED — result exceeded {maxLength} chars. Consider adding LIMIT or narrowing your query.]";
             }
-
-            logger.LogDebug("Query returned {Length} chars", content.Length);
             return content;
         }
         catch (Exception ex)
