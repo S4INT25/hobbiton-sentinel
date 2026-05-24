@@ -59,7 +59,7 @@ services:
       driver: loki
       options:
         loki-url: "http://102.23.122.169:3100/loki/api/v1/push"
-        loki-external-labels: "job=sentinal,env=prod"
+        loki-external-labels: "job=sentinel,env=prod"
         loki-batch-size: "400"
 
   seq:
@@ -74,8 +74,6 @@ services:
       - "127.0.0.1:5380:80"     # web UI
     volumes:
       - seq-data:/data
-    networks:
-      - sentinel-net
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:5341/health || exit 1"]
       interval: 10s

@@ -223,7 +223,7 @@ public class FraudAgent(
                 runId, iteration, completion.FinishReason, completion.ToolCalls.Count, totalTokens, inputTokens, outputTokens);
 
             // Log any text content the LLM produced (reasoning / narration)
-            var textContent = string.Concat(completion.Content
+            var textContent = string.Concat((completion.Content ?? [])
                 .Where(p => p.Kind == ChatMessageContentPartKind.Text)
                 .Select(p => p.Text));
             if (!string.IsNullOrWhiteSpace(textContent))
@@ -320,7 +320,7 @@ public class FraudAgent(
                     root.TryGetProperty("severity", out var sev) ? sev.GetString()! : "watching"),
 
                 "lookup_ip" => await ipLookup.LookupAsync(
-                    root.GetProperty("ips").EnumerateArray().Select(e => e.GetString()!)),
+                    JsonToStringList(root.GetProperty("ips"))),
 
                 _ => $"Unknown tool: {toolCall.FunctionName}"
             };
@@ -344,14 +344,10 @@ public class FraudAgent(
         };
 
         if (root.TryGetProperty("affected_entities", out var entities))
-            fraudCase.AffectedEntities = entities.ValueKind == JsonValueKind.Array
-                ? entities.EnumerateArray().Select(e => e.GetString()!).Where(e => !string.IsNullOrWhiteSpace(e)).ToList()
-                : entities.GetString()!.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            fraudCase.AffectedEntities = JsonToStringList(entities);
 
         if (root.TryGetProperty("follow_up_queries", out var queries))
-            fraudCase.FollowUpQueries = queries.ValueKind == JsonValueKind.Array
-                ? queries.EnumerateArray().Select(q => q.GetString()!).Where(q => !string.IsNullOrWhiteSpace(q)).ToList()
-                : queries.GetString()!.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            fraudCase.FollowUpQueries = JsonToStringList(queries);
 
         fraudCase.Evidence.Add(new CaseEvidence
         {
@@ -381,9 +377,7 @@ public class FraudAgent(
             fraudCase.Status = status.GetString()!;
 
         if (root.TryGetProperty("follow_up_queries", out var queries))
-            fraudCase.FollowUpQueries = queries.ValueKind == JsonValueKind.Array
-                ? queries.EnumerateArray().Select(q => q.GetString()!).Where(q => !string.IsNullOrWhiteSpace(q)).ToList()
-                : queries.GetString()!.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            fraudCase.FollowUpQueries = JsonToStringList(queries);
 
         fraudCase.Evidence.Add(new CaseEvidence
         {
@@ -406,4 +400,26 @@ public class FraudAgent(
         await caseStore.ResolveCaseAsync(caseId, resolution);
         return $"Case {caseId} resolved: {resolution}";
     }
+
+    /// <summary>
+    /// Safely converts a JsonElement to a list of non-empty strings.
+    /// Handles: JSON array of strings, plain JSON string (newline-separated), or any other kind (returns empty).
+    /// Array elements that are null, non-string, or empty are silently skipped.
+    /// </summary>
+    private static List<string> JsonToStringList(JsonElement el) => el.ValueKind switch
+    {
+        JsonValueKind.Array => el.EnumerateArray()
+            .Where(e => e.ValueKind == JsonValueKind.String)
+            .Select(e => e.GetString())
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => s!)
+            .ToList(),
+
+        JsonValueKind.String => (el.GetString() ?? "")
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList(),
+
+        _ => []
+    };
 }
