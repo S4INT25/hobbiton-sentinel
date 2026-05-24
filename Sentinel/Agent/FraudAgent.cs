@@ -170,10 +170,9 @@ public class FraudAgent(
                         runId, toolCall.FunctionName, argsPreview);
 
                     var result = await ExecuteToolAsync(toolCall, runId);
-
-                    var resultPreview = result.Length > 500 ? result[..500] + "…" : result;
+                    
                     logger.LogInformation("[Run:{RunId}] Tool result: {Tool} → {Result}",
-                        runId, toolCall.FunctionName, resultPreview);
+                        runId, toolCall.FunctionName, result);
 
                     messages.Add(new ToolChatMessage(toolCall.Id, result));
                     if (toolCall.FunctionName == "send_alert") alertSent = true;
