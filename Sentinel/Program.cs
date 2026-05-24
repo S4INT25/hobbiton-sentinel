@@ -1,16 +1,15 @@
 using Hangfire;
 using Hangfire.Dashboard.BasicAuthorization;
 using Hangfire.Redis.StackExchange;
-using Microsoft.Extensions.Logging.Console;
-using Microsoft.Extensions.Options;
 using OpenAI;
+using Serilog;
+using Serilog.Events;
 using StackExchange.Redis;
 using System.ClientModel;
 using Sentinel.Agent;
 using Sentinel.Infrastructure;
 using Sentinel.Jobs;
 using Sentinel.Memory;
-
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +19,26 @@ builder.Configuration
     .AddJsonFile("appsettings.json", optional: false)
     .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true)
     .AddEnvironmentVariables();
+
+// ── Serilog ───────────────────────────────────────────────────────────────────
+var seqUrl = builder.Configuration["Seq:Url"];
+
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Debug()
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+    .MinimumLevel.Override("Hangfire", LogEventLevel.Information)
+    .MinimumLevel.Override("MailKit", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .Enrich.WithMachineName()
+    .Enrich.WithThreadId()
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+    .WriteTo.Seq(seqUrl ?? "http://localhost:5341",
+        apiKey: builder.Configuration["Seq:ApiKey"],
+        restrictedToMinimumLevel: LogEventLevel.Debug)
+    .CreateLogger();
+
+builder.Host.UseSerilog();
 
 var redisConnectionString = builder.Configuration["Redis:ConnectionString"];
 var useInMemory = builder.Environment.IsDevelopment() || string.IsNullOrWhiteSpace(redisConnectionString);

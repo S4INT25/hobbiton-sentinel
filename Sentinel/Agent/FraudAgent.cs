@@ -213,8 +213,21 @@ public class FraudAgent(
             var completion = response.Value;
             messages.Add(new AssistantChatMessage(completion));
 
-            logger.LogInformation("Iteration {N}: {Reason}, {ToolCount} tool calls",
-                iteration, completion.FinishReason, completion.ToolCalls.Count);
+            // ── LLM response logging ──────────────────────────────────────────
+            var inputTokens  = completion.Usage?.InputTokenCount  ?? 0;
+            var outputTokens = completion.Usage?.OutputTokenCount ?? 0;
+            var totalTokens  = completion.Usage?.TotalTokenCount  ?? 0;
+
+            logger.LogInformation(
+                "[Run:{RunId}] Iteration {N}: finish={Reason} tools={ToolCount} tokens={Total} (in={In} out={Out})",
+                runId, iteration, completion.FinishReason, completion.ToolCalls.Count, totalTokens, inputTokens, outputTokens);
+
+            // Log any text content the LLM produced (reasoning / narration)
+            var textContent = string.Concat(completion.Content
+                .Where(p => p.Kind == ChatMessageContentPartKind.Text)
+                .Select(p => p.Text));
+            if (!string.IsNullOrWhiteSpace(textContent))
+                logger.LogDebug("[Run:{RunId}] LLM text: {Text}", runId, textContent);
 
             if (completion.FinishReason == ChatFinishReason.Stop)
                 break;
@@ -223,8 +236,19 @@ public class FraudAgent(
             {
                 foreach (var toolCall in completion.ToolCalls)
                 {
-                    logger.LogInformation("Tool: {Name}", toolCall.FunctionName);
+                    // Truncate large args for readability (SQL queries can be long)
+                    var args = toolCall.FunctionArguments.ToString();
+                    var argsPreview = args.Length > 300 ? args[..300] + "…" : args;
+
+                    logger.LogInformation("[Run:{RunId}] Tool call: {Tool} args={Args}",
+                        runId, toolCall.FunctionName, argsPreview);
+
                     var result = await ExecuteToolAsync(toolCall, runId);
+
+                    var resultPreview = result.Length > 500 ? result[..500] + "…" : result;
+                    logger.LogInformation("[Run:{RunId}] Tool result: {Tool} → {Result}",
+                        runId, toolCall.FunctionName, resultPreview);
+
                     messages.Add(new ToolChatMessage(toolCall.Id, result));
                     if (toolCall.FunctionName == "send_alert") alertSent = true;
                 }
@@ -320,12 +344,14 @@ public class FraudAgent(
         };
 
         if (root.TryGetProperty("affected_entities", out var entities))
-            fraudCase.AffectedEntities = entities.EnumerateArray()
-                .Select(e => e.GetString()!).ToList();
+            fraudCase.AffectedEntities = entities.ValueKind == JsonValueKind.Array
+                ? entities.EnumerateArray().Select(e => e.GetString()!).Where(e => !string.IsNullOrWhiteSpace(e)).ToList()
+                : entities.GetString()!.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
 
         if (root.TryGetProperty("follow_up_queries", out var queries))
-            fraudCase.FollowUpQueries = queries.EnumerateArray()
-                .Select(q => q.GetString()!).ToList();
+            fraudCase.FollowUpQueries = queries.ValueKind == JsonValueKind.Array
+                ? queries.EnumerateArray().Select(q => q.GetString()!).Where(q => !string.IsNullOrWhiteSpace(q)).ToList()
+                : queries.GetString()!.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
 
         fraudCase.Evidence.Add(new CaseEvidence
         {
@@ -355,8 +381,9 @@ public class FraudAgent(
             fraudCase.Status = status.GetString()!;
 
         if (root.TryGetProperty("follow_up_queries", out var queries))
-            fraudCase.FollowUpQueries = queries.EnumerateArray()
-                .Select(q => q.GetString()!).ToList();
+            fraudCase.FollowUpQueries = queries.ValueKind == JsonValueKind.Array
+                ? queries.EnumerateArray().Select(q => q.GetString()!).Where(q => !string.IsNullOrWhiteSpace(q)).ToList()
+                : queries.GetString()!.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
 
         fraudCase.Evidence.Add(new CaseEvidence
         {

@@ -45,15 +45,47 @@ services:
       Sentinel__LookbackMinutes: ${LOOKBACK_MINUTES:-70}
       Sentinel__MaxIterations: ${MAX_ITERATIONS:-60}
 
+      # Seq structured logging
+      Seq__Url: http://seq:5341
+      Seq__ApiKey: ${SEQ_API_KEY:-}
+
     depends_on:
       redis:
         condition: service_healthy
+      seq:
+        condition: service_healthy
+        
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://102.23.122.169:3100/loki/api/v1/push"
+        loki-external-labels: "job=sentinal,env=prod"
+        loki-batch-size: "400"
 
+  seq:
+    image: datalust/seq:latest
+    container_name: sentinel-seq
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      SEQ_FIRSTRUN_ADMINPASSWORD: ${SEQ_ADMIN_PASSWORD:-admin}
+    ports:
+      - "127.0.0.1:5341:5341"   # ingest (app → Seq)
+      - "127.0.0.1:5380:80"     # web UI
+    volumes:
+      - seq-data:/data
+    networks:
+      - sentinel-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5341/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     logging:
       driver: json-file
       options:
-        max-size: "20m"
-        max-file: "5"
+        max-size: "5m"
+        max-file: "3"
 
   redis:
     image: redis/redis-stack:latest
@@ -76,5 +108,7 @@ services:
 
 volumes:
   redis-data:
+    driver: local
+  seq-data:
     driver: local
 
