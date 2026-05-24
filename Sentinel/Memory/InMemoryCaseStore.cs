@@ -65,4 +65,18 @@ public class InMemoryCaseStore(ILogger<InMemoryCaseStore> logger) : ICaseStore
         }
         return sb.ToString();
     }
+
+    public async Task<int> AutoResolveStaleAsync(int thresholdDays)
+    {
+        var cutoff = DateTime.UtcNow - TimeSpan.FromDays(thresholdDays);
+        var stale = (await GetOpenCasesAsync()).Where(c => c.LastSeen < cutoff).ToList();
+        foreach (var c in stale)
+        {
+            logger.LogWarning("Auto-resolving stale case {Id} ({Title}) — last seen {LastSeen:yyyy-MM-dd}",
+                c.Id, c.Title, c.LastSeen);
+            await ResolveCaseAsync(c.Id,
+                $"Auto-resolved: no agent activity for {thresholdDays}+ days (last seen {c.LastSeen:yyyy-MM-dd HH:mm} UTC).");
+        }
+        return stale.Count;
+    }
 }

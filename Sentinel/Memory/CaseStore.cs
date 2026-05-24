@@ -69,6 +69,27 @@ public class CaseStore(IConnectionMultiplexer redis, ILogger<CaseStore> logger) 
         logger.LogInformation("Case {Id} resolved: {Resolution}", id, resolution);
     }
 
+    /// <summary>
+    /// Auto-resolves open cases that have not been updated in <paramref name="thresholdDays"/> days.
+    /// Returns the number of cases resolved.
+    /// </summary>
+    public async Task<int> AutoResolveStaleAsync(int thresholdDays)
+    {
+        var cutoff = DateTime.UtcNow - TimeSpan.FromDays(thresholdDays);
+        var cases = await GetOpenCasesAsync();
+        var stale = cases.Where(c => c.LastSeen < cutoff).ToList();
+
+        foreach (var c in stale)
+        {
+            logger.LogWarning("Auto-resolving stale case {Id} ({Title}) — last seen {LastSeen:yyyy-MM-dd}",
+                c.Id, c.Title, c.LastSeen);
+            await ResolveCaseAsync(c.Id,
+                $"Auto-resolved: no agent activity for {thresholdDays}+ days (last seen {c.LastSeen:yyyy-MM-dd HH:mm} UTC).");
+        }
+
+        return stale.Count;
+    }
+
     /// <summary>Returns a compact summary of all open cases for the LLM system prompt.</summary>
     public async Task<string> GetOpenCasesSummaryAsync()
     {

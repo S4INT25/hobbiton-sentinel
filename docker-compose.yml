@@ -44,6 +44,7 @@ services:
       Sentinel__CronSchedule: ${CRON_SCHEDULE:-0 * * * *}
       Sentinel__LookbackMinutes: ${LOOKBACK_MINUTES:-70}
       Sentinel__MaxIterations: ${MAX_ITERATIONS:-60}
+      Sentinel__StaleCase__ThresholdDays: ${STALE_CASE_THRESHOLD_DAYS:-7}
 
       # Seq structured logging
       Seq__Url: http://seq:5341

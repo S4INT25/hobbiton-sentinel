@@ -7,4 +7,5 @@ public interface ICaseStore
     Task<FraudCase?> GetCaseAsync(string id);
     Task ResolveCaseAsync(string id, string resolution);
     Task<string> GetOpenCasesSummaryAsync();
+    Task<int> AutoResolveStaleAsync(int thresholdDays);
 }

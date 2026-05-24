@@ -94,6 +94,12 @@ public class FraudAgent(
 
         logger.LogInformation("Fraud agent run {RunId} started", runId);
 
+        // Auto-resolve cases that have gone stale (no agent activity for N days)
+        var staleDays = config.GetValue("Sentinel:StaleCase:ThresholdDays", 7);
+        var staleClosed = await caseStore.AutoResolveStaleAsync(staleDays);
+        if (staleClosed > 0)
+            logger.LogInformation("Auto-resolved {Count} stale case(s) (threshold: {Days} days)", staleClosed, staleDays);
+
         // Load open cases from Redis memory
         var openCasesSummary = await caseStore.GetOpenCasesSummaryAsync();
         var openCases = await caseStore.GetOpenCasesAsync();
