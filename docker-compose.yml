@@ -74,16 +74,6 @@ services:
       - "127.0.0.1:5380:80"     # web UI
     volumes:
       - seq-data:/data
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:5341/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    logging:
-      driver: json-file
-      options:
-        max-size: "5m"
-        max-file: "3"
 
   redis:
     image: redis/redis-stack:latest
@@ -98,11 +88,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    logging:
-      driver: json-file
-      options:
-        max-size: "5m"
-        max-file: "3"
 
 volumes:
   redis-data:
