@@ -10,6 +10,8 @@ using Sentinel.Agent;
 using Sentinel.Infrastructure;
 using Sentinel.Jobs;
 using Sentinel.Memory;
+using ZiggyCreatures.Caching.Fusion;
+using ZiggyCreatures.Caching.Fusion.Serialization.SystemTextJson;
 
 // Bootstrap a minimal logger for startup errors before full config is loaded
 Log.Logger = new LoggerConfiguration()
@@ -40,11 +42,13 @@ try
             .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
             .MinimumLevel.Override("Hangfire", LogEventLevel.Information)
             .MinimumLevel.Override("MailKit", LogEventLevel.Warning)
+            .MinimumLevel.Override("System.Net.Http.HttpClient", LogEventLevel.Warning)
+            .MinimumLevel.Override("ZiggyCreatures.Caching.Fusion", LogEventLevel.Warning)
             .Enrich.FromLogContext()
             .Enrich.WithMachineName()
             .Enrich.WithThreadId()
             .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
-            .WriteTo.Seq(seqUrl, apiKey: seqKey, restrictedToMinimumLevel: LogEventLevel.Debug);
+            .WriteTo.Seq(seqUrl, apiKey: seqKey, restrictedToMinimumLevel: LogEventLevel.Information);
     });
 
     var redisConnectionString = builder.Configuration["Redis:ConnectionString"];
@@ -65,6 +69,7 @@ try
     if (useInMemory)
     {
         builder.Services.AddSingleton<ICaseStore, InMemoryCaseStore>();
+        builder.Services.AddFusionCache();
         builder.Services.AddHangfire(config => config.UseInMemoryStorage());
     }
     else
@@ -72,9 +77,15 @@ try
         builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
             ConnectionMultiplexer.Connect(redisConnectionString!));
         builder.Services.AddSingleton<ICaseStore, CaseStore>();
+        builder.Services.AddFusionCache()
+            .WithSerializer(new FusionCacheSystemTextJsonSerializer())
+            .WithStackExchangeRedisBackplane(o => o.Configuration = redisConnectionString!)
+            .AsHybridCache();
         builder.Services.AddHangfire((sp, config) =>
             config.UseRedisStorage(sp.GetRequiredService<IConnectionMultiplexer>()));
     }
+
+    builder.Services.AddSingleton<SchemaLoader>();
 
     builder.Services.AddHangfireServer(options =>
     {

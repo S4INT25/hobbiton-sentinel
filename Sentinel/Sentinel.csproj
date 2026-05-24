@@ -23,6 +23,9 @@
         <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
         <PackageReference Include="Serilog.Sinks.Seq" Version="9.1.0" />
         <PackageReference Include="StackExchange.Redis" Version="2.13.10" />
+        <PackageReference Include="ZiggyCreatures.FusionCache" Version="2.6.0" />
+        <PackageReference Include="ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis" Version="2.6.0" />
+        <PackageReference Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" Version="2.6.0" />
     </ItemGroup>
 
     <ItemGroup>

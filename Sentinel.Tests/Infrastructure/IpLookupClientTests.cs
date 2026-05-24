@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Sentinel.Infrastructure;
+using ZiggyCreatures.Caching.Fusion;
 
 namespace Sentinel.Tests.Infrastructure;
 
@@ -12,8 +13,9 @@ public class IpLookupClientTests
     private static IpLookupClient CreateClient()
     {
         var http = new HttpClient();
+        var cache = new FusionCache(new FusionCacheOptions());
         var logger = NullLogger<IpLookupClient>.Instance;
-        return new IpLookupClient(http, logger);
+        return new IpLookupClient(http, cache, logger);
     }
 
     // ── Known IPs used in tests ──────────────────────────────────────────────

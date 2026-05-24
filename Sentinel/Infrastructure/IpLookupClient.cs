@@ -1,20 +1,21 @@
 using System.Text;
 using System.Text.Json;
+using ZiggyCreatures.Caching.Fusion;
 
 namespace Sentinel.Infrastructure;
 
 /// <summary>
 /// Looks up IP geolocation and threat intelligence via ip-api.com (free, no key required).
-/// Batch endpoint: POST http://ip-api.com/batch — up to 100 IPs per request, 100 req/min.
+/// Results are cached via FusionCache — IPs rarely change ISP/geo, so TTL is 30 days.
 /// </summary>
-public class IpLookupClient(HttpClient http, ILogger<IpLookupClient> logger)
+public class IpLookupClient(HttpClient http, IFusionCache cache, ILogger<IpLookupClient> logger)
 {
     private const string BatchUrl = "http://ip-api.com/batch?fields=query,country,countryCode,regionName,city,isp,org,as,proxy,hosting,status,message";
 
     public async Task<string> LookupAsync(IEnumerable<string> ips)
     {
         var ipList = ips
-            .Select(ip => ip.Replace("::ffff:", "").Trim()) // normalise IPv4-mapped IPv6
+            .Select(ip => ip.Replace("::ffff:", "").Trim())
             .Where(ip => !string.IsNullOrWhiteSpace(ip))
             .Distinct()
             .Take(10)
@@ -23,31 +24,67 @@ public class IpLookupClient(HttpClient http, ILogger<IpLookupClient> logger)
         if (ipList.Count == 0)
             return "No valid IPs provided.";
 
+        // Check cache per-IP, collect misses for batch lookup
+        var results = new Dictionary<string, string>();
+        var misses = new List<string>();
+
+        foreach (var ip in ipList)
+        {
+            var cached = await cache.TryGetAsync<string>($"sentinel:ip:{ip}");
+            if (cached.HasValue)
+                results[ip] = cached.Value;
+            else
+                misses.Add(ip);
+        }
+
+        if (misses.Count > 0)
+        {
+            var fresh = await FetchAsync(misses);
+            foreach (var (ip, summary) in fresh)
+            {
+                results[ip] = summary;
+                await cache.SetAsync($"sentinel:ip:{ip}", summary,
+                    options => options.SetDuration(TimeSpan.FromDays(30)));
+            }
+        }
+
+        var sb = new StringBuilder();
+        foreach (var ip in ipList)
+            if (results.TryGetValue(ip, out var line)) sb.Append(line);
+
+        logger.LogInformation("IP lookup: {Total} IPs ({Cached} cached, {Fresh} fetched)",
+            ipList.Count, ipList.Count - misses.Count, misses.Count);
+
+        return sb.ToString();
+    }
+
+    private async Task<Dictionary<string, string>> FetchAsync(List<string> ips)
+    {
+        var output = new Dictionary<string, string>();
         try
         {
-            var payload = JsonSerializer.Serialize(ipList.Select(ip => new { query = ip }));
+            var payload = JsonSerializer.Serialize(ips.Select(ip => new { query = ip }));
             var response = await http.PostAsync(BatchUrl, new StringContent(payload, Encoding.UTF8, "application/json"));
             var content = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
             {
                 logger.LogWarning("ip-api.com returned {Status}: {Body}", response.StatusCode, content[..Math.Min(200, content.Length)]);
-                return $"IP lookup failed ({response.StatusCode}): {content[..Math.Min(200, content.Length)]}";
+                foreach (var ip in ips)
+                    output[ip] = $"- {ip}: lookup failed ({response.StatusCode})\n";
+                return output;
             }
 
-            // Parse and reformat into a readable summary
             using var doc = JsonDocument.Parse(content);
-            var sb = new StringBuilder();
-
             foreach (var entry in doc.RootElement.EnumerateArray())
             {
-                var ip      = entry.TryGetProperty("query",       out var q)   ? q.GetString()   : "?";
-                var status  = entry.TryGetProperty("status",      out var st)  ? st.GetString()  : "unknown";
+                var ip     = entry.TryGetProperty("query",       out var q)   ? q.GetString()  ?? "?" : "?";
+                var status = entry.TryGetProperty("status",      out var st)  ? st.GetString() ?? ""  : "";
 
                 if (status == "fail")
                 {
-                    var msg = entry.TryGetProperty("message", out var m) ? m.GetString() : "unknown error";
-                    sb.AppendLine($"- {ip}: lookup failed — {msg}");
+                    var msg = entry.TryGetProperty("message", out var m) ? m.GetString() : "unknown";
+                    output[ip] = $"- {ip}: lookup failed — {msg}\n";
                     continue;
                 }
 
@@ -67,20 +104,20 @@ public class IpLookupClient(HttpClient http, ILogger<IpLookupClient> logger)
                 if (cc != "ZM") flags.Add($"FOREIGN ({cc})");
 
                 var flagStr = flags.Count > 0 ? $" [{string.Join(", ", flags)}]" : "";
-
+                var sb = new StringBuilder();
                 sb.AppendLine($"- {ip}{flagStr}");
                 sb.AppendLine($"  Location : {city}, {region}, {country}");
                 sb.AppendLine($"  ISP/Org  : {isp} / {org}");
                 sb.AppendLine($"  ASN      : {asn}");
+                output[ip] = sb.ToString();
             }
-
-            logger.LogInformation("IP lookup completed for {Count} IPs", ipList.Count);
-            return sb.ToString();
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "IP lookup failed");
-            return $"IP lookup error: {ex.Message}";
+            foreach (var ip in ips)
+                output[ip] = $"- {ip}: lookup error — {ex.Message}\n";
         }
+        return output;
     }
 }

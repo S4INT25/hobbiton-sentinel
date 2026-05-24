@@ -1,21 +1,39 @@
+using System.Text.RegularExpressions;
+using ZiggyCreatures.Caching.Fusion;
+
 namespace Sentinel.Infrastructure;
 
-public class ClickHouseClient(HttpClient http, IConfiguration config, ILogger<ClickHouseClient> logger)
+public class ClickHouseClient(HttpClient http, IConfiguration config, ILogger<ClickHouseClient> logger, IFusionCache cache)
 {
-    private static readonly HashSet<string> AllowedPrefixes = ["SELECT", "WITH"];
+    private static readonly HashSet<string> AllowedPrefixes = ["SELECT", "WITH", "SHOW", "DESCRIBE", "DESC", "EXPLAIN"];
+    private static readonly HashSet<string> CacheablePrefixes = ["SHOW", "DESCRIBE", "DESC"];
+    private static readonly Regex StripLimit = new(@"\s+LIMIT\s+\d+\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public async Task<string> QueryAsync(string sql)
     {
-        // Safety: only allow read queries
         var trimmed = sql.TrimStart();
         var firstWord = trimmed.Split(' ', '\n', '\r')[0].ToUpperInvariant();
 
         if (!AllowedPrefixes.Contains(firstWord))
         {
             logger.LogWarning("Blocked non-SELECT query: {Query}", sql[..Math.Min(100, sql.Length)]);
-            return "Error: Only SELECT/WITH queries are permitted.";
+            return "Error: Only SELECT/WITH/SHOW/DESCRIBE queries are permitted.";
         }
 
+        if (CacheablePrefixes.Contains(firstWord))
+        {
+            sql = StripLimit.Replace(sql, "");
+            var key = $"sentinel:schema:{sql.Trim().ToLowerInvariant().GetHashCode()}";
+            return await cache.GetOrSetAsync(key,
+                _ => ExecuteAsync(sql),
+                options => options.SetDuration(TimeSpan.FromDays(7)));
+        }
+
+        return await ExecuteAsync(sql);
+    }
+
+    private async Task<string> ExecuteAsync(string sql)
+    {
         try
         {
             var host = config["ClickHouse:Host"]!;
@@ -23,10 +41,7 @@ public class ClickHouseClient(HttpClient http, IConfiguration config, ILogger<Cl
             var password = config["ClickHouse:Password"]!;
             var maxLength = config.GetValue("ClickHouse:MaxResultLength", 10000);
 
-            // Use POST to avoid URL length limits on complex queries
-            var url = $"{host}/?default_format=JSON";
-
-            var request = new HttpRequestMessage(HttpMethod.Post, url)
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{host}/?default_format=JSON")
             {
                 Content = new StringContent(sql)
             };
@@ -42,11 +57,9 @@ public class ClickHouseClient(HttpClient http, IConfiguration config, ILogger<Cl
                 return $"ClickHouse error ({response.StatusCode}): {content[..Math.Min(300, content.Length)]}";
             }
 
-            // Truncate large results to protect context window
             if (content.Length > maxLength)
-            {
-                content = content[..maxLength] + $"\n\n[TRUNCATED — result exceeded {maxLength} chars. Consider adding LIMIT or narrowing your query.]";
-            }
+                content = content[..maxLength] + $"\n\n[TRUNCATED — result exceeded {maxLength} chars. Add LIMIT or narrow the query.]";
+
             return content;
         }
         catch (Exception ex)

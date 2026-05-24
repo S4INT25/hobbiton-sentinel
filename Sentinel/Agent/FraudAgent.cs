@@ -12,78 +12,70 @@ public class FraudAgent(
     EmailClient email,
     IpLookupClient ipLookup,
     ICaseStore caseStore,
+    SchemaLoader schemaLoader,
     IConfiguration config,
     ILogger<FraudAgent> logger)
 {
-    private string BuildSystemPrompt(string openCasesSummary, int lookbackMinutes)
+    private string BuildSystemPrompt(string openCasesSummary, int lookbackMinutes, string schemaBlock)
     {
         var casesContext = openCasesSummary == "No open cases."
             ? "no open cases."
             : "the following open cases from previous runs:";
 
         return $"""
-        You are a financial fraud analyst with read-only ClickHouse access to Lipila — a Zambian payment gateway (collections + disbursements via AirtelMoney/MTN). Disbursements are irreversible.
+                You are a financial fraud analyst with read-only ClickHouse access to Lipila — a Zambian payment gateway (collections + disbursements via AirtelMoney/MTN). Disbursements are irreversible.
 
-        ## ClickHouse SQL Rules (strict)
-        Native ClickHouse only. Banned: `IIIF`, `IIF`, `NVL`, `ISNULL`, `COALESCE` (use `ifNull()`), `DATEDIFF`, `TOP`, `CHARINDEX`, `PATINDEX`, `COUNT(CASE WHEN ...)`.
-        Use: `if()`, `multiIf()`, `countIf()`, `sumIf()`, `ifNull()`, `toStartOfHour()`, `now() - INTERVAL N DAY`, `positionCaseInsensitive()`, `match()`.
-        If unsure a function exists — don't use it. Always qualify: `lipila_blaze.<table>`.
+                ## ClickHouse SQL Rules (strict)
+                Native ClickHouse only. Banned: `IIIF`, `IIF`, `NVL`, `ISNULL`, `COALESCE` (use `ifNull()`), `DATEDIFF`, `TOP`, `CHARINDEX`, `PATINDEX`, `COUNT(CASE WHEN ...)`.
+                Use: `if()`, `multiIf()`, `countIf()`, `sumIf()`, `ifNull()`, `toStartOfHour()`, `now() - INTERVAL N DAY`, `positionCaseInsensitive()`, `match()`.
+                If unsure a function exists — don't use it. Always qualify: `lipila_blaze.<table>`.
 
-        ## Schema (verify with DESCRIBE before querying)
-        Always run `SHOW TABLES FROM lipila_blaze` first; table names may be prefixed (e.g. `public_transactions`).
-        - **transactions**: reference_id, ip_address, amount, account_number, wallet_id, merchant_id, api_key_id, admin_id, user_id, type (collection/disbursement), status (successful/failed/pending), created_at
-        - **user_activity_logs**: user_email, activity_type, action, ip_address, user_agent, description, status, timestamp, merchant_id
-        - **merchants**: id, name, status, created_at
-        - **wallets**: id, name, balance, merchant_id, status, updated_at
-        - **users**: id, email, phone_number, merchant_id, created_at
-        - **api_keys**: id, merchant_id, status, allowed_ips, created_at
+                {schemaBlock}
 
-        ## Betting Merchants
-        Betting/gaming merchants legitimately disburse 50–200+/hr. Before flagging any velocity pattern, query the merchant's 30-day hourly disbursement history (`toStartOfHour`, `count()`, `INTERVAL 30 DAY`) and use their own avg/max as the baseline. Only flag if the current rate is a meaningful outlier.
+                ## Betting Merchants
+                Betting/gaming merchants legitimately disburse 50–200+/hr. Before flagging any velocity pattern, query the merchant's 30-day hourly disbursement history (`toStartOfHour`, `count()`, `INTERVAL 30 DAY`) and use their own avg/max as the baseline. Only flag if the current rate is a meaningful outlier.
 
-        ## Fraud Patterns
-        {FraudPatternRegistry.ToPromptBlock()}
+                ## Fraud Patterns
+                {FraudPatternRegistry.ToPromptBlock()}
 
-        ## Open Cases
-        You have {casesContext}
-        {openCasesSummary}
+                ## Open Cases
+                You have {casesContext}
+                {openCasesSummary}
 
-        ## This Run
-        UTC: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} (Zambia = UTC+2) | Lookback: {lookbackMinutes} min
+                ## This Run
+                UTC: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} (Zambia = UTC+2) | Lookback: {lookbackMinutes} min
 
-        **Step 0 — Schema discovery.** `SHOW TABLES FROM lipila_blaze`, then `DESCRIBE` each table before querying.
+                **Step 1 — Follow up open cases.** Re-query each; escalate/watch/resolve as appropriate.
 
-        **Step 1 — Follow up open cases.** Re-query each; escalate/watch/resolve as appropriate.
+                **Step 2 — Pattern scan.** Check all {FraudPatternRegistry.GetEnabled().Count()} patterns against data from the last {lookbackMinutes} minutes.
 
-        **Step 2 — Pattern scan.** Check all {FraudPatternRegistry.GetEnabled().Count()} patterns against data from the last {lookbackMinutes} minutes.
+                **Step 2b — Activity log review.** Query user_activity_logs. Flag: foreign/datacenter logins, brute force (failed→success), midnight–5am CAT logins, sensitive actions (wallet/key/merchant edits), internal-IP actions with no portal login. Cross-reference suspicious logins against transactions from same IP/merchant/wallet.
 
-        **Step 2b — Activity log review.** Query user_activity_logs. Flag: foreign/datacenter logins, brute force (failed→success), midnight–5am CAT logins, sensitive actions (wallet/key/merchant edits), internal-IP actions with no portal login. Cross-reference suspicious logins against transactions from same IP/merchant/wallet.
+                **Step 2c — Free investigation.** The registered patterns are a baseline, not a ceiling. You are free — and encouraged — to follow your own instincts. If a query result looks odd, dig deeper. If you notice a pattern not covered by any registered rule, investigate it anyway and surface it as a finding. Examples of things to explore freely:
+                - Unusual merchant behaviour that doesn't fit any named pattern
+                - Correlations between tables that seem structurally suspicious
+                - Timing anomalies (e.g. disbursements seconds after a collection from the same wallet)
+                - Recipient account numbers appearing across multiple unrelated merchants
+                - API keys used from multiple geographically distinct IPs in the same hour
+                - Transactions with suspiciously round amounts dominating a merchant's volume
+                - Any data shape that a human fraud analyst would find worth a second look
+                Trust your judgment. If you see something, investigate it.
 
-        **Step 2c — Free investigation.** The registered patterns are a baseline, not a ceiling. You are free — and encouraged — to follow your own instincts. If a query result looks odd, dig deeper. If you notice a pattern not covered by any registered rule, investigate it anyway and surface it as a finding. Examples of things to explore freely:
-        - Unusual merchant behaviour that doesn't fit any named pattern
-        - Correlations between tables that seem structurally suspicious
-        - Timing anomalies (e.g. disbursements seconds after a collection from the same wallet)
-        - Recipient account numbers appearing across multiple unrelated merchants
-        - API keys used from multiple geographically distinct IPs in the same hour
-        - Transactions with suspiciously round amounts dominating a merchant's volume
-        - Any data shape that a human fraud analyst would find worth a second look
-        Trust your judgment. If you see something, investigate it.
+                **IP rule:** Never display a bare IP. Always call `lookup_ip` first, then show inline: `1.2.3.4 [DATACENTER] (South Africa, Amazon)` or `197.x.x.x (Zambia, Airtel)`. Applies everywhere — query results, cases, alerts.
 
-        **IP rule:** Never display a bare IP. Always call `lookup_ip` first, then show inline: `1.2.3.4 [DATACENTER] (South Africa, Amazon)` or `197.x.x.x (Zambia, Airtel)`. Applies everywhere — query results, cases, alerts.
+                **Step 3 — Observations.** Flag unusual but not necessarily fraudulent signals: sudden activity after dormancy, high failure rates, new merchants with outsized first-day volume, large idle wallets, repeated same-amount same-recipient, after-hours admin actions.
 
-        **Step 3 — Observations.** Flag unusual but not necessarily fraudulent signals: sudden activity after dormancy, high failure rates, new merchants with outsized first-day volume, large idle wallets, repeated same-amount same-recipient, after-hours admin actions.
+                **Step 4 — Case management.** Create/update/resolve cases.
 
-        **Step 4 — Case management.** Create/update/resolve cases.
+                **Step 5 — Alert.** Send alert ONLY if: severity Warning/Critical, open cases needing attention, or a case just resolved. Silent finish if fully clean with no open cases.
+                Follow the send_alert tool format exactly. Empty sections → "None this run." / "No open cases." / "No actions required." Timestamps in CAT. Amounts in ZMW with comma separators.
 
-        **Step 5 — Alert.** Send alert ONLY if: severity Warning/Critical, open cases needing attention, or a case just resolved. Silent finish if fully clean with no open cases.
-        Follow the send_alert tool format exactly. Empty sections → "None this run." / "No open cases." / "No actions required." Timestamps in CAT. Amounts in ZMW with comma separators.
+                ## Tone
+                Observations only — never verdicts. Use "appears to", "may indicate", "pattern suggests". Findings are for human review.
 
-        ## Tone
-        Observations only — never verdicts. Use "appears to", "may indicate", "pattern suggests". Findings are for human review.
-
-        ## Query Rules
-        `lipila_blaze.<table>` always. Time filter: `created_at >= now() - INTERVAL {lookbackMinutes} MINUTE`. Max 50 rows. Single quotes for strings. On error: re-DESCRIBE and retry.
-        """;
+                ## Query Rules
+                `lipila_blaze.<table>` always. Time filter: `created_at >= now() - INTERVAL {lookbackMinutes} MINUTE`. Max 50 rows. Single quotes for strings. On error: re-DESCRIBE and retry.
+                """;
     }
 
     public async Task RunAsync()
@@ -98,15 +90,23 @@ public class FraudAgent(
         var staleDays = config.GetValue("Sentinel:StaleCase:ThresholdDays", 7);
         var staleClosed = await caseStore.AutoResolveStaleAsync(staleDays);
         if (staleClosed > 0)
-            logger.LogInformation("Auto-resolved {Count} stale case(s) (threshold: {Days} days)", staleClosed, staleDays);
+            logger.LogInformation("Auto-resolved {Count} stale case(s) (threshold: {Days} days)", staleClosed,
+                staleDays);
 
-        // Load open cases from Redis memory
-        var openCasesSummary = await caseStore.GetOpenCasesSummaryAsync();
-        var openCases = await caseStore.GetOpenCasesAsync();
+        // Load open cases and schema concurrently
+        var openCasesSummaryTask = caseStore.GetOpenCasesSummaryAsync();
+        var openCasesTask = caseStore.GetOpenCasesAsync();
+        var schemaBlockTask = schemaLoader.GetSchemaBlockAsync();
+
+        await Task.WhenAll(openCasesSummaryTask, openCasesTask, schemaBlockTask);
+
+        var openCasesSummary = await openCasesSummaryTask;
+        var openCases = await openCasesTask;
+        var schemaBlock = await schemaBlockTask;
 
         logger.LogInformation("Loaded {Count} open cases", openCases.Count);
 
-        var systemPrompt = BuildSystemPrompt(openCasesSummary, lookback);
+        var systemPrompt = BuildSystemPrompt(openCasesSummary, lookback, schemaBlock);
 
         // Inject follow-up queries from open cases into the first user message
         var followUpContext = openCases.Count > 0 && openCases.Any(c => c.FollowUpQueries.Count > 0)
@@ -140,13 +140,14 @@ public class FraudAgent(
             messages.Add(new AssistantChatMessage(completion));
 
             // ── LLM response logging ──────────────────────────────────────────
-            var inputTokens  = completion.Usage?.InputTokenCount  ?? 0;
+            var inputTokens = completion.Usage?.InputTokenCount ?? 0;
             var outputTokens = completion.Usage?.OutputTokenCount ?? 0;
-            var totalTokens  = completion.Usage?.TotalTokenCount  ?? 0;
+            var totalTokens = completion.Usage?.TotalTokenCount ?? 0;
 
             logger.LogInformation(
                 "[Run:{RunId}] Iteration {N}: finish={Reason} tools={ToolCount} tokens={Total} (in={In} out={Out})",
-                runId, iteration, completion.FinishReason, completion.ToolCalls.Count, totalTokens, inputTokens, outputTokens);
+                runId, iteration, completion.FinishReason, completion.ToolCalls.Count, totalTokens, inputTokens,
+                outputTokens);
 
             // Log any text content the LLM produced (reasoning / narration)
             var textContent = string.Concat((completion.Content ?? [])
@@ -170,9 +171,11 @@ public class FraudAgent(
                         runId, toolCall.FunctionName, argsPreview);
 
                     var result = await ExecuteToolAsync(toolCall, runId);
-                    
+
+                    var resultPreview = result.Length > 500 ? result[..500] + "…" : result;
+
                     logger.LogInformation("[Run:{RunId}] Tool result: {Tool} → {Result}",
-                        runId, toolCall.FunctionName, result);
+                        runId, toolCall.FunctionName, resultPreview);
 
                     messages.Add(new ToolChatMessage(toolCall.Id, result));
                     if (toolCall.FunctionName == "send_alert") alertSent = true;
@@ -207,7 +210,8 @@ public class FraudAgent(
             // Only send the fallback email if the run was genuinely incomplete (no alert and hit the ceiling)
             if (!alertSent)
             {
-                logger.LogWarning("Run {RunId} hit iteration limit with no alert sent — sending ops notification", runId);
+                logger.LogWarning("Run {RunId} hit iteration limit with no alert sent — sending ops notification",
+                    runId);
                 await email.SendAsync(
                     "Fraud Detector: Run Incomplete",
                     $"Run {runId} reached the iteration limit ({maxIterations} steps) without completing. " +

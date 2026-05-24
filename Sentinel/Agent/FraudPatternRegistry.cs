@@ -250,25 +250,29 @@ public static class FraudPatternRegistry
     public static void Disable(int id)
     {
         var idx = All.FindIndex(p => p.Id == id);
-        if (idx >= 0) All[idx] = All[idx] with { EnabledByDefault = false };
+        if (idx >= 0)
+        {
+            All[idx] = All[idx] with { EnabledByDefault = false };
+            _promptBlockCache = new Lazy<string>(BuildPromptBlock); // invalidate on change
+        }
     }
 
-    /// <summary>Formats all enabled patterns as a numbered prompt block.</summary>
-    public static string ToPromptBlock()
+    private static Lazy<string> _promptBlockCache = new(BuildPromptBlock);
+
+    public static string ToPromptBlock() => _promptBlockCache.Value;
+
+    private static string BuildPromptBlock()
     {
         var sb = new System.Text.StringBuilder();
         foreach (var p in GetEnabled())
         {
             sb.AppendLine($"        {p.Id}. **{p.Name}**");
-            
+
             foreach (var line in p.Description.Trim().Split('\n'))
-            {
                 sb.AppendLine($"           {line.Trim()}");
-            }
 
             sb.AppendLine();
         }
-
         return sb.ToString();
     }
 }
