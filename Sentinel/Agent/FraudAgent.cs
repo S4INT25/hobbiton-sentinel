@@ -49,7 +49,7 @@ public class FraudAgent(
 
                 **Step 2 — Pattern scan.** Check all {FraudPatternRegistry.GetEnabled().Count()} patterns against data from the last {lookbackMinutes} minutes.
 
-                **Step 2b — Activity log review.** Query user_activity_logs. Flag: foreign/datacenter logins, brute force (failed→success), midnight–5am CAT logins, sensitive actions (wallet/key/merchant edits), internal-IP actions with no portal login. Cross-reference suspicious logins against transactions from same IP/merchant/wallet.
+                **Step 2b — Activity log review.** Query user_activity_logs. Flag: datacenter/hosting logins, brute force (failed→success), midnight–5am CAT logins, sensitive actions (wallet/key/merchant edits), internal-IP actions with no portal login. Cross-reference suspicious logins against transactions from same IP/merchant/wallet.
 
                 **Step 2c — Free investigation.** The registered patterns are a baseline, not a ceiling. You are free — and encouraged — to follow your own instincts. If a query result looks odd, dig deeper. If you notice a pattern not covered by any registered rule, investigate it anyway and surface it as a finding. Examples of things to explore freely:
                 - Unusual merchant behaviour that doesn't fit any named pattern
@@ -131,6 +131,8 @@ public class FraudAgent(
         var alertSent = false;
         var earlyWarningSent = false;
         var earlyWarningThreshold = (int)(maxIterations * 0.75);
+        var totalInputTokens = 0;
+        var totalOutputTokens = 0;
 
         while (iteration++ < maxIterations)
         {
@@ -158,6 +160,8 @@ public class FraudAgent(
             var inputTokens = completion.Usage?.InputTokenCount ?? 0;
             var outputTokens = completion.Usage?.OutputTokenCount ?? 0;
             var totalTokens = completion.Usage?.TotalTokenCount ?? 0;
+            totalInputTokens += inputTokens;
+            totalOutputTokens += outputTokens;
 
             logger.LogInformation(
                 "[Run:{RunId}] Iteration {N}: finish={Reason} tools={ToolCount} tokens={Total} (in={In} out={Out})",
@@ -219,6 +223,8 @@ public class FraudAgent(
             }
             var summaryResponse = await chatClient.CompleteChatAsync(messages, options);
             var summaryCompletion = summaryResponse.Value;
+            totalInputTokens += summaryCompletion.Usage?.InputTokenCount ?? 0;
+            totalOutputTokens += summaryCompletion.Usage?.OutputTokenCount ?? 0;
             messages.Add(new AssistantChatMessage(summaryCompletion));
 
             foreach (var toolCall in summaryCompletion.ToolCalls)
@@ -249,7 +255,9 @@ public class FraudAgent(
             logger.LogInformation("Run {RunId} completed cleanly — no alert warranted", runId);
         }
 
-        logger.LogInformation("Run {RunId} completed after {N} iterations", runId, iteration);
+        logger.LogInformation(
+            "[Run:{RunId}] Completed — {N} iterations | tokens: {TotalTokens} total (in={In} out={Out})",
+            runId, iteration, totalInputTokens + totalOutputTokens, totalInputTokens, totalOutputTokens);
     }
 
     private async Task<string> ExecuteToolAsync(ChatToolCall toolCall, string runId)

@@ -222,12 +222,63 @@ public static class FraudPatternRegistry
             """,
             PatternCategory.IdentityAndAccess),
 
-        new(25, "Cross-border IP on domestic-only merchant",
+        new(26, "Wallet top-up then immediate full drain",
             """
-            A merchant whose business is domestic initiating API calls or portal sessions from
-            foreign IPs not associated with known app servers or CDNs.
+            A wallet receives a top-up (collection or manual credit) and then disburses 80%+ of
+            that amount within a short window (e.g. 10–30 minutes). No legitimate commerce
+            pattern drains a wallet immediately after funding. Flag the deposit→drain cycle as a
+            unit — compare total disbursements in the window against the incoming credit amount.
+            Classic indicator of money laundering or internal float theft.
             """,
-            PatternCategory.NetworkAnomaly),
+            PatternCategory.TransactionAnomaly),
+
+        new(27, "Test transaction before large disbursement",
+            """
+            A very small disbursement (ZMW 1–50) to a recipient account, followed within
+            minutes by a significantly larger disbursement to the same account. Fraudsters probe
+            whether an account is live and receiving before committing the main transfer.
+            Flag the pair as a unit — the small transaction is the precursor, not an isolated event.
+            """,
+            PatternCategory.TransactionAnomaly),
+
+        new(28, "Sequential recipient phone numbers",
+            """
+            Multiple disbursement recipients whose mobile numbers differ only in the last 2–4
+            digits and were added or paid within the same time window (e.g. 0961000001 through
+            0961000012). Bulk mule accounts are often registered in numeric runs.
+            Look for groups of 3+ sequential or near-sequential numbers receiving payments
+            from the same merchant or wallet in one run.
+            """,
+            PatternCategory.TransactionAnomaly),
+
+        new(29, "API key sudden origin IP change",
+            """
+            An API key with 30+ days of consistent transaction history from a stable set of
+            source IPs suddenly initiates transactions from a new, previously unseen IP.
+            This is a stronger signal than a dormant key (pattern 17) because the key was in
+            active legitimate use — the origin shift indicates possible key theft or compromise.
+            Compare the new IP against the merchant's historical IP set before flagging.
+            """,
+            PatternCategory.AccountCompromise),
+
+        new(30, "Merchant self-disbursement",
+            """
+            Disbursements from a merchant wallet to mobile numbers that match the registered
+            director, owner, or contact details of that same merchant. May indicate internal
+            fraud, embezzlement, or a merchant siphoning collected funds before settlement.
+            Cross-reference recipient numbers against merchant registration/contact fields.
+            """,
+            PatternCategory.MerchantOnboarding),
+
+        new(31, "Disbursement against unconfirmed collection",
+            """
+            A disbursement is issued by a merchant within a short window after a collection
+            attempt that is still in a pending, processing, or failed state — meaning funds have
+            not actually cleared. Exploits async gaps between collection confirmation and
+            disbursement release controls. Check that the collection linked to (or preceding)
+            a disbursement has a confirmed/successful status before the disbursement was created.
+            """,
+            PatternCategory.DataIntegrity),
     ];
 
     /// <summary>Returns all enabled patterns.</summary>

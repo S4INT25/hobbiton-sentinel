@@ -77,9 +77,12 @@ try
         builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
             ConnectionMultiplexer.Connect(redisConnectionString!));
         builder.Services.AddSingleton<ICaseStore, CaseStore>();
+        // L2 distributed cache — Redis as persistent cache storage
+        builder.Services.AddStackExchangeRedisCache(o => o.Configuration = redisConnectionString!);
         builder.Services.AddFusionCache()
             .WithSerializer(new FusionCacheSystemTextJsonSerializer())
-            .WithStackExchangeRedisBackplane(o => o.Configuration = redisConnectionString!)
+            .WithRegisteredDistributedCache()                                                     // L2: Redis IDistributedCache
+            .WithStackExchangeRedisBackplane(o => o.Configuration = redisConnectionString!)       // pub/sub L1 sync
             .AsHybridCache();
         builder.Services.AddHangfire((sp, config) =>
             config.UseRedisStorage(sp.GetRequiredService<IConnectionMultiplexer>()));

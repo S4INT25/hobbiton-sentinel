@@ -107,7 +107,6 @@ public class IpLookupClient(HttpClient http, IFusionCache cache, ILogger<IpLooku
                 var flags = new List<string>();
                 if (proxy) flags.Add("PROXY/VPN");
                 if (hosting) flags.Add("DATACENTER/HOSTING");
-                if (cc != "ZM") flags.Add($"FOREIGN ({cc})");
 
                 var flagStr = flags.Count > 0 ? $" [{string.Join(", ", flags)}]" : "";
                 var sb = new StringBuilder();
