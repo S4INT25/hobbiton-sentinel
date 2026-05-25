@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Sentinel.Infrastructure;
 using Sentinel.Memory;
@@ -79,6 +80,7 @@ public class FraudAgent(
                 """;
     }
 
+    [Experimental("SCME0001")]
     public async Task RunAsync()
     {
         var runId = DateTime.UtcNow.ToString("yyyyMMddHHmm");
@@ -136,7 +138,13 @@ public class FraudAgent(
 
         while (iteration++ < maxIterations)
         {
-            var options = new ChatCompletionOptions { MaxOutputTokenCount = 4096, Temperature = 0.1f };
+            var options = new ChatCompletionOptions
+            {
+                MaxOutputTokenCount = 4096,
+                Temperature = 0.1f,
+            };
+            options.Patch.Set("$.thinking"u8, BinaryData.FromObjectAsJson(new { type = "disabled" }));
+
             foreach (var tool in tools) options.Tools.Add(tool);
 
             // Early warning at 75% — give the agent a chance to wrap up gracefully
@@ -193,11 +201,9 @@ public class FraudAgent(
                         runId, toolCall.FunctionName, argsPreview);
 
                     var result = await ExecuteToolAsync(toolCall, runId);
+                    
 
-                    var resultPreview = result.Length > 300 ? result[..300] + "…" : result;
-
-                    logger.LogInformation("[Run:{RunId}] Tool result: {Tool} → {Result}", runId, toolCall.FunctionName,
-                        resultPreview);
+                    logger.LogInformation("[Run:{RunId}] Tool result: {Tool}", runId, toolCall.FunctionName);
 
                     messages.Add(new ToolChatMessage(toolCall.Id, result));
                     if (toolCall.FunctionName == "send_alert") alertSent = true;

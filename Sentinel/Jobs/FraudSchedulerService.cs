@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Hangfire;
 
 namespace Sentinel.Jobs;
@@ -7,6 +8,7 @@ public class FraudSchedulerService(
     IConfiguration config,
     ILogger<FraudSchedulerService> logger) : IHostedService
 {
+    [Experimental("SCME0001")]
     public Task StartAsync(CancellationToken cancellationToken)
     {
         var cron = config["Sentinel:CronSchedule"] ?? Cron.Hourly();
