@@ -167,11 +167,16 @@ public class FraudAgent(
             var textContent = string.Concat((completion.Content ?? [])
                 .Where(p => p.Kind == ChatMessageContentPartKind.Text)
                 .Select(p => p.Text));
+
             if (!string.IsNullOrWhiteSpace(textContent))
-                logger.LogDebug("[Run:{RunId}] LLM text: {Text}", runId, textContent);
+            {
+                logger.LogInformation("[Run:{RunId}] LLM text: {Text}", runId, textContent);
+            }
 
             if (completion.FinishReason == ChatFinishReason.Stop)
+            {
                 break;
+            }
 
             if (completion.FinishReason == ChatFinishReason.ToolCalls)
             {
@@ -185,9 +190,10 @@ public class FraudAgent(
 
                     var result = await ExecuteToolAsync(toolCall, runId);
 
-                    var resultPreview = result.Length > 500 ? result[..500] + "…" : result;
-                    logger.LogInformation("[Run:{RunId}] Tool result: {Tool} → {Result}",
-                        runId, toolCall.FunctionName, resultPreview);
+                    var resultPreview = result.Length > 300 ? result[..300] + "…" : result;
+
+                    logger.LogInformation("[Run:{RunId}] Tool result: {Tool} → {Result}", runId, toolCall.FunctionName,
+                        resultPreview);
 
                     messages.Add(new ToolChatMessage(toolCall.Id, result));
                     if (toolCall.FunctionName == "send_alert") alertSent = true;
@@ -207,7 +213,10 @@ public class FraudAgent(
                 "with a complete report using the EXACT structure defined in the send_alert tool. " +
                 "If the run was fully clean with no findings and no open cases, do NOT call send_alert — just stop."));
 
-            foreach (var tool in tools) options.Tools.Add(tool);
+            foreach (var tool in tools)
+            {
+                options.Tools.Add(tool);
+            }
             var summaryResponse = await chatClient.CompleteChatAsync(messages, options);
             var summaryCompletion = summaryResponse.Value;
             messages.Add(new AssistantChatMessage(summaryCompletion));
@@ -216,7 +225,11 @@ public class FraudAgent(
             {
                 var result = await ExecuteToolAsync(toolCall, runId);
                 logger.LogInformation("Max-iteration summary tool: {Tool} → {Result}", toolCall.FunctionName, result);
-                if (toolCall.FunctionName == "send_alert") alertSent = true;
+                if (toolCall.FunctionName == "send_alert")
+                {
+                    alertSent = true;
+                    break;
+                }
             }
 
             // Only send the fallback email if the run was genuinely incomplete (no alert and hit the ceiling)
@@ -284,7 +297,7 @@ public class FraudAgent(
 
         // Fallback: legacy single "query" string
         if (queries.Count == 0 && root.TryGetProperty("query", out var queryEl)
-            && queryEl.ValueKind == JsonValueKind.String)
+                               && queryEl.ValueKind == JsonValueKind.String)
             queries = [queryEl.GetString()!];
 
         if (queries.Count == 0)
