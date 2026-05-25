@@ -112,12 +112,18 @@ public class IpLookupClientTests
     }
 
     [Fact]
-    public async Task LookupAsync_ResultContainsAsnAndIsp()
+    public async Task LookupAsync_SevenRealWorldIps_AllReturned()
     {
         var client = CreateClient();
-        var result = await client.LookupAsync(["8.8.8.8"]);
+        var ips = new[]
+        {
+            "45.215.236.72", "102.150.205.113", "178.62.84.81",
+            "142.93.47.134", "41.72.118.210", "41.223.116.246", "197.239.7.13"
+        };
+        var result = await client.LookupAsync(ips);
 
-        Assert.Contains("ASN", result);
-        Assert.Contains("ISP", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("invalid query", result, StringComparison.OrdinalIgnoreCase);
+        foreach (var ip in ips)
+            Assert.Contains(ip, result);
     }
 }

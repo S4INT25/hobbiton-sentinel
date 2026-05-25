@@ -9,21 +9,23 @@ public static class FraudAgentTools
         ChatTool.CreateFunctionTool(
             functionName: "run_sql",
             functionDescription: """
-                Execute a read-only SELECT query against the ClickHouse database.
-                Returns results as JSON. Use this to investigate transactions,
-                user activity, merchants, and wallets.
-                Always include a LIMIT clause to avoid large payloads.
+                Execute one or more read-only ClickHouse queries.
+                ALWAYS use the "queries" array — even for a single query.
+                All queries in the array run in parallel and results are returned together, labeled by index.
+                This saves iterations. Never call run_sql multiple times when you can batch them here.
+                Always include LIMIT on each query.
                 """,
             functionParameters: BinaryData.FromString("""
                 {
                     "type": "object",
                     "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "A valid ClickHouse SELECT SQL query. Must start with SELECT or WITH. Always include LIMIT."
+                        "queries": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "One or more ClickHouse SQL queries to run in parallel. Always use this — even for a single query. Include LIMIT on each."
                         }
                     },
-                    "required": ["query"]
+                    "required": ["queries"]
                 }
                 """)
         ),

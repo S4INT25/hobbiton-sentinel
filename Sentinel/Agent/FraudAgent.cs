@@ -74,7 +74,8 @@ public class FraudAgent(
                 Observations only — never verdicts. Use "appears to", "may indicate", "pattern suggests". Findings are for human review.
 
                 ## Query Rules
-                `lipila_blaze.<table>` always. Time filter: `created_at >= now() - INTERVAL {lookbackMinutes} MINUTE`. Max 50 rows. Single quotes for strings. On error: re-DESCRIBE and retry.
+                - Always qualify: `lipila_blaze.<table>`. Time filter: `created_at >= now() - INTERVAL {lookbackMinutes} MINUTE`. Max 50 rows per query. Single quotes for strings. On error: re-DESCRIBE and retry.
+                - **ALWAYS use the `queries` array — even for a single query.** Never call `run_sql` more than once in a row when the queries are independent. Batch everything you need into one call. This is mandatory, not optional.
                 """;
     }
 
@@ -128,18 +129,32 @@ public class FraudAgent(
         var iteration = 0;
         var maxIterations = config.GetValue("Sentinel:MaxIterations", 60);
         var alertSent = false;
+        var earlyWarningSent = false;
+        var earlyWarningThreshold = (int)(maxIterations * 0.75);
 
         while (iteration++ < maxIterations)
         {
             var options = new ChatCompletionOptions { MaxOutputTokenCount = 4096, Temperature = 0.1f };
             foreach (var tool in tools) options.Tools.Add(tool);
 
+            // Early warning at 75% — give the agent a chance to wrap up gracefully
+            if (!earlyWarningSent && iteration >= earlyWarningThreshold)
+            {
+                earlyWarningSent = true;
+                logger.LogWarning("[Run:{RunId}] Approaching iteration limit ({N}/{Max}) — injecting wrap-up warning",
+                    runId, iteration, maxIterations);
+                messages.Add(new UserChatMessage(
+                    $"⚠️ You have used {iteration - 1} of {maxIterations} allowed steps. " +
+                    $"You have approximately {maxIterations - iteration + 1} steps remaining. " +
+                    "Prioritise completing your current investigation, then call send_alert (if warranted) and stop. " +
+                    "Do not start new broad queries — focus only on what is needed to close open threads."));
+            }
+
             var response = await chatClient.CompleteChatAsync(messages, options);
 
             var completion = response.Value;
             messages.Add(new AssistantChatMessage(completion));
 
-            // ── LLM response logging ──────────────────────────────────────────
             var inputTokens = completion.Usage?.InputTokenCount ?? 0;
             var outputTokens = completion.Usage?.OutputTokenCount ?? 0;
             var totalTokens = completion.Usage?.TotalTokenCount ?? 0;
@@ -149,7 +164,6 @@ public class FraudAgent(
                 runId, iteration, completion.FinishReason, completion.ToolCalls.Count, totalTokens, inputTokens,
                 outputTokens);
 
-            // Log any text content the LLM produced (reasoning / narration)
             var textContent = string.Concat((completion.Content ?? [])
                 .Where(p => p.Kind == ChatMessageContentPartKind.Text)
                 .Select(p => p.Text));
@@ -163,7 +177,6 @@ public class FraudAgent(
             {
                 foreach (var toolCall in completion.ToolCalls)
                 {
-                    // Truncate large args for readability (SQL queries can be long)
                     var args = toolCall.FunctionArguments.ToString();
                     var argsPreview = args.Length > 300 ? args[..300] + "…" : args;
 
@@ -173,7 +186,6 @@ public class FraudAgent(
                     var result = await ExecuteToolAsync(toolCall, runId);
 
                     var resultPreview = result.Length > 500 ? result[..500] + "…" : result;
-
                     logger.LogInformation("[Run:{RunId}] Tool result: {Tool} → {Result}",
                         runId, toolCall.FunctionName, resultPreview);
 
@@ -236,21 +248,16 @@ public class FraudAgent(
 
             return toolCall.FunctionName switch
             {
-                "run_sql" => await ch.QueryAsync(
-                    root.GetProperty("query").GetString()!),
-
+                "run_sql" => await ExecuteSqlAsync(root),
                 "create_case" => await CreateCaseAsync(root, runId),
                 "update_case" => await UpdateCaseAsync(root, runId),
                 "resolve_case" => await ResolveCaseAsync(root),
-
                 "send_alert" => await email.SendAsync(
                     root.GetProperty("subject").GetString()!,
                     root.GetProperty("body").GetString()!,
                     root.TryGetProperty("severity", out var sev) ? sev.GetString()! : "watching"),
-
                 "lookup_ip" => await ipLookup.LookupAsync(
-                    JsonToStringList(root.GetProperty("ips"))),
-
+                    JsonHelpers.ToIpList(root.GetProperty("ips"))),
                 _ => $"Unknown tool: {toolCall.FunctionName}"
             };
         }
@@ -259,6 +266,38 @@ public class FraudAgent(
             logger.LogError(ex, "Tool execution failed: {Tool}", toolCall.FunctionName);
             return $"Tool error: {ex.Message}";
         }
+    }
+
+    private async Task<string> ExecuteSqlAsync(JsonElement root)
+    {
+        List<string> queries = [];
+
+        if (root.TryGetProperty("queries", out var queriesEl))
+        {
+            queries = queriesEl.ValueKind switch
+            {
+                JsonValueKind.Array => JsonHelpers.ToStringList(queriesEl),
+                JsonValueKind.String => JsonHelpers.ParseDelimitedString(queriesEl.GetString()),
+                _ => []
+            };
+        }
+
+        // Fallback: legacy single "query" string
+        if (queries.Count == 0 && root.TryGetProperty("query", out var queryEl)
+            && queryEl.ValueKind == JsonValueKind.String)
+            queries = [queryEl.GetString()!];
+
+        if (queries.Count == 0)
+            return "Error: provide a 'queries' array of SQL strings.";
+
+        if (queries.Count == 1)
+            return await ch.QueryAsync(queries[0]);
+
+        var tasks = queries.Select((q, i) => ch.QueryAsync(q).ContinueWith(t =>
+            $"--- Query {i + 1} ---\n{t.Result}"));
+
+        var results = await Task.WhenAll(tasks);
+        return string.Join("\n\n", results);
     }
 
     private async Task<string> CreateCaseAsync(JsonElement root, string runId)
@@ -273,10 +312,10 @@ public class FraudAgent(
         };
 
         if (root.TryGetProperty("affected_entities", out var entities))
-            fraudCase.AffectedEntities = JsonToStringList(entities);
+            fraudCase.AffectedEntities = JsonHelpers.ToStringList(entities);
 
         if (root.TryGetProperty("follow_up_queries", out var queries))
-            fraudCase.FollowUpQueries = JsonToStringList(queries);
+            fraudCase.FollowUpQueries = JsonHelpers.ToStringList(queries);
 
         fraudCase.Evidence.Add(new CaseEvidence
         {
@@ -306,7 +345,7 @@ public class FraudAgent(
             fraudCase.Status = status.GetString()!;
 
         if (root.TryGetProperty("follow_up_queries", out var queries))
-            fraudCase.FollowUpQueries = JsonToStringList(queries);
+            fraudCase.FollowUpQueries = JsonHelpers.ToStringList(queries);
 
         fraudCase.Evidence.Add(new CaseEvidence
         {
@@ -329,26 +368,4 @@ public class FraudAgent(
         await caseStore.ResolveCaseAsync(caseId, resolution);
         return $"Case {caseId} resolved: {resolution}";
     }
-
-    /// <summary>
-    /// Safely converts a JsonElement to a list of non-empty strings.
-    /// Handles: JSON array of strings, plain JSON string (newline-separated), or any other kind (returns empty).
-    /// Array elements that are null, non-string, or empty are silently skipped.
-    /// </summary>
-    private static List<string> JsonToStringList(JsonElement el) => el.ValueKind switch
-    {
-        JsonValueKind.Array => el.EnumerateArray()
-            .Where(e => e.ValueKind == JsonValueKind.String)
-            .Select(e => e.GetString())
-            .Where(s => !string.IsNullOrWhiteSpace(s))
-            .Select(s => s!)
-            .ToList(),
-
-        JsonValueKind.String => (el.GetString() ?? "")
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(s => !string.IsNullOrWhiteSpace(s))
-            .ToList(),
-
-        _ => []
-    };
 }

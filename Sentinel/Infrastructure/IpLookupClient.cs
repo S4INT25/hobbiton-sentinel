@@ -10,13 +10,16 @@ namespace Sentinel.Infrastructure;
 /// </summary>
 public class IpLookupClient(HttpClient http, IFusionCache cache, ILogger<IpLookupClient> logger)
 {
-    private const string BatchUrl = "http://ip-api.com/batch?fields=query,country,countryCode,regionName,city,isp,org,as,proxy,hosting,status,message";
+    private const string BatchUrl =
+        "http://ip-api.com/batch?fields=query,country,countryCode,regionName,city,isp,org,as,proxy,hosting,status,message";
 
     public async Task<string> LookupAsync(IEnumerable<string> ips)
     {
         var ipList = ips
+            // Each entry might itself be comma/semicolon-separated — flatten
+            .SelectMany(ip => ip.Split([',', ';', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries))
             .Select(ip => ip.Replace("::ffff:", "").Trim())
-            .Where(ip => !string.IsNullOrWhiteSpace(ip))
+            .Where(ip => !string.IsNullOrWhiteSpace(ip) && IsPlausibleIp(ip))
             .Distinct()
             .Take(10)
             .ToList();
@@ -50,7 +53,8 @@ public class IpLookupClient(HttpClient http, IFusionCache cache, ILogger<IpLooku
 
         var sb = new StringBuilder();
         foreach (var ip in ipList)
-            if (results.TryGetValue(ip, out var line)) sb.Append(line);
+            if (results.TryGetValue(ip, out var line))
+                sb.Append(line);
 
         logger.LogInformation("IP lookup: {Total} IPs ({Cached} cached, {Fresh} fetched)",
             ipList.Count, ipList.Count - misses.Count, misses.Count);
@@ -64,12 +68,14 @@ public class IpLookupClient(HttpClient http, IFusionCache cache, ILogger<IpLooku
         try
         {
             var payload = JsonSerializer.Serialize(ips.Select(ip => new { query = ip }));
-            var response = await http.PostAsync(BatchUrl, new StringContent(payload, Encoding.UTF8, "application/json"));
+            var response =
+                await http.PostAsync(BatchUrl, new StringContent(payload, Encoding.UTF8, "application/json"));
             var content = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogWarning("ip-api.com returned {Status}: {Body}", response.StatusCode, content[..Math.Min(200, content.Length)]);
+                logger.LogWarning("ip-api.com returned {Status}: {Body}", response.StatusCode,
+                    content[..Math.Min(200, content.Length)]);
                 foreach (var ip in ips)
                     output[ip] = $"- {ip}: lookup failed ({response.StatusCode})\n";
                 return output;
@@ -78,8 +84,8 @@ public class IpLookupClient(HttpClient http, IFusionCache cache, ILogger<IpLooku
             using var doc = JsonDocument.Parse(content);
             foreach (var entry in doc.RootElement.EnumerateArray())
             {
-                var ip     = entry.TryGetProperty("query",       out var q)   ? q.GetString()  ?? "?" : "?";
-                var status = entry.TryGetProperty("status",      out var st)  ? st.GetString() ?? ""  : "";
+                var ip = entry.TryGetProperty("query", out var q) ? q.GetString() ?? "?" : "?";
+                var status = entry.TryGetProperty("status", out var st) ? st.GetString() ?? "" : "";
 
                 if (status == "fail")
                 {
@@ -88,18 +94,18 @@ public class IpLookupClient(HttpClient http, IFusionCache cache, ILogger<IpLooku
                     continue;
                 }
 
-                var country = entry.TryGetProperty("country",     out var c)   ? c.GetString()   : "?";
-                var cc      = entry.TryGetProperty("countryCode", out var ccc) ? ccc.GetString() : "?";
-                var region  = entry.TryGetProperty("regionName",  out var r)   ? r.GetString()   : "?";
-                var city    = entry.TryGetProperty("city",        out var ci)  ? ci.GetString()  : "?";
-                var isp     = entry.TryGetProperty("isp",         out var i)   ? i.GetString()   : "?";
-                var org     = entry.TryGetProperty("org",         out var o)   ? o.GetString()   : "?";
-                var asn     = entry.TryGetProperty("as",          out var a)   ? a.GetString()   : "?";
-                var proxy   = entry.TryGetProperty("proxy",       out var px)  && px.GetBoolean();
-                var hosting = entry.TryGetProperty("hosting",     out var h)   && h.GetBoolean();
+                var country = entry.TryGetProperty("country", out var c) ? c.GetString() : "?";
+                var cc = entry.TryGetProperty("countryCode", out var ccc) ? ccc.GetString() : "?";
+                var region = entry.TryGetProperty("regionName", out var r) ? r.GetString() : "?";
+                var city = entry.TryGetProperty("city", out var ci) ? ci.GetString() : "?";
+                var isp = entry.TryGetProperty("isp", out var i) ? i.GetString() : "?";
+                var org = entry.TryGetProperty("org", out var o) ? o.GetString() : "?";
+                var asn = entry.TryGetProperty("as", out var a) ? a.GetString() : "?";
+                var proxy = entry.TryGetProperty("proxy", out var px) && px.GetBoolean();
+                var hosting = entry.TryGetProperty("hosting", out var h) && h.GetBoolean();
 
                 var flags = new List<string>();
-                if (proxy)   flags.Add("PROXY/VPN");
+                if (proxy) flags.Add("PROXY/VPN");
                 if (hosting) flags.Add("DATACENTER/HOSTING");
                 if (cc != "ZM") flags.Add($"FOREIGN ({cc})");
 
@@ -118,6 +124,11 @@ public class IpLookupClient(HttpClient http, IFusionCache cache, ILogger<IpLooku
             foreach (var ip in ips)
                 output[ip] = $"- {ip}: lookup error — {ex.Message}\n";
         }
+
         return output;
     }
+    
+    private static bool IsPlausibleIp(string s) =>
+        s.Length <= 45 && (s.Contains('.') || s.Contains(':')) &&
+        !s.Any(c => char.IsLetter(c) && c != ':');
 }

@@ -23,14 +23,6 @@ public static class FraudPatternRegistry
 {
     private static readonly List<FraudPattern> All =
     [
-        new(1, "Crafted reference IDs",
-            """
-            Legitimate gateway generates proper UUIDs. Fraud: hand-crafted prefixes with a shared
-            suffix across multiple transactions, e.g. "pay001-e6e5-4527-971e-f50bcc1c2a11",
-            "pay002-e6e5-4527-971e-f50bcc1c2a11".
-            """,
-            PatternCategory.DataIntegrity),
-
         new(2, "Unverified merchant disbursing",
             """
             Merchants in awaiting_verification or suspended status should never disburse.
