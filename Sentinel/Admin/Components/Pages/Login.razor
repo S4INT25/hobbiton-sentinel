@@ -1,9 +1,7 @@
 @page "/admin/login"
 @layout EmptyLayout
-@inject IUserStore UserStore
-@inject IAuditLogStore AuditStore
+@inject IJSRuntime JS
 @inject NavigationManager Navigation
-@inject IHttpContextAccessor HttpContextAccessor
 @attribute [AllowAnonymous]
 
 <PageTitle>Sign in — Sentinel</PageTitle>
@@ -54,53 +52,25 @@
 
     private async Task HandleLogin()
     {
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password)) return;
+
         error = null;
         isLoading = true;
 
-        var user = await UserStore.GetByUsernameAsync(username);
-        if (user == null || !user.IsActive || !BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
+        // POST credentials from the browser via JS fetch so the Set-Cookie header
+        // is applied to the browser's cookie jar. Blazor Server's event handlers
+        // run server-side over WebSocket and have no access to HttpContext for SignInAsync.
+        var ok = await JS.InvokeAsync<bool>("sentinelAuth.login", username, password);
+
+        if (ok)
+        {
+            // Force a full HTTP reload so Blazor picks up the new auth cookie
+            Navigation.NavigateTo("/admin", forceLoad: true);
+        }
+        else
         {
             error = "Invalid username or password";
-            await AuditStore.LogAsync(new AuditLog
-            {
-                Action = "login_failed",
-                ResourceType = "auth",
-                ResourceId = username,
-                Username = username,
-                IpAddress = HttpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? ""
-            });
             isLoading = false;
-            return;
         }
-
-        var claims = new List<System.Security.Claims.Claim>
-        {
-            new(System.Security.Claims.ClaimTypes.NameIdentifier, user.Id),
-            new(System.Security.Claims.ClaimTypes.Name, user.Username),
-            new(System.Security.Claims.ClaimTypes.Role, user.Role),
-            new("display_name", user.DisplayName)
-        };
-        var identity = new System.Security.Claims.ClaimsIdentity(claims,
-            Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme);
-        var principal = new System.Security.Claims.ClaimsPrincipal(identity);
-
-        var httpContext = HttpContextAccessor.HttpContext!;
-        await Microsoft.AspNetCore.Authentication.AuthenticationHttpContextExtensions.SignInAsync(
-            httpContext,
-            Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme,
-            principal);
-        await UserStore.UpdateLastLoginAsync(user.Id);
-
-        await AuditStore.LogAsync(new AuditLog
-        {
-            UserId = user.Id,
-            Username = user.Username,
-            Action = "login",
-            ResourceType = "auth",
-            ResourceId = user.Id,
-            IpAddress = httpContext.Connection.RemoteIpAddress?.ToString() ?? ""
-        });
-
-        Navigation.NavigateTo("/admin", forceLoad: true);
     }
 }
