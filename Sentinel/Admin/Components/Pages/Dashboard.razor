@@ -2,6 +2,7 @@
 @inject ICaseStore CaseStore
 @inject IRunLogStore RunLogStore
 @inject IFeedbackRuleStore RuleStore
+@inject ActiveRunTracker RunTracker
 @attribute [Authorize(Policy = AuthConstants.Policy)]
 @rendermode InteractiveServer
 @implements IDisposable
@@ -156,6 +157,14 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadDashboardData();
+        var trackedRun = RunTracker.GetLatestTrackedRun();
+        if (trackedRun is not null)
+        {
+            activeRunId = trackedRun.RunId;
+            activeRunStatus = trackedRun.Status;
+            activeRunStartedAt = trackedRun.StartedAtUtc;
+            StartRunMonitoring(trackedRun.RunId);
+        }
     }
 
     private async Task LoadDashboardData()
@@ -200,6 +209,7 @@
         try
         {
             var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+            RunTracker.MarkQueued(runId, "manual:dashboard", DateTime.UtcNow);
             Hangfire.BackgroundJob.Enqueue<Sentinel.Jobs.SentinelJob>(j => j.RunAsync("manual:dashboard", runId));
 
             activeRunId = runId;
@@ -237,10 +247,22 @@
                     var logs = await RunLogStore.GetRunLogsAsync(runId);
 
                     activeRunLogs = logs.OrderByDescending(l => l.StartedAt).ToList();
-                    activeRunStatus = summary?.Status ?? (logs.Count > 0 ? "running" : "queued");
+                    if (summary is not null)
+                    {
+                        activeRunStatus = summary.Status;
+                    }
+                    else if (RunTracker.TryGet(runId, out var tracked))
+                    {
+                        activeRunStatus = tracked.Status;
+                    }
+                    else
+                    {
+                        activeRunStatus = logs.Count > 0 ? "running" : "queued";
+                    }
 
                     if (summary is not null)
                     {
+                        RunTracker.MarkCompleted(runId);
                         await LoadDashboardData();
                         StopRunMonitoring();
                     }

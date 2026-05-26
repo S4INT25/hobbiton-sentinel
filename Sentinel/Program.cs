@@ -117,6 +117,7 @@ try
     }
 
     builder.Services.AddSingleton<SchemaLoader>();
+    builder.Services.AddSingleton<ActiveRunTracker>();
 
     builder.Services.AddHangfireServer(options =>
     {
