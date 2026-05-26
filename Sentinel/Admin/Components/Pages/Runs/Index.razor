@@ -92,7 +92,7 @@
         triggerMessage = null;
         try
         {
-            Hangfire.BackgroundJob.Enqueue<Sentinel.Jobs.SentinelJob>(j => j.RunAsync("manual:runs_page"));
+            Hangfire.BackgroundJob.Enqueue<Jobs.SentinelJob>(j => j.RunAsync("manual:runs_page"));
             triggerSuccess = true;
             triggerMessage = "Run triggered successfully";
         }
