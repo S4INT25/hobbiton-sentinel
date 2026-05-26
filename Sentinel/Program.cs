@@ -6,6 +6,8 @@ using Serilog;
 using Serilog.Events;
 using StackExchange.Redis;
 using System.ClientModel;
+using Sentinel.Admin;
+using Sentinel.Admin.Stores;
 using Sentinel.Agent;
 using Sentinel.Infrastructure;
 using Sentinel.Jobs;
@@ -69,6 +71,8 @@ try
     if (useInMemory)
     {
         builder.Services.AddSingleton<ICaseStore, InMemoryCaseStore>();
+        builder.Services.AddSingleton<IAnalyticsChatStore, InMemoryAnalyticsChatStore>();
+        builder.Services.AddSingleton<IAnalyticsJobStore, InMemoryAnalyticsJobStore>();
         builder.Services.AddFusionCache();
         builder.Services.AddHangfire(config => config.UseInMemoryStorage());
     }
@@ -77,6 +81,8 @@ try
         builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
             ConnectionMultiplexer.Connect(redisConnectionString!));
         builder.Services.AddSingleton<ICaseStore, CaseStore>();
+        builder.Services.AddSingleton<IAnalyticsChatStore, RedisAnalyticsChatStore>();
+        builder.Services.AddSingleton<IAnalyticsJobStore, RedisAnalyticsJobStore>();
         // L2 distributed cache — Redis as persistent cache storage
         builder.Services.AddStackExchangeRedisCache(o => o.Configuration = redisConnectionString!);
         builder.Services.AddFusionCache()
@@ -98,7 +104,12 @@ try
 
     builder.Services.AddScoped<FraudAgent>();
     builder.Services.AddScoped<SentinelJob>();
+    builder.Services.AddScoped<AnalyticsAgent>();
+    builder.Services.AddSingleton<AnalyticsQueryWorker>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<AnalyticsQueryWorker>());
     builder.Services.AddHostedService<FraudSchedulerService>();
+
+    builder.Services.AddRazorPages();
 
     var app = builder.Build();
 
@@ -121,6 +132,9 @@ try
     }
 
     app.UseHangfireDashboard("/hangfire", dashOptions);
+
+    app.MapRazorPages();
+    app.MapAdminApi();
 
     app.Run();
 }
