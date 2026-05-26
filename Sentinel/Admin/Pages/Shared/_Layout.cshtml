@@ -8,6 +8,38 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+    <script>
+        function runTrigger() {
+            return {
+                loading: false,
+                message: '',
+                success: false,
+                async trigger() {
+                    this.loading = true;
+                    this.message = '';
+                    try {
+                        const res = await fetch('/api/runs/trigger', { method: 'POST' });
+                        if (res.ok || res.status === 202) {
+                            this.success = true;
+                            this.message = 'Run triggered successfully';
+                            setTimeout(() => location.reload(), 1500);
+                        } else if (res.status === 401) {
+                            this.success = false;
+                            this.message = 'Session expired — please log in again';
+                        } else {
+                            this.success = false;
+                            this.message = `Failed (${res.status})`;
+                        }
+                    } catch (e) {
+                        this.success = false;
+                        this.message = 'Network error';
+                    }
+                    this.loading = false;
+                    setTimeout(() => this.message = '', 5000);
+                }
+            };
+        }
+    </script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script>
         tailwind.config = {
