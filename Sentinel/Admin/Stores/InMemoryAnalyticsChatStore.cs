@@ -44,7 +44,6 @@ public class InMemoryAnalyticsChatStore(ILogger<InMemoryAnalyticsChatStore> logg
     public Task DeleteConversationAsync(string userId, string conversationId)
     {
         _conversations.TryRemove(Key(userId, conversationId), out _);
-        logger.LogDebug("Conversation {ConversationId} deleted for user {UserId}", conversationId, userId);
         return Task.CompletedTask;
     }
 }

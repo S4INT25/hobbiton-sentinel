@@ -25,7 +25,7 @@ public class AnalyticsQueryWorker(
         {
             try
             {
-                await ProcessJobAsync(jobId, stoppingToken);
+                await ProcessJobAsync(jobId);
             }
             catch (Exception ex)
             {
@@ -34,7 +34,7 @@ public class AnalyticsQueryWorker(
         }
     }
 
-    private async Task ProcessJobAsync(string jobId, CancellationToken ct)
+    private async Task ProcessJobAsync(string jobId)
     {
         var job = await jobStore.GetAsync(jobId);
         if (job == null)
@@ -49,7 +49,7 @@ public class AnalyticsQueryWorker(
 
         try
         {
-            // Load conversation history for context
+            // Load conversation history for multi-turn context
             List<ChatEntry>? history = null;
             AnalyticsConversation? conversation = null;
 
@@ -59,15 +59,14 @@ public class AnalyticsQueryWorker(
                 history = conversation?.Messages;
             }
 
-            // Create a scoped AnalyticsAgent
             using var scope = scopeFactory.CreateScope();
             var agent = scope.ServiceProvider.GetRequiredService<AnalyticsAgent>();
 
-            var answer = await agent.AskAsync(job.Prompt, job.Database, history);
+            var result = await agent.AskAsync(job.Prompt, job.Database, history);
 
             job.Status = "completed";
             job.CompletedAt = DateTime.UtcNow;
-            job.Result = answer;
+            job.Result = result;
             await jobStore.UpdateAsync(job);
 
             // Append to conversation
@@ -83,13 +82,12 @@ public class AnalyticsQueryWorker(
             }
 
             conversation.Messages.Add(new ChatEntry { Role = "user", Content = job.Prompt });
-            conversation.Messages.Add(new ChatEntry { Role = "assistant", Content = answer });
+            conversation.Messages.Add(new ChatEntry { Role = "assistant", Content = job.Prompt, Response = result });
 
             if (conversation.Title == "New Conversation" && conversation.Messages.Count >= 2)
                 conversation.Title = GenerateTitle(job.Prompt);
 
             await chatStore.SaveConversationAsync(conversation);
-
             logger.LogInformation("Job {JobId} completed", jobId);
         }
         catch (Exception ex)

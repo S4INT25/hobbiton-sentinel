@@ -15,5 +15,6 @@ public class ChatEntry
 {
     public string Role { get; set; } = "user"; // user | assistant
     public string Content { get; set; } = string.Empty;
+    public AnalyticsResponse? Response { get; set; }
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 }

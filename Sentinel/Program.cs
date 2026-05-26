@@ -1,12 +1,17 @@
+using ClickHouse.EntityFrameworkCore.Extensions;
 using Hangfire;
 using Hangfire.Dashboard.BasicAuthorization;
 using Hangfire.Redis.StackExchange;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.EntityFrameworkCore;
 using OpenAI;
 using Serilog;
 using Serilog.Events;
 using StackExchange.Redis;
 using System.ClientModel;
 using Sentinel.Admin;
+using Sentinel.Admin.Auth;
+using Sentinel.Admin.Data;
 using Sentinel.Admin.Stores;
 using Sentinel.Agent;
 using Sentinel.Infrastructure;
@@ -71,6 +76,11 @@ try
     if (useInMemory)
     {
         builder.Services.AddSingleton<ICaseStore, InMemoryCaseStore>();
+        builder.Services.AddSingleton<IFeedbackRuleStore, InMemoryFeedbackRuleStore>();
+        builder.Services.AddSingleton<IRunLogStore, InMemoryRunLogStore>();
+        builder.Services.AddSingleton<IAuditLogStore, InMemoryAuditLogStore>();
+        builder.Services.AddSingleton<IUserStore, InMemoryUserStore>();
+        builder.Services.AddSingleton<ISystemPromptStore, InMemorySystemPromptStore>();
         builder.Services.AddSingleton<IAnalyticsChatStore, InMemoryAnalyticsChatStore>();
         builder.Services.AddSingleton<IAnalyticsJobStore, InMemoryAnalyticsJobStore>();
         builder.Services.AddFusionCache();
@@ -81,14 +91,25 @@ try
         builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
             ConnectionMultiplexer.Connect(redisConnectionString!));
         builder.Services.AddSingleton<ICaseStore, CaseStore>();
+        builder.Services.AddSingleton<IFeedbackRuleStore, FeedbackRuleStore>();
+        builder.Services.AddSingleton<IUserStore, UserStore>();
+        builder.Services.AddSingleton<ISystemPromptStore, SystemPromptStore>();
         builder.Services.AddSingleton<IAnalyticsChatStore, RedisAnalyticsChatStore>();
         builder.Services.AddSingleton<IAnalyticsJobStore, RedisAnalyticsJobStore>();
+
+        // ClickHouse EF Core — run logs + audit
+        var chConnectionString = builder.Configuration["ClickHouse:ConnectionString"]
+            ?? "Host=localhost;Port=8123;Database=sentinel";
+        builder.Services.AddDbContext<SentinelClickHouseContext>(options => options.UseClickHouse(chConnectionString));
+        builder.Services.AddScoped<IRunLogStore, RunLogStore>();
+        builder.Services.AddScoped<IAuditLogStore, AuditLogStore>();
+
         // L2 distributed cache — Redis as persistent cache storage
         builder.Services.AddStackExchangeRedisCache(o => o.Configuration = redisConnectionString!);
         builder.Services.AddFusionCache()
             .WithSerializer(new FusionCacheSystemTextJsonSerializer())
-            .WithRegisteredDistributedCache()                                                     // L2: Redis IDistributedCache
-            .WithStackExchangeRedisBackplane(o => o.Configuration = redisConnectionString!)       // pub/sub L1 sync
+            .WithRegisteredDistributedCache()
+            .WithStackExchangeRedisBackplane(o => o.Configuration = redisConnectionString!)
             .AsHybridCache();
         builder.Services.AddHangfire((sp, config) =>
             config.UseRedisStorage(sp.GetRequiredService<IConnectionMultiplexer>()));
@@ -109,9 +130,48 @@ try
     builder.Services.AddHostedService(sp => sp.GetRequiredService<AnalyticsQueryWorker>());
     builder.Services.AddHostedService<FraudSchedulerService>();
 
-    builder.Services.AddRazorPages();
+    // ── Authentication & Authorization ──
+    builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+        .AddCookie(options =>
+        {
+            options.LoginPath = "/admin/login";
+            options.LogoutPath = "/admin/logout";
+            options.Cookie.Name = "sentinel_auth";
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SameSite = SameSiteMode.Strict;
+            options.ExpireTimeSpan = TimeSpan.FromHours(
+                builder.Configuration.GetValue("Admin:SessionHours", 8));
+            options.SlidingExpiration = true;
+        });
+
+    builder.Services.AddAuthorization(options =>
+    {
+        options.AddPolicy(AuthConstants.AdminOnlyPolicy, p => p.RequireRole(AuthConstants.AdminRole));
+        options.AddPolicy(AuthConstants.Policy, p =>
+            p.RequireRole(AuthConstants.AdminRole, AuthConstants.AnalystRole));
+    });
+
+    // ── Razor Pages ──
+    builder.Services.AddRazorPages()
+        .AddRazorPagesOptions(options =>
+        {
+            options.RootDirectory = "/Admin/Pages";
+            options.Conventions.AuthorizeFolder("/");
+            options.Conventions.AllowAnonymousToPage("/Login");
+        });
 
     var app = builder.Build();
+
+    // ── Seed default admin user ──
+    await SeedAdminUser(app);
+
+    app.UseAuthentication();
+    app.UseAuthorization();
+    app.UseStaticFiles();
+    app.MapRazorPages();
+
+    // ── Admin API ──
+    app.MapAdminApi();
 
     var dashOptions = new DashboardOptions { DashboardTitle = "Sentinel" };
 
@@ -133,9 +193,6 @@ try
 
     app.UseHangfireDashboard("/hangfire", dashOptions);
 
-    app.MapRazorPages();
-    app.MapAdminApi();
-
     app.Run();
 }
 catch (Exception ex) when (ex is not OperationCanceledException && ex.GetType().Name != "StopTheHostException")
@@ -145,4 +202,28 @@ catch (Exception ex) when (ex is not OperationCanceledException && ex.GetType().
 finally
 {
     await Log.CloseAndFlushAsync();
+}
+
+static async Task SeedAdminUser(WebApplication app)
+{
+    var userStore = app.Services.GetRequiredService<IUserStore>();
+    var config = app.Configuration;
+
+    var existingUsers = await userStore.GetAllAsync();
+    if (existingUsers.Count > 0) return;
+
+    var username = config["Admin:DefaultUsername"] ?? "admin";
+    var password = config["Admin:DefaultPassword"] ?? "sentinel2025!";
+
+    var user = new Sentinel.Admin.Models.AdminUser
+    {
+        Username = username,
+        PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
+        Role = AuthConstants.AdminRole,
+        DisplayName = "System Admin",
+        IsActive = true
+    };
+
+    await userStore.SaveAsync(user);
+    Log.Information("Seeded default admin user: {Username}", username);
 }

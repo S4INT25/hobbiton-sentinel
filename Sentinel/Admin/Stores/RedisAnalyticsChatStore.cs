@@ -32,7 +32,6 @@ public class RedisAnalyticsChatStore(IConnectionMultiplexer redis, ILogger<Redis
             var conversation = JsonSerializer.Deserialize<AnalyticsConversation>((string)json!);
             if (conversation == null) continue;
 
-            // Return summary only (no messages)
             conversations.Add(new AnalyticsConversation
             {
                 Id = conversation.Id,
@@ -71,6 +70,5 @@ public class RedisAnalyticsChatStore(IConnectionMultiplexer redis, ILogger<Redis
     {
         await _db.KeyDeleteAsync(ConversationKey(userId, conversationId));
         await _db.SetRemoveAsync(IndexKey(userId), conversationId);
-        logger.LogDebug("Conversation {ConversationId} deleted for user {UserId}", conversationId, userId);
     }
 }

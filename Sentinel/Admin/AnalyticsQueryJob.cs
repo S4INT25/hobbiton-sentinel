@@ -10,6 +10,6 @@ public class AnalyticsQueryJob
     public string Status { get; set; } = "pending"; // pending | running | completed | failed
     public DateTime SubmittedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }
-    public string? Result { get; set; }
+    public AnalyticsResponse? Result { get; set; }
     public string? Error { get; set; }
 }
