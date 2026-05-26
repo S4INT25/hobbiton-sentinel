@@ -96,9 +96,11 @@ try
         builder.Services.AddSingleton<IAnalyticsChatStore, RedisAnalyticsChatStore>();
         builder.Services.AddSingleton<IAnalyticsJobStore, RedisAnalyticsJobStore>();
 
-        // ClickHouse EF Core — run logs + audit
-        var chConnectionString = builder.Configuration["ClickHouse:ConnectionString"]
-            ?? "Host=localhost;Port=8123;Database=sentinel";
+        // ClickHouse EF Core — run logs + audit (constructed from ClickHouse config section)
+        var chHost = new Uri(builder.Configuration["ClickHouse:Host"] ?? "http://localhost:8123");
+        var chUser = builder.Configuration["ClickHouse:User"] ?? "default";
+        var chPass = builder.Configuration["ClickHouse:Password"] ?? "";
+        var chConnectionString = $"Host={chHost.Host};Port={chHost.Port};Database=sentinel;Username={chUser};Password={chPass}";
         builder.Services.AddDbContext<SentinelClickHouseContext>(options => options.UseClickHouse(chConnectionString));
         builder.Services.AddScoped<IRunLogStore, RunLogStore>();
         builder.Services.AddScoped<IAuditLogStore, AuditLogStore>();
@@ -150,7 +152,6 @@ try
             p.RequireRole(AuthConstants.AdminRole, AuthConstants.AnalystRole));
     });
 
-    // ── Razor Pages ──
     builder.Services.AddRazorPages()
         .AddRazorPagesOptions(options =>
         {
@@ -161,7 +162,6 @@ try
 
     var app = builder.Build();
 
-    // ── Seed default admin user ──
     await SeedAdminUser(app);
 
     app.UseAuthentication();
@@ -169,7 +169,6 @@ try
     app.UseStaticFiles();
     app.MapRazorPages();
 
-    // ── Admin API ──
     app.MapAdminApi();
 
     var dashOptions = new DashboardOptions { DashboardTitle = "Sentinel" };
