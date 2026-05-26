@@ -55,6 +55,8 @@
         .input-row button:hover { background: #388bfd; }
         .input-row button:disabled { opacity: 0.5; cursor: not-allowed; }
 
+        .query-indicator { display: none; align-items: center; margin-left: auto; font-size: 12px; color: #58a6ff; }
+
         .loading { display: inline-block; }
         .loading::after { content: ''; display: inline-block; width: 12px; height: 12px; border: 2px solid #8b949e; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; margin-left: 8px; vertical-align: middle; }
         @@keyframes spin { to { transform: rotate(360deg); } }
@@ -93,6 +95,7 @@
         let activeConversationId = null;
         let conversations = [];
         let currentDatabase = '';
+        let activePolls = {}; // jobId -> intervalId
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
@@ -159,8 +162,25 @@
                 // Render messages
                 renderMessages(conversation.messages);
                 renderConversationList();
+
+                // Check for any pending/running jobs for this conversation
+                await checkPendingJobs(id);
             } catch (e) {
                 console.error('Failed to load conversation:', e);
+            }
+        }
+
+        async function checkPendingJobs(conversationId) {
+            try {
+                const res = await fetch(`/api/analytics/jobs?conversationId=${conversationId}`);
+                const jobs = await res.json();
+                const pendingJobs = jobs.filter(j => j.status === 'pending' || j.status === 'running');
+                pendingJobs.forEach(j => {
+                    showRunningIndicator(j.jobId);
+                    startPolling(j.jobId);
+                });
+            } catch (e) {
+                console.error('Failed to check pending jobs:', e);
             }
         }
 
@@ -212,7 +232,7 @@
             const container = document.getElementById('chatContainer');
             if (container.querySelector('.empty-state')) container.innerHTML = '';
             container.innerHTML += `<div class="message user">${escapeHtml(question)}</div>`;
-            container.innerHTML += `<div class="message assistant" id="loading"><span class="loading">Thinking</span></div>`;
+            container.innerHTML += `<div class="message assistant" id="pendingMsg"><span class="loading">Running query</span></div>`;
             container.scrollTop = container.scrollHeight;
 
             try {
@@ -227,21 +247,96 @@
                 });
 
                 const data = await res.json();
-                document.getElementById('loading')?.remove();
-
-                container.innerHTML += `<div class="message assistant">${formatMarkdown(data.answer)}</div>`;
-                container.scrollTop = container.scrollHeight;
 
                 // Update active conversation
                 if (data.conversationId) {
                     activeConversationId = data.conversationId;
                     await loadConversations();
                 }
+
+                // Start polling for the job result
+                startPolling(data.jobId);
+                showRunningIndicator(data.jobId);
+
             } catch (e) {
-                document.getElementById('loading')?.remove();
+                document.getElementById('pendingMsg')?.remove();
                 container.innerHTML += `<div class="message assistant" style="color:#f85149;">Error: ${e.message}</div>`;
-            } finally {
                 document.getElementById('sendBtn').disabled = false;
+            }
+        }
+
+        function startPolling(jobId) {
+            if (activePolls[jobId]) return;
+
+            const intervalId = setInterval(async () => {
+                try {
+                    const res = await fetch(`/api/analytics/jobs/${jobId}`);
+                    if (!res.ok) { stopPolling(jobId); return; }
+
+                    const job = await res.json();
+
+                    if (job.status === 'completed') {
+                        stopPolling(jobId);
+                        onJobCompleted(job);
+                    } else if (job.status === 'failed') {
+                        stopPolling(jobId);
+                        onJobFailed(job);
+                    }
+                } catch (e) {
+                    console.error('Poll error:', e);
+                    stopPolling(jobId);
+                }
+            }, 2000);
+
+            activePolls[jobId] = intervalId;
+        }
+
+        function stopPolling(jobId) {
+            if (activePolls[jobId]) {
+                clearInterval(activePolls[jobId]);
+                delete activePolls[jobId];
+            }
+            hideRunningIndicator();
+        }
+
+        function onJobCompleted(job) {
+            const pending = document.getElementById('pendingMsg');
+            if (pending) {
+                pending.remove();
+                const container = document.getElementById('chatContainer');
+                container.innerHTML += `<div class="message assistant">${formatMarkdown(job.result)}</div>`;
+                container.scrollTop = container.scrollHeight;
+            }
+            document.getElementById('sendBtn').disabled = false;
+        }
+
+        function onJobFailed(job) {
+            const pending = document.getElementById('pendingMsg');
+            if (pending) {
+                pending.remove();
+                const container = document.getElementById('chatContainer');
+                container.innerHTML += `<div class="message assistant" style="color:#f85149;">Error: ${escapeHtml(job.error || 'Unknown error')}</div>`;
+                container.scrollTop = container.scrollHeight;
+            }
+            document.getElementById('sendBtn').disabled = false;
+        }
+
+        function showRunningIndicator(jobId) {
+            let indicator = document.getElementById('queryIndicator');
+            if (!indicator) {
+                indicator = document.createElement('div');
+                indicator.id = 'queryIndicator';
+                indicator.className = 'query-indicator';
+                indicator.innerHTML = '<span class="loading">Query running</span>';
+                document.querySelector('.toolbar').appendChild(indicator);
+            }
+            indicator.style.display = 'inline-flex';
+        }
+
+        function hideRunningIndicator() {
+            if (Object.keys(activePolls).length === 0) {
+                const indicator = document.getElementById('queryIndicator');
+                if (indicator) indicator.style.display = 'none';
             }
         }
 
@@ -268,7 +363,6 @@
 
         function formatMarkdown(text) {
             if (!text) return '';
-            // Simple markdown: code blocks, inline code, bold
             return escapeHtml(text)
                 .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
                 .replace(/`([^`]+)`/g, '<code>$1</code>')

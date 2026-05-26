@@ -55,47 +55,74 @@ public static class AdminApiEndpoints
             return Results.NoContent();
         });
 
-        api.MapPost("/ask", async (AnalyticsAskRequest request, AnalyticsAgent agent, IAnalyticsChatStore store) =>
+        api.MapPost("/ask", async (AnalyticsAskRequest request, IAnalyticsJobStore jobStore, IAnalyticsChatStore chatStore, AnalyticsQueryWorker worker) =>
         {
             var userId = "default";
-            AnalyticsConversation? conversation = null;
-            List<ChatEntry>? history = null;
+            var conversationId = request.ConversationId;
 
-            // Load existing conversation for context
-            if (!string.IsNullOrEmpty(request.ConversationId))
+            // If no conversation exists, create one
+            if (string.IsNullOrEmpty(conversationId))
             {
-                conversation = await store.GetConversationAsync(userId, request.ConversationId);
-                history = conversation?.Messages;
-            }
-
-            // Create new conversation if none exists
-            if (conversation == null)
-            {
-                conversation = new AnalyticsConversation
+                var conversation = new AnalyticsConversation
                 {
                     Database = request.Database,
                     UserId = userId,
                     Title = GenerateTitle(request.Question)
                 };
+                await chatStore.SaveConversationAsync(conversation);
+                conversationId = conversation.Id;
             }
 
-            var answer = await agent.AskAsync(request.Question, request.Database, history);
+            var job = new AnalyticsQueryJob
+            {
+                ConversationId = conversationId,
+                UserId = userId,
+                Prompt = request.Question,
+                Database = request.Database
+            };
 
-            // Append messages to conversation
-            conversation.Messages.Add(new ChatEntry { Role = "user", Content = request.Question });
-            conversation.Messages.Add(new ChatEntry { Role = "assistant", Content = answer });
-
-            // Auto-title from first message if still default
-            if (conversation.Title == "New Conversation" && conversation.Messages.Count >= 2)
-                conversation.Title = GenerateTitle(request.Question);
-
-            await store.SaveConversationAsync(conversation);
+            await jobStore.CreateAsync(job);
+            await worker.EnqueueAsync(job.Id);
 
             return Results.Ok(new AnalyticsAskResponse
             {
-                Answer = answer,
-                ConversationId = conversation.Id
+                JobId = job.Id,
+                ConversationId = conversationId,
+                Status = job.Status
             });
+        });
+
+        api.MapGet("/jobs/{jobId}", async (string jobId, IAnalyticsJobStore jobStore) =>
+        {
+            var job = await jobStore.GetAsync(jobId);
+            if (job == null) return Results.NotFound();
+
+            return Results.Ok(new JobStatusResponse
+            {
+                JobId = job.Id,
+                Status = job.Status,
+                Result = job.Result,
+                Error = job.Error,
+                ConversationId = job.ConversationId,
+                SubmittedAt = job.SubmittedAt,
+                CompletedAt = job.CompletedAt
+            });
+        });
+
+        api.MapGet("/jobs", async (string? conversationId, IAnalyticsJobStore jobStore) =>
+        {
+            var userId = "default";
+            var jobs = await jobStore.GetUserJobsAsync(userId, conversationId);
+            return Results.Ok(jobs.Select(j => new JobStatusResponse
+            {
+                JobId = j.Id,
+                Status = j.Status,
+                Result = j.Result,
+                Error = j.Error,
+                ConversationId = j.ConversationId,
+                SubmittedAt = j.SubmittedAt,
+                CompletedAt = j.CompletedAt
+            }));
         });
     }
 
@@ -133,6 +160,18 @@ public record AnalyticsAskRequest(string Question, string Database, string? Conv
 
 public record AnalyticsAskResponse
 {
-    public string Answer { get; init; } = string.Empty;
+    public string JobId { get; init; } = string.Empty;
     public string ConversationId { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;
+}
+
+public record JobStatusResponse
+{
+    public string JobId { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;
+    public string? Result { get; init; }
+    public string? Error { get; init; }
+    public string ConversationId { get; init; } = string.Empty;
+    public DateTime SubmittedAt { get; init; }
+    public DateTime? CompletedAt { get; init; }
 }
