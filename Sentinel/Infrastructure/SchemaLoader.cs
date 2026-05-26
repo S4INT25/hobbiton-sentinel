@@ -6,25 +6,34 @@ namespace Sentinel.Infrastructure;
 
 public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<SchemaLoader> logger)
 {
-    private const string SchemaCacheKey = "sentinel:schema:full_block";
+    private const string DefaultDatabase = "lipila_blaze";
+    private const string SchemaCacheKeyPrefix = "sentinel:schema:full_block:";
 
-    public async Task<string> GetSchemaBlockAsync() =>
-        await cache.GetOrSetAsync(SchemaCacheKey,
+    public async Task<string> GetSchemaBlockAsync(string? database = null)
+    {
+        var resolvedDatabase = ResolveDatabaseName(database);
+        var cacheKey = $"{SchemaCacheKeyPrefix}{resolvedDatabase}";
+        return await cache.GetOrSetAsync(cacheKey,
             _ =>
             {
-                logger.LogInformation("Schema cache miss — fetching live schema from ClickHouse");
-                return FetchSchemaBlockAsync();
+                logger.LogInformation("Schema cache miss — fetching live schema from ClickHouse for {Database}", resolvedDatabase);
+                return FetchSchemaBlockAsync(resolvedDatabase);
             },
             options => options.SetDuration(TimeSpan.FromDays(7)));
+    }
 
-    public Task InvalidateAsync() => cache.RemoveAsync(SchemaCacheKey).AsTask();
+    public Task InvalidateAsync(string? database = null)
+    {
+        var resolvedDatabase = ResolveDatabaseName(database);
+        return cache.RemoveAsync($"{SchemaCacheKeyPrefix}{resolvedDatabase}").AsTask();
+    }
 
-    private async Task<string> FetchSchemaBlockAsync()
+    private async Task<string> FetchSchemaBlockAsync(string database)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("## Live Database Schema (lipila_blaze)");
+        sb.AppendLine($"## Live Database Schema ({database})");
 
-        var tablesJson = await ch.QueryAsync("SHOW TABLES FROM lipila_blaze");
+        var tablesJson = await ch.QueryAsync($"SHOW TABLES FROM {database}");
         var tables = ParseStringColumn(tablesJson, "name");
 
         if (tables.Count == 0)
@@ -38,7 +47,7 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
 
         foreach (var table in tables)
         {
-            var descJson = await ch.QueryAsync($"DESCRIBE lipila_blaze.{table}");
+            var descJson = await ch.QueryAsync($"DESCRIBE {database}.{table}");
             var columns = ParseDescribe(descJson);
 
             if (columns.Count == 0) continue;
@@ -89,5 +98,20 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
                 .ToList();
         }
         catch { return []; }
+    }
+
+    private static string ResolveDatabaseName(string? database)
+    {
+        if (string.IsNullOrWhiteSpace(database))
+            return DefaultDatabase;
+
+        // ClickHouse identifiers are unquoted in our generated queries; allow only safe chars.
+        foreach (var c in database)
+        {
+            if (!(char.IsLetterOrDigit(c) || c == '_'))
+                return DefaultDatabase;
+        }
+
+        return database;
     }
 }
