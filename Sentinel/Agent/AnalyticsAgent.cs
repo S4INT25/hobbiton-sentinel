@@ -1,9 +1,10 @@
 using System.Text.Json;
 using OpenAI;
 using OpenAI.Chat;
+using Sentinel.Admin;
 using Sentinel.Infrastructure;
 
-namespace Sentinel.Admin;
+namespace Sentinel.Agent;
 
 public class AnalyticsAgent(
     OpenAIClient ai,

@@ -1,3 +1,5 @@
+using Sentinel.Agent;
+
 namespace Sentinel.Admin;
 
 public class AnalyticsConversation

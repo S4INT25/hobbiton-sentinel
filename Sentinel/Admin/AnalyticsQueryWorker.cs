@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Sentinel.Admin.Stores;
+using Sentinel.Agent;
 
 namespace Sentinel.Admin;
 
