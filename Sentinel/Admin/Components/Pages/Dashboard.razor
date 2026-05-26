@@ -111,14 +111,14 @@
                             <td class="px-4 py-2.5 text-gray-500 text-xs">@run.TriggeredBy</td>
                         </tr>
                     }
-                    @if (!runs.Any())
+                    @if (!DisplayRuns.Any())
                     {
                         <tr><td colspan="6" class="px-4 py-8 text-center text-gray-600 text-xs">No runs recorded yet</td></tr>
                     }
                 </tbody>
             </table>
         </div>
-        @if (runs.Count > PageSize)
+        @if (DisplayRuns.Count > PageSize)
         {
             <div class="mt-3 flex items-center justify-between text-xs">
                 <span class="text-gray-500">Page @currentPage / @TotalPages</span>
@@ -149,8 +149,9 @@
     private int currentPage = 1;
     private const int PageSize = 10;
 
-    private int TotalPages => Math.Max(1, (int)Math.Ceiling((double)runs.Count / PageSize));
-    private IEnumerable<RunSummary> PagedRuns => runs.Skip((currentPage - 1) * PageSize).Take(PageSize);
+    private List<RunSummary> DisplayRuns => BuildDisplayRuns();
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling((double)DisplayRuns.Count / PageSize));
+    private IEnumerable<RunSummary> PagedRuns => DisplayRuns.Skip((currentPage - 1) * PageSize).Take(PageSize);
 
     protected override async Task OnInitializedAsync()
     {
@@ -171,6 +172,24 @@
             .Where(r => r.StartedAt >= DateTime.UtcNow.AddHours(-24))
             .Sum(r => (long)(r.InputTokens + r.OutputTokens));
         currentPage = Math.Min(currentPage, TotalPages);
+    }
+
+    private List<RunSummary> BuildDisplayRuns()
+    {
+        var result = runs.ToList();
+        if (!string.IsNullOrWhiteSpace(activeRunId) && result.All(r => r.RunId != activeRunId))
+        {
+            result.Insert(0, new RunSummary
+            {
+                RunId = activeRunId,
+                StartedAt = activeRunStartedAt ?? DateTime.UtcNow,
+                FinishedAt = activeRunStartedAt ?? DateTime.UtcNow,
+                Status = activeRunStatus,
+                TriggeredBy = "manual:dashboard"
+            });
+        }
+
+        return result;
     }
 
     private async Task TriggerRun()
