@@ -557,7 +557,14 @@
                     data = msg.Rows.Select(row => double.TryParse(row.GetValueOrDefault(col), out var v) ? v : 0.0).ToArray()
                 }).ToArray();
 
-                await JS.InvokeVoidAsync("chartInterop.renderChart", $"chart-{i}", msg.ChartType, labels, datasets, null);
+                try
+                {
+                    await JS.InvokeVoidAsync("chartInterop.renderChart", $"chart-{i}", msg.ChartType, labels, datasets, null);
+                }
+                catch (Microsoft.JSInterop.JSException)
+                {
+                    // chartInterop not yet available (script still loading) — skip silently
+                }
             }
         }
     }
