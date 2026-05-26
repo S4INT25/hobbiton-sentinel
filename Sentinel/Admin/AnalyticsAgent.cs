@@ -17,7 +17,7 @@ public class AnalyticsAgent(
     public async Task<AnalyticsResponse> AskAsync(string prompt, string database = "lipila_blaze", List<ChatEntry>? history = null)
     {
         var modelName = config["DigitalOcean:ModelName"]!;
-        var schema = await schemaLoader.GetSchemaBlockAsync();
+        var schema = await schemaLoader.GetSchemaBlockAsync(database);
 
         var systemPrompt = $$"""
                              You are a SQL analytics assistant for ClickHouse. The user asks questions in natural language and you translate them into ClickHouse SQL queries, execute them, and explain the results clearly.
