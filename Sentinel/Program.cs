@@ -162,6 +162,14 @@ try
 
     var app = builder.Build();
 
+    // ── Ensure ClickHouse database & tables exist ──
+    if (!useInMemory)
+    {
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<SentinelClickHouseContext>();
+        await db.Database.EnsureCreatedAsync();
+    }
+
     await SeedAdminUser(app);
 
     app.UseAuthentication();
