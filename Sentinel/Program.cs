@@ -1,4 +1,3 @@
-using ClickHouse.EntityFrameworkCore.Extensions;
 using Hangfire;
 using Hangfire.Dashboard.BasicAuthorization;
 using Hangfire.Redis.StackExchange;
