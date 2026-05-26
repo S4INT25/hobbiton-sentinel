@@ -152,13 +152,9 @@ try
             p.RequireRole(AuthConstants.AdminRole, AuthConstants.AnalystRole));
     });
 
-    builder.Services.AddRazorPages()
-        .AddRazorPagesOptions(options =>
-        {
-            options.RootDirectory = "/Admin/Pages";
-            options.Conventions.AuthorizeFolder("/");
-            options.Conventions.AllowAnonymousToPage("/Login");
-        });
+    builder.Services.AddRazorComponents()
+        .AddInteractiveServerComponents();
+    builder.Services.AddCascadingAuthenticationState();
 
     var app = builder.Build();
 
@@ -175,7 +171,9 @@ try
     app.UseAuthentication();
     app.UseAuthorization();
     app.UseStaticFiles();
-    app.MapRazorPages();
+    app.UseAntiforgery();
+    app.MapRazorComponents<Sentinel.Admin.Components.App>()
+        .AddInteractiveServerRenderMode();
 
     app.MapAdminApi();
 

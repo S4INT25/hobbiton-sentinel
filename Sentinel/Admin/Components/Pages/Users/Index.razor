@@ -1,0 +1,165 @@
+@page "/admin/users"
+@inject IUserStore UserStore
+@inject IAuditLogStore AuditStore
+@inject AuthenticationStateProvider AuthState
+@inject IHttpContextAccessor HttpContextAccessor
+@attribute [Authorize(Policy = AuthConstants.AdminOnlyPolicy)]
+@rendermode InteractiveServer
+
+<PageTitle>Users — Sentinel</PageTitle>
+
+<div class="space-y-4">
+    <div class="flex items-center justify-between">
+        <h1 class="text-lg font-semibold text-white">Users</h1>
+        <button @onclick="() => showAdd = !showAdd" class="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-colors">
+            Add User
+        </button>
+    </div>
+
+    @if (showAdd)
+    {
+        <div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Username</label>
+                    <input type="text" @bind="newUsername" required class="w-full px-2.5 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white" />
+                </div>
+                <div>
+                    <label class="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Password</label>
+                    <input type="password" @bind="newPassword" required class="w-full px-2.5 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white" />
+                </div>
+                <div>
+                    <label class="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Display Name</label>
+                    <input type="text" @bind="newDisplayName" required class="w-full px-2.5 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white" />
+                </div>
+                <div>
+                    <label class="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Role</label>
+                    <select @bind="newRole" class="w-full px-2.5 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white">
+                        <option value="analyst">Analyst</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <div class="col-span-2 flex justify-end gap-2">
+                    <button type="button" @onclick="() => showAdd = false" class="px-3 py-1.5 text-xs text-gray-400 hover:text-white">Cancel</button>
+                    <button @onclick="CreateUser" class="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-md">Create</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="border border-gray-800 rounded-lg overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-900/50">
+                <tr class="text-xs text-gray-500 border-b border-gray-800">
+                    <th class="text-left px-4 py-2 font-medium">Username</th>
+                    <th class="text-left px-4 py-2 font-medium">Display Name</th>
+                    <th class="text-left px-4 py-2 font-medium">Role</th>
+                    <th class="text-left px-4 py-2 font-medium">Last Login</th>
+                    <th class="text-left px-4 py-2 font-medium">Active</th>
+                    <th class="text-left px-4 py-2 font-medium"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800/50">
+                @foreach (var u in users)
+                {
+                    <tr class="hover:bg-gray-900/30 transition-colors">
+                        <td class="px-4 py-2.5 text-xs text-gray-200 font-mono">@u.Username</td>
+                        <td class="px-4 py-2.5 text-xs text-gray-300">@u.DisplayName</td>
+                        <td class="px-4 py-2.5">
+                            <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium
+                                @(u.Role == "admin" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-gray-800 text-gray-400")">
+                                @u.Role
+                            </span>
+                        </td>
+                        <td class="px-4 py-2.5 text-xs text-gray-500 font-mono">@(u.LastLoginAt?.ToString("MMM dd HH:mm") ?? "Never")</td>
+                        <td class="px-4 py-2.5">
+                            @if (u.IsActive)
+                            {
+                                <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                            }
+                            else
+                            {
+                                <span class="w-2 h-2 rounded-full bg-gray-700 inline-block"></span>
+                            }
+                        </td>
+                        <td class="px-4 py-2.5">
+                            @if (u.Username != currentUsername)
+                            {
+                                <button @onclick="() => DeleteUser(u.Id)" class="text-xs text-gray-600 hover:text-rose-400 transition-colors">Delete</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private List<AdminUser> users = [];
+    private bool showAdd;
+    private string newUsername = "";
+    private string newPassword = "";
+    private string newDisplayName = "";
+    private string newRole = "analyst";
+    private string? currentUsername;
+
+    protected override async Task OnInitializedAsync()
+    {
+        users = await UserStore.GetAllAsync();
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        currentUsername = authState.User.Identity?.Name;
+    }
+
+    private async Task CreateUser()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        var newUser = new AdminUser
+        {
+            Username = newUsername,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword),
+            DisplayName = newDisplayName,
+            Role = newRole
+        };
+
+        await UserStore.SaveAsync(newUser);
+        await AuditStore.LogAsync(new AuditLog
+        {
+            UserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+            Username = user.Identity?.Name ?? "unknown",
+            Action = "create",
+            ResourceType = "user",
+            ResourceId = newUser.Id,
+            Details = $"Created user: {newUsername} ({newRole})",
+            IpAddress = HttpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? ""
+        });
+
+        newUsername = "";
+        newPassword = "";
+        newDisplayName = "";
+        newRole = "analyst";
+        showAdd = false;
+        users = await UserStore.GetAllAsync();
+    }
+
+    private async Task DeleteUser(string userId)
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        await UserStore.DeleteAsync(userId);
+        await AuditStore.LogAsync(new AuditLog
+        {
+            UserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+            Username = user.Identity?.Name ?? "unknown",
+            Action = "delete",
+            ResourceType = "user",
+            ResourceId = userId,
+            IpAddress = HttpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? ""
+        });
+
+        users = await UserStore.GetAllAsync();
+    }
+}

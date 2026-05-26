@@ -1,0 +1,106 @@
+@page "/admin/login"
+@layout EmptyLayout
+@inject IUserStore UserStore
+@inject IAuditLogStore AuditStore
+@inject NavigationManager Navigation
+@inject IHttpContextAccessor HttpContextAccessor
+@attribute [AllowAnonymous]
+
+<PageTitle>Sign in — Sentinel</PageTitle>
+
+<div class="h-full flex items-center justify-center">
+    <div class="w-full max-w-sm px-6">
+        <div class="text-center mb-8">
+            <div class="w-10 h-10 mx-auto mb-3 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                </svg>
+            </div>
+            <h1 class="text-lg font-semibold text-white">Sentinel</h1>
+            <p class="text-sm text-gray-500 mt-1">Sign in to continue</p>
+        </div>
+
+        @if (!string.IsNullOrEmpty(error))
+        {
+            <div class="mb-4 p-3 rounded-md bg-rose-500/10 border border-rose-500/20 text-sm text-rose-400">
+                @error
+            </div>
+        }
+
+        <form @onsubmit="HandleLogin" @onsubmit:preventDefault class="space-y-4">
+            <div>
+                <label class="block text-xs font-medium text-gray-400 mb-1.5">Username</label>
+                <input type="text" @bind="username" required autocomplete="username" autofocus
+                       class="w-full px-3 py-2 bg-gray-900 border border-gray-800 rounded-md text-sm text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20" />
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-400 mb-1.5">Password</label>
+                <input type="password" @bind="password" required autocomplete="current-password"
+                       class="w-full px-3 py-2 bg-gray-900 border border-gray-800 rounded-md text-sm text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20" />
+            </div>
+            <button type="submit" disabled="@isLoading"
+                    class="w-full py-2 px-4 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-md transition-colors disabled:opacity-50">
+                @(isLoading ? "Signing in…" : "Sign in")
+            </button>
+        </form>
+    </div>
+</div>
+
+@code {
+    private string username = "";
+    private string password = "";
+    private string? error;
+    private bool isLoading;
+
+    private async Task HandleLogin()
+    {
+        error = null;
+        isLoading = true;
+
+        var user = await UserStore.GetByUsernameAsync(username);
+        if (user == null || !user.IsActive || !BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
+        {
+            error = "Invalid username or password";
+            await AuditStore.LogAsync(new AuditLog
+            {
+                Action = "login_failed",
+                ResourceType = "auth",
+                ResourceId = username,
+                Username = username,
+                IpAddress = HttpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? ""
+            });
+            isLoading = false;
+            return;
+        }
+
+        var claims = new List<System.Security.Claims.Claim>
+        {
+            new(System.Security.Claims.ClaimTypes.NameIdentifier, user.Id),
+            new(System.Security.Claims.ClaimTypes.Name, user.Username),
+            new(System.Security.Claims.ClaimTypes.Role, user.Role),
+            new("display_name", user.DisplayName)
+        };
+        var identity = new System.Security.Claims.ClaimsIdentity(claims,
+            Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme);
+        var principal = new System.Security.Claims.ClaimsPrincipal(identity);
+
+        var httpContext = HttpContextAccessor.HttpContext!;
+        await Microsoft.AspNetCore.Authentication.AuthenticationHttpContextExtensions.SignInAsync(
+            httpContext,
+            Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme,
+            principal);
+        await UserStore.UpdateLastLoginAsync(user.Id);
+
+        await AuditStore.LogAsync(new AuditLog
+        {
+            UserId = user.Id,
+            Username = user.Username,
+            Action = "login",
+            ResourceType = "auth",
+            ResourceId = user.Id,
+            IpAddress = httpContext.Connection.RemoteIpAddress?.ToString() ?? ""
+        });
+
+        Navigation.NavigateTo("/admin", forceLoad: true);
+    }
+}

@@ -1,0 +1,492 @@
+@page "/admin/analytics"
+@inject IAnalyticsChatStore ChatStore
+@inject IAnalyticsJobStore JobStore
+@inject AnalyticsQueryWorker Worker
+@inject AuthenticationStateProvider AuthState
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+@attribute [Authorize(Policy = AuthConstants.Policy)]
+@rendermode InteractiveServer
+@implements IDisposable
+
+<PageTitle>Analytics — Sentinel</PageTitle>
+
+<div class="flex h-[calc(100vh-6rem)]">
+    <!-- Conversation Sidebar -->
+    <div class="w-56 border-r border-gray-800 flex flex-col shrink-0">
+        <div class="flex items-center justify-between px-3 py-2 border-b border-gray-800">
+            <span class="text-xs font-medium text-gray-400">History</span>
+            <button @onclick="NewConversation" class="px-2 py-1 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white rounded transition-colors">+ New</button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-1.5 space-y-0.5">
+            @foreach (var conv in conversations)
+            {
+                <div @onclick="() => LoadConversation(conv.Id)"
+                     class="px-2.5 py-2 rounded border cursor-pointer group transition-colors @(conv.Id == activeConversationId ? "bg-gray-800/60 border-emerald-500/30" : "border-transparent hover:bg-gray-900")">
+                    <div class="text-xs text-gray-300 truncate">@conv.Title</div>
+                    <div class="flex items-center justify-between mt-0.5">
+                        <span class="text-[10px] text-gray-600">@conv.Database</span>
+                        <button @onclick="() => DeleteConversation(conv.Id)" @onclick:stopPropagation="true" class="opacity-0 group-hover:opacity-100 text-[10px] text-rose-500 hover:text-rose-400 transition-opacity">✕</button>
+                    </div>
+                </div>
+            }
+            @if (!conversations.Any())
+            {
+                <div class="px-3 py-4 text-center text-[10px] text-gray-600">No conversations yet</div>
+            }
+        </div>
+    </div>
+
+    <!-- Main Chat Area -->
+    <div class="flex-1 flex flex-col min-w-0">
+        <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800">
+            <div class="flex items-center gap-3">
+                <select @bind="database" class="px-2.5 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white">
+                    @foreach (var db in databases)
+                    {
+                        <option value="@db">@db</option>
+                    }
+                </select>
+                @if (activePolls.Count > 0)
+                {
+                    <span class="flex items-center gap-1.5 text-[10px] text-emerald-400">
+                        <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        Query running
+                    </span>
+                }
+            </div>
+            <button @onclick="ClearChat" class="px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-300 border border-gray-800 rounded hover:bg-gray-900 transition-colors">
+                Clear
+            </button>
+        </div>
+
+        <!-- Chat Messages -->
+        <div class="flex-1 overflow-y-auto space-y-4 p-4 pr-1" @ref="messagesContainer">
+            @foreach (var (msg, idx) in messages.Select((m, i) => (m, i)))
+            {
+                @if (msg.Role == "user")
+                {
+                    <div class="flex justify-end">
+                        <div class="max-w-2xl px-3 py-2 bg-emerald-600/20 border border-emerald-500/20 rounded-lg text-sm text-gray-200">
+                            @msg.Content
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="space-y-3 max-w-full">
+                        @if (!string.IsNullOrEmpty(msg.Thinking))
+                        {
+                            <details class="text-xs">
+                                <summary class="text-gray-500 cursor-pointer hover:text-gray-400">Reasoning</summary>
+                                <div class="mt-1 p-2 bg-gray-900/50 border border-gray-800/50 rounded text-gray-500 italic">@msg.Thinking</div>
+                            </details>
+                        }
+
+                        @if (!string.IsNullOrEmpty(msg.Explanation))
+                        {
+                            <div class="text-sm text-gray-300">@msg.Explanation</div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(msg.Error))
+                        {
+                            <div class="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-xs text-rose-400 font-mono whitespace-pre-wrap">@msg.Error</div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(msg.ChartType) && msg.ChartType != "none" && msg.Rows?.Count > 0)
+                        {
+                            <div class="border border-gray-800 rounded-lg p-4 bg-gray-900/30">
+                                <canvas id="chart-@idx" class="max-h-64 w-full"></canvas>
+                            </div>
+                        }
+
+                        @if (msg.Columns?.Count > 0 && msg.Rows?.Count > 0)
+                        {
+                            <div class="border border-gray-800 rounded-lg overflow-hidden">
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-xs">
+                                        <thead class="bg-gray-900/70 sticky top-0">
+                                            <tr>
+                                                @foreach (var col in msg.Columns)
+                                                {
+                                                    <th class="text-left px-3 py-2 font-medium text-gray-500 border-b border-gray-800 whitespace-nowrap">@col</th>
+                                                }
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-gray-800/50">
+                                            @foreach (var row in msg.Rows)
+                                            {
+                                                <tr class="hover:bg-gray-900/30">
+                                                    @foreach (var col in msg.Columns)
+                                                    {
+                                                        <td class="px-3 py-1.5 text-gray-300 font-mono whitespace-nowrap">@FormatCell(row.GetValueOrDefault(col))</td>
+                                                    }
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div class="px-3 py-1.5 bg-gray-900/50 border-t border-gray-800 text-[10px] text-gray-600 flex items-center justify-between">
+                                    <span>@msg.RowCount rows</span>
+                                    <span>@((msg.InputTokens + msg.OutputTokens).ToString("N0")) tokens</span>
+                                </div>
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(msg.Sql))
+                        {
+                            <details class="text-xs">
+                                <summary class="text-gray-500 cursor-pointer hover:text-gray-400 flex items-center gap-1.5">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+                                    View SQL
+                                </summary>
+                                <div class="mt-1 border border-gray-800 rounded-lg overflow-hidden">
+                                    <div class="flex items-center justify-between px-3 py-1.5 bg-gray-900/70 border-b border-gray-800">
+                                        <span class="text-[10px] text-gray-500 uppercase tracking-wider">SQL</span>
+                                    </div>
+                                    <pre class="p-3 text-xs text-emerald-300 font-mono whitespace-pre-wrap bg-gray-950">@msg.Sql</pre>
+                                </div>
+                            </details>
+                        }
+                    </div>
+                }
+            }
+
+            @if (loading)
+            {
+                <div class="flex items-center gap-2 text-xs text-gray-500">
+                    <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+                    Running query...
+                </div>
+            }
+        </div>
+
+        <!-- Input -->
+        <div class="border-t border-gray-800 p-3">
+            <form @onsubmit="Send" @onsubmit:preventDefault class="flex gap-2">
+                <input type="text" @bind="input" @bind:event="oninput" placeholder="Ask about your data... e.g. 'Top 10 merchants by volume this week'"
+                       disabled="@loading"
+                       class="flex-1 px-3 py-2.5 bg-gray-900 border border-gray-800 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 disabled:opacity-50" />
+                <button type="submit" disabled="@(loading || string.IsNullOrWhiteSpace(input) || string.IsNullOrEmpty(database))"
+                        class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-800 disabled:text-gray-600 text-white text-sm font-medium rounded-lg transition-colors">
+                    Ask
+                </button>
+            </form>
+            <div class="mt-2 flex flex-wrap gap-2">
+                <button @onclick="QuickAskTopMerchants"
+                        class="px-2 py-1 text-[10px] text-gray-500 border border-gray-800 rounded hover:bg-gray-900 hover:text-gray-300 transition-colors">
+                    Top merchants today
+                </button>
+                <button @onclick="QuickAskHourlyVolume"
+                        class="px-2 py-1 text-[10px] text-gray-500 border border-gray-800 rounded hover:bg-gray-900 hover:text-gray-300 transition-colors">
+                    Hourly volume (24h)
+                </button>
+                <button @onclick="QuickAskStatusBreakdown"
+                        class="px-2 py-1 text-[10px] text-gray-500 border border-gray-800 rounded hover:bg-gray-900 hover:text-gray-300 transition-colors">
+                    Status breakdown
+                </button>
+                <button @onclick="QuickAskTopRecipients"
+                        class="px-2 py-1 text-[10px] text-gray-500 border border-gray-800 rounded hover:bg-gray-900 hover:text-gray-300 transition-colors">
+                    Top recipients this week
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<ChatMessage> messages = [];
+    private string input = "";
+    private bool loading;
+    private string database = "";
+    private List<string> databases = [];
+    private List<AnalyticsConversation> conversations = [];
+    private string? activeConversationId;
+    private Dictionary<string, PeriodicTimer> activePolls = [];
+    private ElementReference messagesContainer;
+    private string userId = "default";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "default";
+        await LoadDatabases();
+        await LoadConversations();
+    }
+
+    private async Task LoadDatabases()
+    {
+        try
+        {
+            // Use the ClickHouseClient to load databases directly
+            var ch = Navigation.ToAbsoluteUri("/api/analytics/databases").ToString();
+            // Instead of HTTP call, inject the same service
+            databases = ["lipila_blaze"]; // Fallback; will be loaded via HttpClient
+            using var http = new HttpClient { BaseAddress = new Uri(Navigation.BaseUri) };
+            var response = await http.GetAsync("/api/analytics/databases");
+            if (response.IsSuccessStatusCode)
+            {
+                var dbs = await response.Content.ReadFromJsonAsync<List<string>>();
+                if (dbs != null && dbs.Count > 0)
+                {
+                    databases = dbs;
+                }
+            }
+        }
+        catch { }
+
+        if (databases.Count > 0 && string.IsNullOrEmpty(database))
+            database = databases[0];
+    }
+
+    private async Task LoadConversations()
+    {
+        conversations = await ChatStore.ListConversationsAsync(userId);
+    }
+
+    private async Task LoadConversation(string id)
+    {
+        var conv = await ChatStore.GetConversationAsync(userId, id);
+        if (conv == null) return;
+
+        activeConversationId = conv.Id;
+        database = conv.Database;
+        messages = (conv.Messages ?? []).Select(m =>
+        {
+            if (m.Role == "assistant" && m.Response != null)
+            {
+                return new ChatMessage
+                {
+                    Role = "assistant",
+                    Thinking = m.Response.Thinking,
+                    Sql = m.Response.Sql,
+                    Explanation = m.Response.Explanation,
+                    Error = m.Response.Error,
+                    ChartType = m.Response.ChartType ?? "none",
+                    Columns = m.Response.Columns ?? [],
+                    Rows = m.Response.Rows ?? [],
+                    RowCount = m.Response.RowCount,
+                    InputTokens = m.Response.InputTokens,
+                    OutputTokens = m.Response.OutputTokens
+                };
+            }
+            return new ChatMessage { Role = m.Role ?? "user", Content = m.Content };
+        }).ToList();
+
+        // Check pending jobs
+        var jobs = await JobStore.GetUserJobsAsync(userId, id);
+        foreach (var job in jobs.Where(j => j.Status == "pending" || j.Status == "running"))
+        {
+            StartPolling(job.Id);
+        }
+    }
+
+    private void NewConversation()
+    {
+        activeConversationId = null;
+        ClearChat();
+    }
+
+    private async Task DeleteConversation(string id)
+    {
+        await ChatStore.DeleteConversationAsync(userId, id);
+        if (activeConversationId == id) NewConversation();
+        await LoadConversations();
+    }
+
+    private async Task Send()
+    {
+        var prompt = input.Trim();
+        if (string.IsNullOrEmpty(prompt) || loading || string.IsNullOrEmpty(database)) return;
+
+        messages.Add(new ChatMessage { Role = "user", Content = prompt });
+        input = "";
+        loading = true;
+
+        try
+        {
+            var conversationId = activeConversationId;
+
+            if (string.IsNullOrEmpty(conversationId))
+            {
+                var conversation = new AnalyticsConversation
+                {
+                    Database = database,
+                    UserId = userId,
+                    Title = prompt.Length > 50 ? prompt[..47] + "..." : prompt
+                };
+                await ChatStore.SaveConversationAsync(conversation);
+                conversationId = conversation.Id;
+                activeConversationId = conversationId;
+                await LoadConversations();
+            }
+
+            var job = new AnalyticsQueryJob
+            {
+                ConversationId = conversationId,
+                UserId = userId,
+                Prompt = prompt,
+                Database = database
+            };
+
+            await JobStore.CreateAsync(job);
+            await Worker.EnqueueAsync(job.Id);
+            StartPolling(job.Id);
+        }
+        catch (Exception ex)
+        {
+            messages.Add(new ChatMessage { Role = "assistant", Error = "Request failed: " + ex.Message });
+            loading = false;
+        }
+    }
+
+    private void StartPolling(string jobId)
+    {
+        if (activePolls.ContainsKey(jobId)) return;
+
+        var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        activePolls[jobId] = timer;
+
+        _ = Task.Run(async () =>
+        {
+            while (await timer.WaitForNextTickAsync())
+            {
+                try
+                {
+                    var job = await JobStore.GetAsync(jobId);
+                    if (job == null) { StopPolling(jobId); break; }
+
+                    if (job.Status == "completed")
+                    {
+                        StopPolling(jobId);
+                        if (job.Result != null)
+                        {
+                            messages.Add(new ChatMessage
+                            {
+                                Role = "assistant",
+                                Thinking = job.Result.Thinking,
+                                Sql = job.Result.Sql,
+                                Explanation = job.Result.Explanation,
+                                Error = job.Result.Error,
+                                ChartType = job.Result.ChartType ?? "none",
+                                Columns = job.Result.Columns ?? [],
+                                Rows = job.Result.Rows ?? [],
+                                RowCount = job.Result.RowCount,
+                                InputTokens = job.Result.InputTokens,
+                                OutputTokens = job.Result.OutputTokens
+                            });
+                        }
+                        loading = false;
+                        await InvokeAsync(StateHasChanged);
+                        await RenderCharts();
+                        break;
+                    }
+                    else if (job.Status == "failed")
+                    {
+                        StopPolling(jobId);
+                        messages.Add(new ChatMessage { Role = "assistant", Error = job.Error ?? "Query failed" });
+                        loading = false;
+                        await InvokeAsync(StateHasChanged);
+                        break;
+                    }
+                }
+                catch
+                {
+                    StopPolling(jobId);
+                    loading = false;
+                    await InvokeAsync(StateHasChanged);
+                    break;
+                }
+            }
+        });
+    }
+
+    private void StopPolling(string jobId)
+    {
+        if (activePolls.TryGetValue(jobId, out var timer))
+        {
+            timer.Dispose();
+            activePolls.Remove(jobId);
+        }
+    }
+
+    private void QuickAskTopMerchants() => QuickAsk("Top 10 merchants by disbursement volume today");
+    private void QuickAskHourlyVolume() => QuickAsk("Hourly transaction count for the last 24 hours");
+    private void QuickAskStatusBreakdown() => QuickAsk("Transaction status breakdown today");
+    private void QuickAskTopRecipients() => QuickAsk("Which wallets received the most disbursements this week?");
+
+    private void QuickAsk(string prompt)
+    {
+        input = prompt;
+        _ = Send();
+    }
+
+    private async Task RenderCharts()
+    {
+        for (int i = 0; i < messages.Count; i++)
+        {
+            var msg = messages[i];
+            if (!string.IsNullOrEmpty(msg.ChartType) && msg.ChartType != "none" && msg.Rows?.Count > 0 && msg.Columns?.Count >= 2)
+            {
+                var labelCol = msg.Columns[0];
+                var valueCols = msg.Columns.Skip(1)
+                    .Where(col => msg.Rows.Any(row => double.TryParse(row.GetValueOrDefault(col), out _)))
+                    .ToList();
+
+                if (valueCols.Count == 0) continue;
+
+                var labels = msg.Rows.Select(row => row.GetValueOrDefault(labelCol) ?? "").ToArray();
+                var datasets = valueCols.Select(col => new
+                {
+                    label = col,
+                    data = msg.Rows.Select(row => double.TryParse(row.GetValueOrDefault(col), out var v) ? v : 0.0).ToArray()
+                }).ToArray();
+
+                await JS.InvokeVoidAsync("chartInterop.renderChart", $"chart-{i}", msg.ChartType, labels, datasets, null);
+            }
+        }
+    }
+
+    private void ClearChat()
+    {
+        _ = JS.InvokeVoidAsync("chartInterop.destroyAllCharts");
+        messages.Clear();
+    }
+
+    private static string FormatCell(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        if (double.TryParse(value, out var num) && num > 999)
+            return num.ToString("N0");
+        return value;
+    }
+
+    public void Dispose()
+    {
+        foreach (var timer in activePolls.Values)
+            timer.Dispose();
+        activePolls.Clear();
+    }
+
+    private class ChatMessage
+    {
+        public string Role { get; set; } = "";
+        public string? Content { get; set; }
+        public string? Thinking { get; set; }
+        public string? Sql { get; set; }
+        public string? Explanation { get; set; }
+        public string? Error { get; set; }
+        public string? ChartType { get; set; }
+        public List<string>? Columns { get; set; }
+        public List<Dictionary<string, string>>? Rows { get; set; }
+        public int RowCount { get; set; }
+        public int InputTokens { get; set; }
+        public int OutputTokens { get; set; }
+    }
+}
