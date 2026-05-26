@@ -1,6 +1,6 @@
 @page "/admin/runs"
 @inject IRunLogStore RunLogStore
-@inject ActiveRunTracker RunTracker
+@inject IActiveRunTracker RunTracker
 @attribute [Authorize(Policy = AuthConstants.Policy)]
 @implements IDisposable
 
@@ -109,7 +109,7 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadRuns();
-        var trackedRun = RunTracker.GetLatestTrackedRun();
+        var trackedRun = await RunTracker.GetLatestTrackedRunAsync();
         if (trackedRun is not null)
         {
             activeRunId = trackedRun.RunId;
@@ -150,7 +150,7 @@
         try
         {
             var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
-            RunTracker.MarkQueued(runId, "manual:runs_page", DateTime.UtcNow);
+            await RunTracker.MarkQueuedAsync(runId, "manual:runs_page", DateTime.UtcNow);
             Hangfire.BackgroundJob.Enqueue<Sentinel.Jobs.SentinelJob>(j => j.RunAsync("manual:runs_page", runId));
             activeRunId = runId;
             activeRunStatus = "queued";
@@ -188,18 +188,15 @@
                     {
                         activeRunStatus = summary.Status;
                     }
-                    else if (RunTracker.TryGet(runId, out var tracked))
-                    {
-                        activeRunStatus = tracked.Status;
-                    }
                     else
                     {
-                        activeRunStatus = logs.Count > 0 ? "running" : "queued";
+                        var tracked = await RunTracker.GetAsync(runId);
+                        activeRunStatus = tracked?.Status ?? (logs.Count > 0 ? "running" : "queued");
                     }
 
                     if (summary is not null)
                     {
-                        RunTracker.MarkCompleted(runId);
+                        await RunTracker.MarkCompletedAsync(runId);
                         await LoadRuns();
                         StopRunMonitoring();
                     }

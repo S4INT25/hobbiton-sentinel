@@ -2,43 +2,45 @@ using System.Collections.Concurrent;
 
 namespace Sentinel.Admin;
 
-public class ActiveRunTracker
+/// <summary>In-memory implementation used in development / when Redis is unavailable.</summary>
+public class InMemoryActiveRunTracker : IActiveRunTracker
 {
     private readonly ConcurrentDictionary<string, ActiveRunState> _runs = new();
 
-    public void MarkQueued(string runId, string triggeredBy, DateTime startedAtUtc)
+    public Task MarkQueuedAsync(string runId, string triggeredBy, DateTime startedAtUtc)
     {
         _runs.AddOrUpdate(runId,
             _ => new ActiveRunState(runId, "queued", triggeredBy, startedAtUtc, DateTime.UtcNow),
-            (_, current) => current with { Status = "queued", TriggeredBy = triggeredBy, StartedAtUtc = startedAtUtc, UpdatedAtUtc = DateTime.UtcNow });
+            (_, cur) => cur with { Status = "queued", TriggeredBy = triggeredBy, StartedAtUtc = startedAtUtc, UpdatedAtUtc = DateTime.UtcNow });
+        return Task.CompletedTask;
     }
 
-    public void MarkRunning(string runId, string triggeredBy, DateTime startedAtUtc)
+    public Task MarkRunningAsync(string runId, string triggeredBy, DateTime startedAtUtc)
     {
         _runs.AddOrUpdate(runId,
             _ => new ActiveRunState(runId, "running", triggeredBy, startedAtUtc, DateTime.UtcNow),
-            (_, current) => current with { Status = "running", TriggeredBy = triggeredBy, StartedAtUtc = startedAtUtc, UpdatedAtUtc = DateTime.UtcNow });
+            (_, cur) => cur with { Status = "running", TriggeredBy = triggeredBy, StartedAtUtc = startedAtUtc, UpdatedAtUtc = DateTime.UtcNow });
+        return Task.CompletedTask;
     }
 
-    public void MarkFailed(string runId)
+    public Task MarkFailedAsync(string runId)
     {
-        if (_runs.TryGetValue(runId, out var current))
-            _runs[runId] = current with { Status = "failed", UpdatedAtUtc = DateTime.UtcNow };
+        if (_runs.TryGetValue(runId, out var cur))
+            _runs[runId] = cur with { Status = "failed", UpdatedAtUtc = DateTime.UtcNow };
+        return Task.CompletedTask;
     }
 
-    public void MarkCompleted(string runId)
+    public Task MarkCompletedAsync(string runId)
     {
         _runs.TryRemove(runId, out _);
+        return Task.CompletedTask;
     }
 
-    public bool TryGet(string runId, out ActiveRunState state) => _runs.TryGetValue(runId, out state!);
+    public Task<ActiveRunState?> GetAsync(string runId) =>
+        Task.FromResult(_runs.TryGetValue(runId, out var state) ? state : (ActiveRunState?)null);
 
-    public ActiveRunState? GetLatestTrackedRun()
-    {
-        return _runs.Values
-            .OrderByDescending(r => r.UpdatedAtUtc)
-            .FirstOrDefault();
-    }
+    public Task<ActiveRunState?> GetLatestTrackedRunAsync() =>
+        Task.FromResult(_runs.Values.OrderByDescending(r => r.UpdatedAtUtc).FirstOrDefault());
 }
 
 public sealed record ActiveRunState(

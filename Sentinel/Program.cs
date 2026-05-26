@@ -82,6 +82,7 @@ try
         builder.Services.AddSingleton<ISystemPromptStore, InMemorySystemPromptStore>();
         builder.Services.AddSingleton<IAnalyticsChatStore, InMemoryAnalyticsChatStore>();
         builder.Services.AddSingleton<IAnalyticsJobStore, InMemoryAnalyticsJobStore>();
+        builder.Services.AddSingleton<IActiveRunTracker, InMemoryActiveRunTracker>();
         builder.Services.AddFusionCache();
         builder.Services.AddHangfire(config => config.UseInMemoryStorage());
     }
@@ -95,6 +96,7 @@ try
         builder.Services.AddSingleton<ISystemPromptStore, SystemPromptStore>();
         builder.Services.AddSingleton<IAnalyticsChatStore, RedisAnalyticsChatStore>();
         builder.Services.AddSingleton<IAnalyticsJobStore, RedisAnalyticsJobStore>();
+        builder.Services.AddSingleton<IActiveRunTracker, RedisActiveRunTracker>();
 
         // ClickHouse EF Core — run logs + audit (constructed from ClickHouse config section)
         var chHost = new Uri(builder.Configuration["ClickHouse:Host"] ?? "http://localhost:8123");
@@ -117,7 +119,6 @@ try
     }
 
     builder.Services.AddSingleton<SchemaLoader>();
-    builder.Services.AddSingleton<ActiveRunTracker>();
 
     builder.Services.AddHangfireServer(options =>
     {

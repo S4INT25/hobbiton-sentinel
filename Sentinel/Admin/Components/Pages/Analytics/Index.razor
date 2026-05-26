@@ -3,6 +3,7 @@
 @inject IAnalyticsJobStore JobStore
 @inject AnalyticsQueryWorker Worker
 @inject Sentinel.Infrastructure.ClickHouseClient ClickHouse
+@inject ZiggyCreatures.Caching.Fusion.IFusionCache Cache
 @inject AuthenticationStateProvider AuthState
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
@@ -41,7 +42,7 @@
     <div class="flex-1 flex flex-col min-w-0">
         <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800">
             <div class="flex items-center gap-3">
-                <select @bind="database" class="px-2.5 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white">
+                <select value="@database" @onchange="OnDatabaseChanged" class="px-2.5 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white">
                     @foreach (var db in databases)
                     {
                         <option value="@db">@db</option>
@@ -245,6 +246,8 @@
     private static readonly HashSet<string> SystemDatabases =
         ["system", "INFORMATION_SCHEMA", "information_schema", "default"];
 
+    private string DbPrefKey => $"analytics:prefs:{userId}:database";
+
     private async Task LoadDatabases()
     {
         databases = ["lipila_blaze"];
@@ -253,25 +256,25 @@
         {
             var json = await ClickHouse.QueryAsync("SHOW DATABASES");
 
-            // ClickHouseClient returns error strings (not JSON) on failure
             if (json.StartsWith("ClickHouse error") || json.StartsWith("Error:") || json.StartsWith("Query failed:"))
             {
                 dbLoadError = json;
-                return;
             }
-
-            using var doc = System.Text.Json.JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("data", out var data))
+            else
             {
-                var loaded = data.EnumerateArray()
-                    .Where(r => r.TryGetProperty("name", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
-                    .Select(r => r.GetProperty("name").GetString()!)
-                    .Where(s => !string.IsNullOrWhiteSpace(s) && !SystemDatabases.Contains(s))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(s => s)
-                    .ToList();
-                if (loaded.Count > 0)
-                    databases = loaded;
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("data", out var data))
+                {
+                    var loaded = data.EnumerateArray()
+                        .Where(r => r.TryGetProperty("name", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
+                        .Select(r => r.GetProperty("name").GetString()!)
+                        .Where(s => !string.IsNullOrWhiteSpace(s) && !SystemDatabases.Contains(s))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(s => s)
+                        .ToList();
+                    if (loaded.Count > 0)
+                        databases = loaded;
+                }
             }
         }
         catch (Exception ex)
@@ -279,8 +282,18 @@
             dbLoadError = ex.Message;
         }
 
-        if (databases.Count > 0 && string.IsNullOrEmpty(database))
+        // Restore saved database preference, fall back to first in list
+        var saved = await Cache.GetOrDefaultAsync<string>(DbPrefKey);
+        if (!string.IsNullOrEmpty(saved) && databases.Contains(saved, StringComparer.OrdinalIgnoreCase))
+            database = saved;
+        else if (databases.Count > 0)
             database = databases[0];
+    }
+
+    private async Task OnDatabaseChanged(ChangeEventArgs e)
+    {
+        database = e.Value?.ToString() ?? database;
+        try { await Cache.SetAsync(DbPrefKey, database, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) }); } catch { /* best-effort */ }
     }
 
     private async Task LoadConversations()
@@ -295,6 +308,7 @@
 
         activeConversationId = conv.Id;
         database = conv.Database;
+        try { await Cache.SetAsync(DbPrefKey, database, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) }); } catch { /* best-effort */ }
         messages = (conv.Messages ?? []).Select(m =>
         {
             if (m.Role == "assistant" && m.Response != null)
