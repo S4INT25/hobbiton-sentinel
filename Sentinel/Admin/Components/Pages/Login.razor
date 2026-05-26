@@ -1,8 +1,11 @@
 @page "/admin/login"
 @layout EmptyLayout
-@inject IJSRuntime JS
-@inject NavigationManager Navigation
 @attribute [AllowAnonymous]
+
+@code {
+    [SupplyParameterFromQuery(Name = "error")]
+    public string? ErrorParam { get; set; }
+}
 
 <PageTitle>Sign in — Sentinel</PageTitle>
 
@@ -18,59 +21,31 @@
             <p class="text-sm text-gray-500 mt-1">Sign in to continue</p>
         </div>
 
-        @if (!string.IsNullOrEmpty(error))
+        @if (ErrorParam == "invalid")
         {
             <div class="mb-4 p-3 rounded-md bg-rose-500/10 border border-rose-500/20 text-sm text-rose-400">
-                @error
+                Invalid username or password
             </div>
         }
 
-        <form @onsubmit="HandleLogin" @onsubmit:preventDefault class="space-y-4">
+        @* Native HTML form POST — bypasses Blazor's interactive circuit entirely.
+           The /admin/auth/signin endpoint handles SignInAsync and redirects. *@
+        <form action="/admin/auth/signin" method="post" class="space-y-4">
+            <input type="hidden" name="returnUrl" value="/admin" />
             <div>
                 <label class="block text-xs font-medium text-gray-400 mb-1.5">Username</label>
-                <input type="text" @bind="username" required autocomplete="username" autofocus
+                <input type="text" name="username" required autocomplete="username" autofocus
                        class="w-full px-3 py-2 bg-gray-900 border border-gray-800 rounded-md text-sm text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20" />
             </div>
             <div>
                 <label class="block text-xs font-medium text-gray-400 mb-1.5">Password</label>
-                <input type="password" @bind="password" required autocomplete="current-password"
+                <input type="password" name="password" required autocomplete="current-password"
                        class="w-full px-3 py-2 bg-gray-900 border border-gray-800 rounded-md text-sm text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20" />
             </div>
-            <button type="submit" disabled="@isLoading"
-                    class="w-full py-2 px-4 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-md transition-colors disabled:opacity-50">
-                @(isLoading ? "Signing in…" : "Sign in")
+            <button type="submit"
+                    class="w-full py-2 px-4 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-md transition-colors">
+                Sign in
             </button>
         </form>
     </div>
 </div>
-
-@code {
-    private string username = "";
-    private string password = "";
-    private string? error;
-    private bool isLoading;
-
-    private async Task HandleLogin()
-    {
-        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password)) return;
-
-        error = null;
-        isLoading = true;
-
-        // POST credentials from the browser via JS fetch so the Set-Cookie header
-        // is applied to the browser's cookie jar. Blazor Server's event handlers
-        // run server-side over WebSocket and have no access to HttpContext for SignInAsync.
-        var ok = await JS.InvokeAsync<bool>("sentinelAuth.login", username, password);
-
-        if (ok)
-        {
-            // Force a full HTTP reload so Blazor picks up the new auth cookie
-            Navigation.NavigateTo("/admin", forceLoad: true);
-        }
-        else
-        {
-            error = "Invalid username or password";
-            isLoading = false;
-        }
-    }
-}

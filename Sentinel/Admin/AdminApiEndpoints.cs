@@ -12,6 +12,50 @@ public static class AdminApiEndpoints
 {
     public static void MapAdminApi(this WebApplication app)
     {
+        // ── Login form handler (outside /api group — no auth required, sets cookie) ──
+        app.MapPost("/admin/auth/signin", async (
+            HttpContext ctx,
+            IUserStore userStore,
+            IAuditLogStore audit) =>
+        {
+            var form = await ctx.Request.ReadFormAsync();
+            var username = form["username"].FirstOrDefault() ?? "";
+            var password = form["password"].FirstOrDefault() ?? "";
+            var returnUrl = form["returnUrl"].FirstOrDefault() ?? "/admin";
+            if (!returnUrl.StartsWith("/")) returnUrl = "/admin";
+
+            var user = await userStore.GetByUsernameAsync(username);
+            if (user == null || !user.IsActive || !BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
+            {
+                await audit.LogAsync(new AuditLog
+                {
+                    Action = "login_failed", ResourceType = "auth",
+                    ResourceId = username, Username = username,
+                    IpAddress = ctx.Connection.RemoteIpAddress?.ToString() ?? ""
+                });
+                return Results.Redirect("/admin/login?error=invalid");
+            }
+
+            var claims = new List<Claim>
+            {
+                new(ClaimTypes.NameIdentifier, user.Id),
+                new(ClaimTypes.Name, user.Username),
+                new(ClaimTypes.Role, user.Role),
+                new("display_name", user.DisplayName)
+            };
+            await ctx.SignInAsync(AuthConstants.Scheme,
+                new ClaimsPrincipal(new ClaimsIdentity(claims, AuthConstants.Scheme)));
+            await userStore.UpdateLastLoginAsync(user.Id);
+            await audit.LogAsync(new AuditLog
+            {
+                UserId = user.Id, Username = user.Username,
+                Action = "login", ResourceType = "auth", ResourceId = user.Id,
+                IpAddress = ctx.Connection.RemoteIpAddress?.ToString() ?? ""
+            });
+
+            return Results.Redirect(returnUrl);
+        }).AllowAnonymous().DisableAntiforgery();
+
         var api = app.MapGroup("/api").RequireAuthorization(AuthConstants.Policy);
 
         // ── Rules ──
