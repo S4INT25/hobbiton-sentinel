@@ -1,0 +1,44 @@
+@page "/admin/audit"
+@model Sentinel.Admin.Pages.Audit.IndexModel
+@{
+    ViewData["Title"] = "Audit Log";
+    ViewData["Nav"] = "audit";
+}
+
+<div class="space-y-4">
+    <h1 class="text-lg font-semibold text-white">Audit Log</h1>
+
+    <div class="border border-gray-800 rounded-lg overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-900/50">
+                <tr class="text-xs text-gray-500 border-b border-gray-800">
+                    <th class="text-left px-4 py-2 font-medium">Timestamp</th>
+                    <th class="text-left px-4 py-2 font-medium">User</th>
+                    <th class="text-left px-4 py-2 font-medium">Action</th>
+                    <th class="text-left px-4 py-2 font-medium">Resource</th>
+                    <th class="text-left px-4 py-2 font-medium">Details</th>
+                    <th class="text-left px-4 py-2 font-medium">IP</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800/50">
+                @foreach (var log in Model.Logs)
+                {
+                    <tr class="hover:bg-gray-900/30 transition-colors">
+                        <td class="px-4 py-2.5 text-xs text-gray-500 font-mono">@log.Timestamp.ToString("MMM dd HH:mm:ss")</td>
+                        <td class="px-4 py-2.5 text-xs text-gray-300">@log.Username</td>
+                        <td class="px-4 py-2.5">
+                            <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-800 text-gray-300">@log.Action</span>
+                        </td>
+                        <td class="px-4 py-2.5 text-xs text-gray-400">@log.ResourceType/@log.ResourceId</td>
+                        <td class="px-4 py-2.5 text-xs text-gray-500 max-w-xs truncate">@log.Details</td>
+                        <td class="px-4 py-2.5 text-xs text-gray-600 font-mono">@log.IpAddress</td>
+                    </tr>
+                }
+                @if (!Model.Logs.Any())
+                {
+                    <tr><td colspan="6" class="px-4 py-8 text-center text-gray-600 text-xs">No audit events</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

@@ -15,7 +15,7 @@ public class FraudSchedulerService(
 
         jobs.AddOrUpdate<SentinelJob>(
             recurringJobId: "fraud-detector-hourly",
-            methodCall: job => job.RunAsync(),
+            methodCall: job => job.RunAsync("scheduler"),
             cronExpression: cron,
             queue:"fraud",
             options: new RecurringJobOptions

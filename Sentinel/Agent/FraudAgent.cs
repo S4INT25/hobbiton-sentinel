@@ -1,5 +1,9 @@
-using System.Diagnostics.CodeAnalysis;
+using System.ClientModel;
+using System.ClientModel.Primitives;
+using System.Diagnostics;
 using System.Text.Json;
+using Sentinel.Admin.Models;
+using Sentinel.Admin.Stores;
 using Sentinel.Infrastructure;
 using Sentinel.Memory;
 using OpenAI;
@@ -14,10 +18,14 @@ public class FraudAgent(
     IpLookupClient ipLookup,
     ICaseStore caseStore,
     SchemaLoader schemaLoader,
+    IFeedbackRuleStore feedbackRuleStore,
+    IRunLogStore runLogStore,
+    ISystemPromptStore systemPromptStore,
     IConfiguration config,
     ILogger<FraudAgent> logger)
 {
-    private string BuildSystemPrompt(string openCasesSummary, int lookbackMinutes, string schemaBlock)
+    private string BuildSystemPrompt(string openCasesSummary, int lookbackMinutes,
+        string schemaBlock, string suppressionBlock)
     {
         var casesContext = openCasesSummary == "No open cases."
             ? "no open cases."
@@ -38,7 +46,7 @@ public class FraudAgent(
 
                 ## Fraud Patterns
                 {FraudPatternRegistry.ToPromptBlock()}
-
+                {suppressionBlock}
                 ## Open Cases
                 You have {casesContext}
                 {openCasesSummary}
@@ -80,14 +88,14 @@ public class FraudAgent(
                 """;
     }
 
-    [Experimental("SCME0001")]
-    public async Task RunAsync()
+    public async Task RunAsync(string triggeredBy = "scheduler")
     {
         var runId = DateTime.UtcNow.ToString("yyyyMMddHHmm");
+        var runStartedAt = DateTime.UtcNow;
         var lookback = config.GetValue("Sentinel:LookbackMinutes", 70);
         var modelName = config["DigitalOcean:ModelName"]!;
 
-        logger.LogInformation("Fraud agent run {RunId} started", runId);
+        logger.LogInformation("Fraud agent run {RunId} started (triggered by: {TriggeredBy})", runId, triggeredBy);
 
         // Auto-resolve cases that have gone stale (no agent activity for N days)
         var staleDays = config.GetValue("Sentinel:StaleCase:ThresholdDays", 7);
@@ -96,20 +104,37 @@ public class FraudAgent(
             logger.LogInformation("Auto-resolved {Count} stale case(s) (threshold: {Days} days)", staleClosed,
                 staleDays);
 
-        // Load open cases and schema concurrently
+        // Load open cases, schema, feedback rules, and prompt override concurrently
         var openCasesSummaryTask = caseStore.GetOpenCasesSummaryAsync();
         var openCasesTask = caseStore.GetOpenCasesAsync();
         var schemaBlockTask = schemaLoader.GetSchemaBlockAsync();
+        var rulesTask = feedbackRuleStore.GetActiveRulesAsync();
+        var promptOverrideTask = systemPromptStore.GetOverrideAsync();
 
-        await Task.WhenAll(openCasesSummaryTask, openCasesTask, schemaBlockTask);
+        await Task.WhenAll(openCasesSummaryTask, openCasesTask, schemaBlockTask, rulesTask, promptOverrideTask);
 
         var openCasesSummary = await openCasesSummaryTask;
         var openCases = await openCasesTask;
         var schemaBlock = await schemaBlockTask;
+        var activeRules = await rulesTask;
+        var promptOverride = await promptOverrideTask;
 
-        logger.LogInformation("Loaded {Count} open cases", openCases.Count);
+        logger.LogInformation("Loaded {Count} open cases, {RuleCount} suppression rules",
+            openCases.Count, activeRules.Count);
 
-        var systemPrompt = BuildSystemPrompt(openCasesSummary, lookback, schemaBlock);
+        // Build suppression block from active rules
+        var suppressionBlock = activeRules.Count > 0
+            ? "\n## Known-Good Exceptions (Analyst Verified)\n" +
+              "Do NOT flag these as suspicious. They have been reviewed and confirmed legitimate:\n" +
+              string.Join("\n", activeRules.Select(r =>
+                  $"- [{r.RuleType}] {r.MatchValue} → {r.Action} | Reason: {r.Reason}"))
+              + "\n\n"
+            : "\n";
+
+        // Use prompt override if set, otherwise build from code
+        var systemPrompt = promptOverride?.PromptText is { Length: > 0 }
+            ? promptOverride.PromptText
+            : BuildSystemPrompt(openCasesSummary, lookback, schemaBlock, suppressionBlock);
 
         // Inject follow-up queries from open cases into the first user message
         var followUpContext = openCases.Count > 0 && openCases.Any(c => c.FollowUpQueries.Count > 0)
@@ -143,7 +168,9 @@ public class FraudAgent(
                 MaxOutputTokenCount = 4096,
                 Temperature = 0.1f,
             };
+#pragma warning disable SCME0001
             options.Patch.Set("$.thinking"u8, BinaryData.FromObjectAsJson(new { type = "disabled" }));
+#pragma warning restore SCME0001
 
             foreach (var tool in tools) options.Tools.Add(tool);
 
@@ -200,10 +227,24 @@ public class FraudAgent(
                     logger.LogInformation("[Run:{RunId}] Tool call: {Tool} args={Args}",
                         runId, toolCall.FunctionName, argsPreview);
 
+                    var toolStart = Stopwatch.GetTimestamp();
                     var result = await ExecuteToolAsync(toolCall, runId);
-                    
+                    var durationMs = (int)Stopwatch.GetElapsedTime(toolStart).TotalMilliseconds;
 
-                    logger.LogInformation("[Run:{RunId}] Tool result: {Tool}", runId, toolCall.FunctionName);
+                    // Fire-and-forget log to ClickHouse
+                    _ = runLogStore.LogToolCallAsync(new RunLog
+                    {
+                        RunId = runId,
+                        Iteration = (ushort)iteration,
+                        ToolName = toolCall.FunctionName,
+                        Args = args,
+                        Result = result.Length > 10_000 ? result[..10_000] : result,
+                        StartedAt = DateTime.UtcNow.AddMilliseconds(-durationMs),
+                        DurationMs = (uint)durationMs
+                    });
+
+                    logger.LogInformation("[Run:{RunId}] Tool result: {Tool} ({Ms}ms)", runId, toolCall.FunctionName,
+                        durationMs);
 
                     messages.Add(new ToolChatMessage(toolCall.Id, result));
                     if (toolCall.FunctionName == "send_alert") alertSent = true;
@@ -227,6 +268,7 @@ public class FraudAgent(
             {
                 options.Tools.Add(tool);
             }
+
             var summaryResponse = await chatClient.CompleteChatAsync(messages, options);
             var summaryCompletion = summaryResponse.Value;
             totalInputTokens += summaryCompletion.Usage?.InputTokenCount ?? 0;
@@ -264,6 +306,22 @@ public class FraudAgent(
         logger.LogInformation(
             "[Run:{RunId}] Completed — {N} iterations | tokens: {TotalTokens} total (in={In} out={Out})",
             runId, iteration, totalInputTokens + totalOutputTokens, totalInputTokens, totalOutputTokens);
+
+        // Write run summary (fire-and-forget)
+        _ = runLogStore.SaveSummaryAsync(new RunSummary
+        {
+            RunId = runId,
+            StartedAt = runStartedAt,
+            FinishedAt = DateTime.UtcNow,
+            Iterations = (ushort)iteration,
+            InputTokens = (uint)totalInputTokens,
+            OutputTokens = (uint)totalOutputTokens,
+            CasesCreated = 0, // TODO: track in loop
+            CasesResolved = 0,
+            AlertsSent = (ushort)(alertSent ? 1 : 0),
+            Status = iteration >= maxIterations ? "max_iterations" : "completed",
+            TriggeredBy = triggeredBy
+        });
     }
 
     private async Task<string> ExecuteToolAsync(ChatToolCall toolCall, string runId)
