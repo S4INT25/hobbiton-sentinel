@@ -2,9 +2,9 @@
 @inject IAnalyticsChatStore ChatStore
 @inject IAnalyticsJobStore JobStore
 @inject AnalyticsQueryWorker Worker
+@inject Sentinel.Infrastructure.ClickHouseClient ClickHouse
 @inject AuthenticationStateProvider AuthState
 @inject IJSRuntime JS
-@inject NavigationManager Navigation
 @attribute [Authorize(Policy = AuthConstants.Policy)]
 @implements IDisposable
 
@@ -219,26 +219,33 @@
         await LoadConversations();
     }
 
+    private static readonly HashSet<string> SystemDatabases =
+        ["system", "INFORMATION_SCHEMA", "information_schema", "default"];
+
     private async Task LoadDatabases()
     {
+        databases = ["lipila_blaze"];
         try
         {
-            // Use the ClickHouseClient to load databases directly
-            var ch = Navigation.ToAbsoluteUri("/api/analytics/databases").ToString();
-            // Instead of HTTP call, inject the same service
-            databases = ["lipila_blaze"]; // Fallback; will be loaded via HttpClient
-            using var http = new HttpClient { BaseAddress = new Uri(Navigation.BaseUri) };
-            var response = await http.GetAsync("/api/analytics/databases");
-            if (response.IsSuccessStatusCode)
+            var json = await ClickHouse.QueryAsync("SHOW DATABASES");
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("data", out var data))
             {
-                var dbs = await response.Content.ReadFromJsonAsync<List<string>>();
-                if (dbs != null && dbs.Count > 0)
-                {
-                    databases = dbs;
-                }
+                var loaded = data.EnumerateArray()
+                    .Where(r => r.TryGetProperty("name", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
+                    .Select(r => r.GetProperty("name").GetString()!)
+                    .Where(s => !string.IsNullOrWhiteSpace(s) && !SystemDatabases.Contains(s))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(s => s)
+                    .ToList();
+                if (loaded.Count > 0)
+                    databases = loaded;
             }
         }
-        catch { }
+        catch
+        {
+            // keep fallback
+        }
 
         if (databases.Count > 0 && string.IsNullOrEmpty(database))
             database = databases[0];
@@ -415,15 +422,15 @@
         }
     }
 
-    private void QuickAskTopMerchants() => QuickAsk("Top 10 merchants by disbursement volume today");
-    private void QuickAskHourlyVolume() => QuickAsk("Hourly transaction count for the last 24 hours");
-    private void QuickAskStatusBreakdown() => QuickAsk("Transaction status breakdown today");
-    private void QuickAskTopRecipients() => QuickAsk("Which wallets received the most disbursements this week?");
+    private Task QuickAskTopMerchants() => QuickAsk("Top 10 merchants by disbursement volume today");
+    private Task QuickAskHourlyVolume() => QuickAsk("Hourly transaction count for the last 24 hours");
+    private Task QuickAskStatusBreakdown() => QuickAsk("Transaction status breakdown today");
+    private Task QuickAskTopRecipients() => QuickAsk("Which wallets received the most disbursements this week?");
 
-    private void QuickAsk(string prompt)
+    private async Task QuickAsk(string prompt)
     {
         input = prompt;
-        _ = Send();
+        await Send();
     }
 
     private async Task RenderCharts()
