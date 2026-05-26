@@ -60,7 +60,7 @@
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-800/50">
-                @foreach (var u in users)
+                @foreach (var u in PagedUsers)
                 {
                     <tr class="hover:bg-gray-900/30 transition-colors">
                         <td class="px-4 py-2.5 text-xs text-gray-200 font-mono">@u.Username</td>
@@ -93,6 +93,16 @@
             </tbody>
         </table>
     </div>
+    @if (users.Count > PageSize)
+    {
+        <div class="mt-3 flex items-center justify-between text-xs">
+            <span class="text-gray-500">Page @currentPage / @TotalPages</span>
+            <div class="flex items-center gap-2">
+                <button @onclick="PrevPage" disabled="@(currentPage <= 1)" class="px-2.5 py-1 border border-gray-800 rounded text-gray-300 disabled:opacity-40">Previous</button>
+                <button @onclick="NextPage" disabled="@(currentPage >= TotalPages)" class="px-2.5 py-1 border border-gray-800 rounded text-gray-300 disabled:opacity-40">Next</button>
+            </div>
+        </div>
+    }
 </div>
 
 @code {
@@ -103,12 +113,17 @@
     private string newDisplayName = "";
     private string newRole = "analyst";
     private string? currentUsername;
+    private int currentPage = 1;
+    private const int PageSize = 15;
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling((double)users.Count / PageSize));
+    private IEnumerable<AdminUser> PagedUsers => users.Skip((currentPage - 1) * PageSize).Take(PageSize);
 
     protected override async Task OnInitializedAsync()
     {
         users = await UserStore.GetAllAsync();
         var authState = await AuthState.GetAuthenticationStateAsync();
         currentUsername = authState.User.Identity?.Name;
+        currentPage = Math.Min(currentPage, TotalPages);
     }
 
     private async Task CreateUser()
@@ -142,6 +157,7 @@
         newRole = "analyst";
         showAdd = false;
         users = await UserStore.GetAllAsync();
+        currentPage = Math.Min(currentPage, TotalPages);
     }
 
     private async Task DeleteUser(string userId)
@@ -161,5 +177,16 @@
         });
 
         users = await UserStore.GetAllAsync();
+        currentPage = Math.Min(currentPage, TotalPages);
+    }
+
+    private void PrevPage()
+    {
+        if (currentPage > 1) currentPage--;
+    }
+
+    private void NextPage()
+    {
+        if (currentPage < TotalPages) currentPage++;
     }
 }

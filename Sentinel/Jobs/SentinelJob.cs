@@ -8,14 +8,14 @@ namespace Sentinel.Jobs;
 public class SentinelJob(FraudAgent agent, ILogger<SentinelJob> logger)
 {
    
-    public async Task RunAsync(string triggeredBy = "scheduler")
+    public async Task RunAsync(string triggeredBy = "scheduler", string? runId = null)
     {
         logger.LogInformation("Fraud detector job started at {Time} (triggered by: {TriggeredBy})",
             DateTime.UtcNow, triggeredBy);
 
         try
         {
-            await agent.RunAsync(triggeredBy);
+            await agent.RunAsync(triggeredBy, runId);
             logger.LogInformation("Fraud detector job completed at {Time}", DateTime.UtcNow);
         }
         catch (Exception ex)

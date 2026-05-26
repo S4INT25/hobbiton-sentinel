@@ -21,7 +21,7 @@
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-800/50">
-                @foreach (var log in logs)
+                @foreach (var log in PagedLogs)
                 {
                     <tr class="hover:bg-gray-900/30 transition-colors">
                         <td class="px-4 py-2.5 text-xs text-gray-500 font-mono">@log.Timestamp.ToString("MMM dd HH:mm:ss")</td>
@@ -41,13 +41,38 @@
             </tbody>
         </table>
     </div>
+    @if (logs.Count > PageSize)
+    {
+        <div class="mt-3 flex items-center justify-between text-xs">
+            <span class="text-gray-500">Page @currentPage / @TotalPages</span>
+            <div class="flex items-center gap-2">
+                <button @onclick="PrevPage" disabled="@(currentPage <= 1)" class="px-2.5 py-1 border border-gray-800 rounded text-gray-300 disabled:opacity-40">Previous</button>
+                <button @onclick="NextPage" disabled="@(currentPage >= TotalPages)" class="px-2.5 py-1 border border-gray-800 rounded text-gray-300 disabled:opacity-40">Next</button>
+            </div>
+        </div>
+    }
 </div>
 
 @code {
     private List<AuditLog> logs = [];
+    private int currentPage = 1;
+    private const int PageSize = 25;
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling((double)logs.Count / PageSize));
+    private IEnumerable<AuditLog> PagedLogs => logs.Skip((currentPage - 1) * PageSize).Take(PageSize);
 
     protected override async Task OnInitializedAsync()
     {
         logs = await AuditStore.GetRecentAsync(200);
+        currentPage = Math.Min(currentPage, TotalPages);
+    }
+
+    private void PrevPage()
+    {
+        if (currentPage > 1) currentPage--;
+    }
+
+    private void NextPage()
+    {
+        if (currentPage < TotalPages) currentPage++;
     }
 }

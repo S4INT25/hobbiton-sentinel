@@ -2,9 +2,9 @@
 @inject ICaseStore CaseStore
 @inject IRunLogStore RunLogStore
 @inject IFeedbackRuleStore RuleStore
-@inject NavigationManager Navigation
 @attribute [Authorize(Policy = AuthConstants.Policy)]
 @rendermode InteractiveServer
+@implements IDisposable
 
 <PageTitle>Dashboard — Sentinel</PageTitle>
 
@@ -18,12 +18,50 @@
             }
             <button @onclick="TriggerRun" disabled="@triggerLoading"
                     class="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                @(triggerLoading ? "Running…" : "Run Now")
+                @(triggerLoading ? "Queueing…" : "Run Now")
             </button>
         </div>
     </div>
 
-    <!-- Stats -->
+    @if (!string.IsNullOrEmpty(activeRunId))
+    {
+        <div class="border border-gray-800 rounded-lg p-4 bg-gray-900/40 space-y-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="text-xs text-gray-400">Current run</div>
+                    <a href="/admin/runs/@activeRunId" class="text-emerald-400 hover:text-emerald-300 font-mono text-xs">@activeRunId</a>
+                    <span class="@RunStatusClasses(activeRunStatus)">@activeRunStatus</span>
+                </div>
+                @if (activeRunStartedAt is not null)
+                {
+                    <span class="text-[10px] text-gray-500 font-mono">@activeRunStartedAt.Value.ToString("MMM dd HH:mm:ss")</span>
+                }
+            </div>
+            @if (activeRunLogs.Any())
+            {
+                <div>
+                    <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Latest Tool Calls</div>
+                    <div class="space-y-1.5">
+                        @foreach (var log in activeRunLogs.Take(6))
+                        {
+                            <div class="flex items-center justify-between text-xs bg-gray-950/70 border border-gray-800 rounded px-2.5 py-1.5">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-gray-600 font-mono">@log.Iteration</span>
+                                    <span class="text-emerald-400 font-mono">@log.ToolName</span>
+                                </div>
+                                <span class="text-gray-500 font-mono">@log.StartedAt.ToString("HH:mm:ss")</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="text-xs text-gray-500">No tool logs yet. The run is still starting.</div>
+            }
+        </div>
+    }
+
     <div class="grid grid-cols-4 gap-3">
         <div class="p-4 bg-gray-900 border border-gray-800 rounded-lg">
             <div class="text-xs text-gray-500 mb-1">Open Cases</div>
@@ -43,7 +81,6 @@
         </div>
     </div>
 
-    <!-- Recent Runs -->
     <div>
         <h2 class="text-sm font-medium text-gray-400 mb-3">Recent Runs</h2>
         <div class="border border-gray-800 rounded-lg overflow-hidden">
@@ -59,7 +96,7 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-800/50">
-                    @foreach (var run in runs)
+                    @foreach (var run in PagedRuns)
                     {
                         <tr class="hover:bg-gray-900/30 transition-colors">
                             <td class="px-4 py-2.5">
@@ -69,14 +106,7 @@
                             <td class="px-4 py-2.5 text-gray-300 font-mono text-xs">@run.Iterations</td>
                             <td class="px-4 py-2.5 text-gray-300 font-mono text-xs">@((run.InputTokens + run.OutputTokens).ToString("N0"))</td>
                             <td class="px-4 py-2.5">
-                                @if (run.Status == "completed")
-                                {
-                                    <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">completed</span>
-                                }
-                                else
-                                {
-                                    <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">@run.Status</span>
-                                }
+                                <span class="@RunStatusClasses(run.Status)">@run.Status</span>
                             </td>
                             <td class="px-4 py-2.5 text-gray-500 text-xs">@run.TriggeredBy</td>
                         </tr>
@@ -88,6 +118,16 @@
                 </tbody>
             </table>
         </div>
+        @if (runs.Count > PageSize)
+        {
+            <div class="mt-3 flex items-center justify-between text-xs">
+                <span class="text-gray-500">Page @currentPage / @TotalPages</span>
+                <div class="flex items-center gap-2">
+                    <button @onclick="PrevPage" disabled="@(currentPage <= 1)" class="px-2.5 py-1 border border-gray-800 rounded text-gray-300 disabled:opacity-40">Previous</button>
+                    <button @onclick="NextPage" disabled="@(currentPage >= TotalPages)" class="px-2.5 py-1 border border-gray-800 rounded text-gray-300 disabled:opacity-40">Next</button>
+                </div>
+            </div>
+        }
     </div>
 </div>
 
@@ -100,8 +140,24 @@
     private bool triggerLoading;
     private string? triggerMessage;
     private bool triggerSuccess;
+    private string? activeRunId;
+    private string activeRunStatus = "queued";
+    private DateTime? activeRunStartedAt;
+    private List<RunLog> activeRunLogs = [];
+    private PeriodicTimer? runPollTimer;
+    private CancellationTokenSource? runPollCts;
+    private int currentPage = 1;
+    private const int PageSize = 10;
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling((double)runs.Count / PageSize));
+    private IEnumerable<RunSummary> PagedRuns => runs.Skip((currentPage - 1) * PageSize).Take(PageSize);
 
     protected override async Task OnInitializedAsync()
+    {
+        await LoadDashboardData();
+    }
+
+    private async Task LoadDashboardData()
     {
         var cases = await CaseStore.GetOpenCasesAsync();
         openCases = cases.Count;
@@ -109,34 +165,109 @@
         var rules = await RuleStore.GetActiveRulesAsync();
         activeRules = rules.Count;
 
-        runs = await RunLogStore.GetRecentRunsAsync(10);
+        runs = await RunLogStore.GetRecentRunsAsync(100);
         recentRuns = runs.Count(r => r.StartedAt >= DateTime.UtcNow.AddHours(-24));
         tokensUsed = runs
             .Where(r => r.StartedAt >= DateTime.UtcNow.AddHours(-24))
             .Sum(r => (long)(r.InputTokens + r.OutputTokens));
+        currentPage = Math.Min(currentPage, TotalPages);
     }
 
     private async Task TriggerRun()
     {
         triggerLoading = true;
         triggerMessage = null;
+
         try
         {
-            Hangfire.BackgroundJob.Enqueue<Sentinel.Jobs.SentinelJob>(j => j.RunAsync("manual:dashboard"));
+            var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+            Hangfire.BackgroundJob.Enqueue<Sentinel.Jobs.SentinelJob>(j => j.RunAsync("manual:dashboard", runId));
+
+            activeRunId = runId;
+            activeRunStartedAt = DateTime.UtcNow;
+            activeRunStatus = "queued";
+            activeRunLogs = [];
+            StartRunMonitoring(runId);
+
             triggerSuccess = true;
-            triggerMessage = "Run triggered successfully";
+            triggerMessage = $"Run queued ({runId})";
         }
         catch
         {
             triggerSuccess = false;
             triggerMessage = "Failed to trigger run";
         }
-        triggerLoading = false;
 
-        _ = Task.Delay(5000).ContinueWith(_ =>
+        triggerLoading = false;
+    }
+
+    private void StartRunMonitoring(string runId)
+    {
+        StopRunMonitoring();
+        runPollCts = new CancellationTokenSource();
+        runPollTimer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        var token = runPollCts.Token;
+
+        _ = Task.Run(async () =>
         {
-            triggerMessage = null;
-            InvokeAsync(StateHasChanged);
-        });
+            try
+            {
+                while (await runPollTimer.WaitForNextTickAsync(token))
+                {
+                    var summary = await RunLogStore.GetRunSummaryAsync(runId);
+                    var logs = await RunLogStore.GetRunLogsAsync(runId);
+
+                    activeRunLogs = logs.OrderByDescending(l => l.StartedAt).ToList();
+                    activeRunStatus = summary?.Status ?? (logs.Count > 0 ? "running" : "queued");
+
+                    if (summary is not null)
+                    {
+                        await LoadDashboardData();
+                        StopRunMonitoring();
+                    }
+
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }, token);
+    }
+
+    private void StopRunMonitoring()
+    {
+        runPollCts?.Cancel();
+        runPollTimer?.Dispose();
+        runPollCts?.Dispose();
+        runPollTimer = null;
+        runPollCts = null;
+    }
+
+    private static string RunStatusClasses(string status)
+    {
+        return status switch
+        {
+            "completed" => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+            "error" => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20",
+            "running" => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20",
+            "queued" => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-700/40 text-gray-300 border border-gray-700",
+            _ => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20"
+        };
+    }
+
+    private void PrevPage()
+    {
+        if (currentPage > 1) currentPage--;
+    }
+
+    private void NextPage()
+    {
+        if (currentPage < TotalPages) currentPage++;
+    }
+
+    public void Dispose()
+    {
+        StopRunMonitoring();
     }
 }

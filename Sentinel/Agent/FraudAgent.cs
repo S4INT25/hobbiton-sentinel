@@ -88,14 +88,16 @@ public class FraudAgent(
                 """;
     }
 
-    public async Task RunAsync(string triggeredBy = "scheduler")
+    public async Task RunAsync(string triggeredBy = "scheduler", string? runId = null)
     {
-        var runId = DateTime.UtcNow.ToString("yyyyMMddHHmm");
+        var currentRunId = string.IsNullOrWhiteSpace(runId)
+            ? DateTime.UtcNow.ToString("yyyyMMddHHmmssfff")
+            : runId;
         var runStartedAt = DateTime.UtcNow;
         var lookback = config.GetValue("Sentinel:LookbackMinutes", 70);
         var modelName = config["DigitalOcean:ModelName"]!;
 
-        logger.LogInformation("Fraud agent run {RunId} started (triggered by: {TriggeredBy})", runId, triggeredBy);
+        logger.LogInformation("Fraud agent run {RunId} started (triggered by: {TriggeredBy})", currentRunId, triggeredBy);
 
         // Auto-resolve cases that have gone stale (no agent activity for N days)
         var staleDays = config.GetValue("Sentinel:StaleCase:ThresholdDays", 7);
@@ -148,7 +150,7 @@ public class FraudAgent(
         {
             new SystemChatMessage(systemPrompt),
             new UserChatMessage(
-                $"Run ID: {runId}. Start your investigation now.{followUpContext}")
+                $"Run ID: {currentRunId}. Start your investigation now.{followUpContext}")
         };
 
         var tools = FraudAgentTools.GetToolDefinitions();
@@ -179,7 +181,7 @@ public class FraudAgent(
             {
                 earlyWarningSent = true;
                 logger.LogWarning("[Run:{RunId}] Approaching iteration limit ({N}/{Max}) — injecting wrap-up warning",
-                    runId, iteration, maxIterations);
+                    currentRunId, iteration, maxIterations);
                 messages.Add(new UserChatMessage(
                     $"⚠️ You have used {iteration - 1} of {maxIterations} allowed steps. " +
                     $"You have approximately {maxIterations - iteration + 1} steps remaining. " +
@@ -200,7 +202,7 @@ public class FraudAgent(
 
             logger.LogInformation(
                 "[Run:{RunId}] Iteration {N}: finish={Reason} tools={ToolCount} tokens={Total} (in={In} out={Out})",
-                runId, iteration, completion.FinishReason, completion.ToolCalls.Count, totalTokens, inputTokens,
+                currentRunId, iteration, completion.FinishReason, completion.ToolCalls.Count, totalTokens, inputTokens,
                 outputTokens);
 
             var textContent = string.Concat((completion.Content ?? [])
@@ -209,7 +211,7 @@ public class FraudAgent(
 
             if (!string.IsNullOrWhiteSpace(textContent))
             {
-                logger.LogInformation("[Run:{RunId}] LLM text: {Text}", runId, textContent);
+                logger.LogInformation("[Run:{RunId}] LLM text: {Text}", currentRunId, textContent);
             }
 
             if (completion.FinishReason == ChatFinishReason.Stop)
@@ -225,16 +227,16 @@ public class FraudAgent(
                     var argsPreview = args.Length > 300 ? args[..300] + "…" : args;
 
                     logger.LogInformation("[Run:{RunId}] Tool call: {Tool} args={Args}",
-                        runId, toolCall.FunctionName, argsPreview);
+                        currentRunId, toolCall.FunctionName, argsPreview);
 
                     var toolStart = Stopwatch.GetTimestamp();
-                    var result = await ExecuteToolAsync(toolCall, runId);
+                    var result = await ExecuteToolAsync(toolCall, currentRunId);
                     var durationMs = (int)Stopwatch.GetElapsedTime(toolStart).TotalMilliseconds;
 
                     // Fire-and-forget log to ClickHouse
                     _ = runLogStore.LogToolCallAsync(new RunLog
                     {
-                        RunId = runId,
+                        RunId = currentRunId,
                         Iteration = (ushort)iteration,
                         ToolName = toolCall.FunctionName,
                         Args = args,
@@ -243,7 +245,7 @@ public class FraudAgent(
                         DurationMs = (uint)durationMs
                     });
 
-                    logger.LogInformation("[Run:{RunId}] Tool result: {Tool} ({Ms}ms)", runId, toolCall.FunctionName,
+                    logger.LogInformation("[Run:{RunId}] Tool result: {Tool} ({Ms}ms)", currentRunId, toolCall.FunctionName,
                         durationMs);
 
                     messages.Add(new ToolChatMessage(toolCall.Id, result));
@@ -277,7 +279,7 @@ public class FraudAgent(
 
             foreach (var toolCall in summaryCompletion.ToolCalls)
             {
-                var result = await ExecuteToolAsync(toolCall, runId);
+                var result = await ExecuteToolAsync(toolCall, currentRunId);
                 logger.LogInformation("Max-iteration summary tool: {Tool} → {Result}", toolCall.FunctionName, result);
                 if (toolCall.FunctionName == "send_alert")
                 {
@@ -290,27 +292,27 @@ public class FraudAgent(
             if (!alertSent)
             {
                 logger.LogWarning("Run {RunId} hit iteration limit with no alert sent — sending ops notification",
-                    runId);
+                    currentRunId);
                 await email.SendAsync(
                     "Fraud Detector: Run Incomplete",
-                    $"Run {runId} reached the iteration limit ({maxIterations} steps) without completing. " +
+                    $"Run {currentRunId} reached the iteration limit ({maxIterations} steps) without completing. " +
                     "Review Hangfire logs for partial findings.",
                     "warning");
             }
         }
         else if (!alertSent)
         {
-            logger.LogInformation("Run {RunId} completed cleanly — no alert warranted", runId);
+            logger.LogInformation("Run {RunId} completed cleanly — no alert warranted", currentRunId);
         }
 
         logger.LogInformation(
             "[Run:{RunId}] Completed — {N} iterations | tokens: {TotalTokens} total (in={In} out={Out})",
-            runId, iteration, totalInputTokens + totalOutputTokens, totalInputTokens, totalOutputTokens);
+            currentRunId, iteration, totalInputTokens + totalOutputTokens, totalInputTokens, totalOutputTokens);
 
         // Write run summary (fire-and-forget)
         _ = runLogStore.SaveSummaryAsync(new RunSummary
         {
-            RunId = runId,
+            RunId = currentRunId,
             StartedAt = runStartedAt,
             FinishedAt = DateTime.UtcNow,
             Iterations = (ushort)iteration,
