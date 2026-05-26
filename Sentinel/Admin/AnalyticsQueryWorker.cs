@@ -62,7 +62,12 @@ public class AnalyticsQueryWorker(
             using var scope = scopeFactory.CreateScope();
             var agent = scope.ServiceProvider.GetRequiredService<AnalyticsAgent>();
 
-            var result = await agent.AskAsync(job.Prompt, job.Database, history);
+            var result = await agent.AskAsync(job.Prompt, job.Database, history,
+                onEvent: async evt =>
+                {
+                    job.StreamEvents.Add(evt);
+                    await jobStore.UpdateAsync(job);
+                });
 
             job.Status = "completed";
             job.CompletedAt = DateTime.UtcNow;

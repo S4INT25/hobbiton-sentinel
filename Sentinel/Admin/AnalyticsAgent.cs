@@ -13,9 +13,14 @@ public class AnalyticsAgent(
     ILogger<AnalyticsAgent> logger)
 {
     private const int MaxHistoryExchanges = 10;
+    private const int MaxRetries = 3;
 
-    public async Task<AnalyticsResponse> AskAsync(string prompt, string database = "lipila_blaze",
-        List<ChatEntry>? history = null)
+    /// <param name="onEvent">Optional callback invoked for each streaming event (thinking, retrying, etc.).</param>
+    public async Task<AnalyticsResponse> AskAsync(
+        string prompt,
+        string database = "lipila_blaze",
+        List<ChatEntry>? history = null,
+        Func<AnalyticsStreamEvent, Task>? onEvent = null)
     {
         var modelName = config["DigitalOcean:ModelName"]!;
         var schema = await schemaLoader.GetSchemaBlockAsync(database);
@@ -57,18 +62,16 @@ public class AnalyticsAgent(
                                "explanation": "Your text answer here",
                                "chart": "none"
                              }
+
+                             If you previously produced SQL that caused an error, the user will send back the error.
+                             Carefully analyse the error, fix the SQL, and try again.
                              """;
 
-        var messages = new List<ChatMessage>
-        {
-            new SystemChatMessage(systemPrompt)
-        };
+        var messages = new List<ChatMessage> { new SystemChatMessage(systemPrompt) };
 
-        // Add conversation history for multi-turn context
         if (history is { Count: > 0 })
         {
-            var historyToInclude = history.TakeLast(MaxHistoryExchanges * 2).ToList();
-            foreach (var entry in historyToInclude)
+            foreach (var entry in history.TakeLast(MaxHistoryExchanges * 2))
             {
                 if (entry.Role == "user")
                     messages.Add(new UserChatMessage(entry.Content));
@@ -82,43 +85,87 @@ public class AnalyticsAgent(
         messages.Add(new UserChatMessage(prompt));
 
         var chatClient = ai.GetChatClient(modelName);
-        var options = new ChatCompletionOptions
+        var options = new ChatCompletionOptions { MaxOutputTokenCount = 2048, Temperature = 0.1f };
+
+        int totalInput = 0, totalOutput = 0;
+        string? lastError = null;
+
+        for (int attempt = 1; attempt <= MaxRetries; attempt++)
         {
-            MaxOutputTokenCount = 2048,
-            Temperature = 0.1f,
-        };
+            // If this is a retry, tell the LLM about the previous error
+            if (attempt > 1 && lastError != null)
+            {
+                await Emit(onEvent, new AnalyticsStreamEvent
+                {
+                    Type = "fixing",
+                    Message = $"Fixing SQL (attempt {attempt}/{MaxRetries})…",
+                    Attempt = attempt
+                });
+                messages.Add(new UserChatMessage(
+                    $"The SQL you generated returned this error from ClickHouse:\n\n{lastError}\n\nPlease analyse the error carefully and produce corrected SQL."));
+            }
 
-        var response = await chatClient.CompleteChatAsync(messages, options);
-        var text = string.Concat(response.Value.Content
-            .Where(p => p.Kind == ChatMessageContentPartKind.Text)
-            .Select(p => p.Text));
+            await Emit(onEvent, new AnalyticsStreamEvent
+            {
+                Type = "thinking",
+                Message = attempt == 1 ? "Analysing your question…" : $"Rethinking query (attempt {attempt}/{MaxRetries})…",
+                Attempt = attempt
+            });
 
-        var inputTokens = response.Value.Usage?.InputTokenCount ?? 0;
-        var outputTokens = response.Value.Usage?.OutputTokenCount ?? 0;
+            // Call the LLM
+            ChatCompletion response;
+            try
+            {
+                response = (await chatClient.CompleteChatAsync(messages, options)).Value;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "[Analytics] LLM call failed on attempt {Attempt}", attempt);
+                return new AnalyticsResponse { Success = false, Error = $"LLM error: {ex.Message}", InputTokens = totalInput, OutputTokens = totalOutput };
+            }
 
-        logger.LogInformation("[Analytics] tokens: in={In} out={Out}", inputTokens, outputTokens);
+            var text = string.Concat(response.Content
+                .Where(p => p.Kind == ChatMessageContentPartKind.Text)
+                .Select(p => p.Text));
 
-        // Parse LLM response
-        try
-        {
-            // Strip markdown fences if present
+            totalInput += response.Usage?.InputTokenCount ?? 0;
+            totalOutput += response.Usage?.OutputTokenCount ?? 0;
+            logger.LogInformation("[Analytics] attempt={Attempt} tokens in={In} out={Out}", attempt, totalInput, totalOutput);
+
+            // Strip markdown fences
             text = text.Trim();
             if (text.StartsWith("```")) text = text[text.IndexOf('\n')..];
             if (text.EndsWith("```")) text = text[..text.LastIndexOf("```")];
             text = text.Trim();
 
-            using var doc = JsonDocument.Parse(text);
-            var root = doc.RootElement;
+            // Parse LLM response
+            string? thinking, sql, explanation, chartType;
+            try
+            {
+                using var doc = JsonDocument.Parse(text);
+                var root = doc.RootElement;
+                thinking = root.TryGetProperty("thinking", out var t) ? t.GetString() : null;
+                sql = root.TryGetProperty("sql", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() : null;
+                explanation = root.TryGetProperty("explanation", out var e) ? e.GetString() : null;
+                chartType = root.TryGetProperty("chart", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : "none";
+            }
+            catch (JsonException)
+            {
+                // Plain text — no SQL to execute
+                return new AnalyticsResponse { Success = true, Explanation = text, InputTokens = totalInput, OutputTokens = totalOutput };
+            }
 
-            var thinking = root.TryGetProperty("thinking", out var t) ? t.GetString() : null;
-            var sql = root.TryGetProperty("sql", out var s) && s.ValueKind == JsonValueKind.String
-                ? s.GetString()
-                : null;
-            var explanation = root.TryGetProperty("explanation", out var e) ? e.GetString() : null;
-            var chartType = root.TryGetProperty("chart", out var c) && c.ValueKind == JsonValueKind.String
-                ? c.GetString()
-                : "none";
+            if (!string.IsNullOrEmpty(thinking))
+            {
+                await Emit(onEvent, new AnalyticsStreamEvent
+                {
+                    Type = "thinking",
+                    Message = thinking,
+                    Attempt = attempt
+                });
+            }
 
+            // No SQL — conversational answer
             if (sql == null)
             {
                 return new AnalyticsResponse
@@ -127,32 +174,62 @@ public class AnalyticsAgent(
                     Explanation = explanation ?? text,
                     Thinking = thinking,
                     ChartType = chartType ?? "none",
-                    InputTokens = inputTokens,
-                    OutputTokens = outputTokens
+                    InputTokens = totalInput,
+                    OutputTokens = totalOutput
                 };
             }
+
+            await Emit(onEvent, new AnalyticsStreamEvent
+            {
+                Type = "sql",
+                Message = "Executing SQL…",
+                Sql = sql,
+                Attempt = attempt
+            });
 
             // Execute the query
             var result = await ch.QueryAsync(sql);
 
-            // Check for ClickHouse error
-            if (result.StartsWith("ClickHouse error") || result.StartsWith("Error:") ||
-                result.StartsWith("Query failed:"))
+            if (result.StartsWith("ClickHouse error") || result.StartsWith("Error:") || result.StartsWith("Query failed:"))
             {
-                return new AnalyticsResponse
+                lastError = result;
+                await Emit(onEvent, new AnalyticsStreamEvent
                 {
-                    Success = false,
+                    Type = "error",
+                    Message = result,
                     Sql = sql,
-                    Error = result,
-                    Thinking = thinking,
-                    Explanation = explanation,
-                    InputTokens = inputTokens,
-                    OutputTokens = outputTokens
-                };
+                    Attempt = attempt
+                });
+
+                // Add the failed SQL + error to message history so the LLM can self-correct
+                messages.Add(new AssistantChatMessage(text));
+                // next loop iteration adds the error message
+
+                if (attempt == MaxRetries)
+                {
+                    logger.LogWarning("[Analytics] All {MaxRetries} attempts failed. Last error: {Error}", MaxRetries, result);
+                    return new AnalyticsResponse
+                    {
+                        Success = false,
+                        Sql = sql,
+                        Error = $"Failed after {MaxRetries} attempts. Last error: {result}",
+                        Thinking = thinking,
+                        InputTokens = totalInput,
+                        OutputTokens = totalOutput
+                    };
+                }
+
+                continue; // retry
             }
 
-            // Parse into table format
+            // Success
             var tableData = ParseQueryResult(result);
+            await Emit(onEvent, new AnalyticsStreamEvent
+            {
+                Type = "done",
+                Message = $"Got {tableData.Rows.Count} rows",
+                Attempt = attempt
+            });
 
             return new AnalyticsResponse
             {
@@ -165,32 +242,19 @@ public class AnalyticsAgent(
                 Columns = tableData.Columns,
                 Rows = tableData.Rows,
                 RowCount = tableData.Rows.Count,
-                InputTokens = inputTokens,
-                OutputTokens = outputTokens
+                InputTokens = totalInput,
+                OutputTokens = totalOutput
             };
         }
-        catch (JsonException)
-        {
-            // LLM didn't return valid JSON — treat as plain text response
-            return new AnalyticsResponse
-            {
-                Success = true,
-                Explanation = text,
-                InputTokens = inputTokens,
-                OutputTokens = outputTokens
-            };
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "[Analytics] Failed to process query");
-            return new AnalyticsResponse
-            {
-                Success = false,
-                Error = ex.Message,
-                InputTokens = inputTokens,
-                OutputTokens = outputTokens
-            };
-        }
+
+        // Should never reach here
+        return new AnalyticsResponse { Success = false, Error = "Unexpected agent exit", InputTokens = totalInput, OutputTokens = totalOutput };
+    }
+
+    private static async Task Emit(Func<AnalyticsStreamEvent, Task>? onEvent, AnalyticsStreamEvent evt)
+    {
+        if (onEvent != null)
+            await onEvent(evt);
     }
 
     private static TableData ParseQueryResult(string json)
@@ -201,13 +265,10 @@ public class AnalyticsAgent(
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            // ClickHouse JSON format has "meta" (column definitions) and "data" (rows)
             if (root.TryGetProperty("meta", out var meta))
-            {
                 data.Columns = meta.EnumerateArray()
                     .Select(m => m.GetProperty("name").GetString()!)
                     .ToList();
-            }
 
             if (root.TryGetProperty("data", out var rows))
             {
@@ -228,21 +289,13 @@ public class AnalyticsAgent(
                                 _ => val.GetRawText()
                             };
                         }
-                        else
-                        {
-                            rowDict[col] = "";
-                        }
+                        else rowDict[col] = "";
                     }
-
                     data.Rows.Add(rowDict);
                 }
             }
         }
-        catch
-        {
-            // If parsing fails, return empty table
-        }
-
+        catch { /* return empty table */ }
         return data;
     }
 }
@@ -258,7 +311,7 @@ public class AnalyticsResponse
     public string? RawResult { get; set; }
 
     public string? Error { get; set; }
-    public string ChartType { get; set; } = "none"; // bar, line, doughnut, none
+    public string ChartType { get; set; } = "none";
     public List<string> Columns { get; set; } = [];
     public List<Dictionary<string, string>> Rows { get; set; } = [];
     public int RowCount { get; set; }
