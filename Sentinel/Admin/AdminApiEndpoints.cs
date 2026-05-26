@@ -1,8 +1,10 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Sentinel.Admin.Auth;
 using Sentinel.Admin.Models;
 using Sentinel.Admin.Stores;
+using Sentinel.Infrastructure;
 
 namespace Sentinel.Admin;
 
@@ -186,11 +188,139 @@ public static class AdminApiEndpoints
         });
 
         // ── Analytics ──
-        api.MapPost("/analytics/ask", async (AnalyticsRequest req, AnalyticsAgent agent) =>
+        var analytics = api.MapGroup("/analytics");
+
+        analytics.MapGet("/databases", async (ClickHouseClient ch) =>
         {
-            var result = await agent.AskAsync(req.Prompt, req.Database ?? "lipila_blaze");
-            return Results.Ok(result);
+            var json = await ch.QueryAsync("SHOW DATABASES");
+            var databases = ParseDatabaseNames(json)
+                .Where(db => !SystemDatabases.Contains(db))
+                .OrderBy(db => db)
+                .ToList();
+            return Results.Ok(databases);
         });
+
+        analytics.MapGet("/conversations", async (IAnalyticsChatStore store, HttpContext ctx) =>
+        {
+            var userId = ctx.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "default";
+            var conversations = await store.ListConversationsAsync(userId);
+            return Results.Ok(conversations);
+        });
+
+        analytics.MapGet("/conversations/{id}", async (string id, IAnalyticsChatStore store, HttpContext ctx) =>
+        {
+            var userId = ctx.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "default";
+            var conversation = await store.GetConversationAsync(userId, id);
+            return conversation is null ? Results.NotFound() : Results.Ok(conversation);
+        });
+
+        analytics.MapPost("/conversations", async (CreateConversationRequest req, IAnalyticsChatStore store, HttpContext ctx) =>
+        {
+            var userId = ctx.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "default";
+            var conversation = new AnalyticsConversation
+            {
+                Database = req.Database,
+                UserId = userId
+            };
+            await store.SaveConversationAsync(conversation);
+            return Results.Ok(conversation);
+        });
+
+        analytics.MapDelete("/conversations/{id}", async (string id, IAnalyticsChatStore store, HttpContext ctx) =>
+        {
+            var userId = ctx.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "default";
+            await store.DeleteConversationAsync(userId, id);
+            return Results.NoContent();
+        });
+
+        analytics.MapPost("/ask", async (AnalyticsAskRequest req, IAnalyticsJobStore jobStore,
+            IAnalyticsChatStore chatStore, AnalyticsQueryWorker worker, HttpContext ctx) =>
+        {
+            var userId = ctx.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "default";
+            var conversationId = req.ConversationId;
+
+            if (string.IsNullOrEmpty(conversationId))
+            {
+                var conversation = new AnalyticsConversation
+                {
+                    Database = req.Database ?? "lipila_blaze",
+                    UserId = userId,
+                    Title = GenerateTitle(req.Prompt)
+                };
+                await chatStore.SaveConversationAsync(conversation);
+                conversationId = conversation.Id;
+            }
+
+            var job = new AnalyticsQueryJob
+            {
+                ConversationId = conversationId,
+                UserId = userId,
+                Prompt = req.Prompt,
+                Database = req.Database ?? "lipila_blaze"
+            };
+
+            await jobStore.CreateAsync(job);
+            await worker.EnqueueAsync(job.Id);
+
+            return Results.Ok(new { jobId = job.Id, conversationId, status = job.Status });
+        });
+
+        analytics.MapGet("/jobs/{jobId}", async (string jobId, IAnalyticsJobStore jobStore) =>
+        {
+            var job = await jobStore.GetAsync(jobId);
+            if (job == null) return Results.NotFound();
+            return Results.Ok(new
+            {
+                jobId = job.Id,
+                status = job.Status,
+                result = job.Result,
+                error = job.Error,
+                conversationId = job.ConversationId,
+                submittedAt = job.SubmittedAt,
+                completedAt = job.CompletedAt
+            });
+        });
+
+        analytics.MapGet("/jobs", async (string? conversationId, IAnalyticsJobStore jobStore, HttpContext ctx) =>
+        {
+            var userId = ctx.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "default";
+            var jobs = await jobStore.GetUserJobsAsync(userId, conversationId);
+            return Results.Ok(jobs.Select(j => new
+            {
+                jobId = j.Id,
+                status = j.Status,
+                error = j.Error,
+                conversationId = j.ConversationId,
+                submittedAt = j.SubmittedAt,
+                completedAt = j.CompletedAt
+            }));
+        });
+    }
+
+    private static readonly HashSet<string> SystemDatabases =
+        ["system", "INFORMATION_SCHEMA", "information_schema", "default"];
+
+    private static string GenerateTitle(string message)
+    {
+        var title = message.Trim();
+        if (title.Length > 50)
+            title = title[..47] + "...";
+        return title;
+    }
+
+    private static List<string> ParseDatabaseNames(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("data", out var data)) return [];
+            return data.EnumerateArray()
+                .Where(r => r.TryGetProperty("name", out var v) && v.ValueKind == JsonValueKind.String)
+                .Select(r => r.GetProperty("name").GetString()!)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .ToList();
+        }
+        catch { return []; }
     }
 
     private static async Task AuditAction(IAuditLogStore audit, HttpContext ctx,
@@ -215,3 +345,5 @@ public record CreateUserRequest(string Username, string Password, string Role, s
 public record CaseFeedbackRequest(string Action, string? Reason, FeedbackRule? CreateRule);
 public record PromptUpdateRequest(string PromptText);
 public record AnalyticsRequest(string Prompt, string? Database);
+public record AnalyticsAskRequest(string Prompt, string? Database, string? ConversationId = null);
+public record CreateConversationRequest(string Database);

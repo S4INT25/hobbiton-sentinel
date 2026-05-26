@@ -12,7 +12,9 @@ public class AnalyticsAgent(
     IConfiguration config,
     ILogger<AnalyticsAgent> logger)
 {
-    public async Task<AnalyticsResponse> AskAsync(string prompt, string database = "lipila_blaze")
+    private const int MaxHistoryExchanges = 10;
+
+    public async Task<AnalyticsResponse> AskAsync(string prompt, string database = "lipila_blaze", List<ChatEntry>? history = null)
     {
         var modelName = config["DigitalOcean:ModelName"]!;
         var schema = await schemaLoader.GetSchemaBlockAsync();
@@ -58,9 +60,25 @@ public class AnalyticsAgent(
 
         var messages = new List<ChatMessage>
         {
-            new SystemChatMessage(systemPrompt),
-            new UserChatMessage(prompt)
+            new SystemChatMessage(systemPrompt)
         };
+
+        // Add conversation history for multi-turn context
+        if (history is { Count: > 0 })
+        {
+            var historyToInclude = history.TakeLast(MaxHistoryExchanges * 2).ToList();
+            foreach (var entry in historyToInclude)
+            {
+                if (entry.Role == "user")
+                    messages.Add(new UserChatMessage(entry.Content));
+                else
+                    messages.Add(new AssistantChatMessage(entry.Response != null
+                        ? JsonSerializer.Serialize(entry.Response)
+                        : entry.Content));
+            }
+        }
+
+        messages.Add(new UserChatMessage(prompt));
 
         var chatClient = ai.GetChatClient(modelName);
         var options = new ChatCompletionOptions

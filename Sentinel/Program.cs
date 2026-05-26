@@ -81,6 +81,8 @@ try
         builder.Services.AddSingleton<IAuditLogStore, InMemoryAuditLogStore>();
         builder.Services.AddSingleton<IUserStore, InMemoryUserStore>();
         builder.Services.AddSingleton<ISystemPromptStore, InMemorySystemPromptStore>();
+        builder.Services.AddSingleton<IAnalyticsChatStore, InMemoryAnalyticsChatStore>();
+        builder.Services.AddSingleton<IAnalyticsJobStore, InMemoryAnalyticsJobStore>();
         builder.Services.AddFusionCache();
         builder.Services.AddHangfire(config => config.UseInMemoryStorage());
     }
@@ -92,6 +94,8 @@ try
         builder.Services.AddSingleton<IFeedbackRuleStore, FeedbackRuleStore>();
         builder.Services.AddSingleton<IUserStore, UserStore>();
         builder.Services.AddSingleton<ISystemPromptStore, SystemPromptStore>();
+        builder.Services.AddSingleton<IAnalyticsChatStore, RedisAnalyticsChatStore>();
+        builder.Services.AddSingleton<IAnalyticsJobStore, RedisAnalyticsJobStore>();
 
         // ClickHouse EF Core — run logs + audit
         var chConnectionString = builder.Configuration["ClickHouse:ConnectionString"]
@@ -122,6 +126,8 @@ try
     builder.Services.AddScoped<FraudAgent>();
     builder.Services.AddScoped<SentinelJob>();
     builder.Services.AddScoped<AnalyticsAgent>();
+    builder.Services.AddSingleton<AnalyticsQueryWorker>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<AnalyticsQueryWorker>());
     builder.Services.AddHostedService<FraudSchedulerService>();
 
     // ── Authentication & Authorization ──
