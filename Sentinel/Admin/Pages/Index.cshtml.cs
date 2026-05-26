@@ -1,6 +1,4 @@
-using Hangfire;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Sentinel.Admin.Auth;
 using Sentinel.Admin.Models;
@@ -34,13 +32,5 @@ public class IndexModel(
         TokensUsed = Runs
             .Where(r => r.StartedAt >= DateTime.UtcNow.AddHours(-24))
             .Sum(r => (long)(r.InputTokens + r.OutputTokens));
-    }
-
-    public IActionResult OnPostTriggerRun()
-    {
-        var username = User.Identity?.Name ?? "unknown";
-        BackgroundJob.Enqueue<Jobs.SentinelJob>(
-            j => j.RunAsync($"manual:{username}"));
-        return RedirectToPage();
     }
 }

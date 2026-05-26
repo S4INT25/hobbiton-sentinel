@@ -6,14 +6,18 @@
 }
 
 <div class="space-y-6">
-    <div class="flex items-center justify-between">
+    <div class="flex items-center justify-between" x-data="runTrigger()">
         <h1 class="text-lg font-semibold text-white">Dashboard</h1>
-        <form method="post" asp-page-handler="TriggerRun">
-            <button type="submit"
-                    class="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-colors">
-                Run Now
+        <div class="flex items-center gap-2">
+            <span x-show="message" x-text="message" x-transition
+                  :class="success ? 'text-emerald-400' : 'text-rose-400'"
+                  class="text-xs"></span>
+            <button @@click="trigger()" :disabled="loading"
+                    class="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                <span x-show="!loading">Run Now</span>
+                <span x-show="loading">Running…</span>
             </button>
-        </form>
+        </div>
     </div>
 
     <!-- Stats -->

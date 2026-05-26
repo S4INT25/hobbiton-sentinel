@@ -1,6 +1,4 @@
-using Hangfire;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Sentinel.Admin.Auth;
 using Sentinel.Admin.Models;
@@ -16,13 +14,5 @@ public class IndexModel(IRunLogStore runLogStore) : PageModel
     public async Task OnGetAsync()
     {
         Runs = await runLogStore.GetRecentRunsAsync(50);
-    }
-
-    public IActionResult OnPostTriggerRun()
-    {
-        var username = User.Identity?.Name ?? "unknown";
-        BackgroundJob.Enqueue<Jobs.SentinelJob>(
-            j => j.RunAsync($"manual:{username}"));
-        return RedirectToPage();
     }
 }
