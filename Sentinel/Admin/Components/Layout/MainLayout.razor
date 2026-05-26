@@ -70,8 +70,22 @@
 
     <!-- Main content -->
     <main class="flex-1 overflow-y-auto bg-gray-950">
-        <div class="max-w-6xl mx-auto pl-2 pr-6 py-6">
+        <div class="@ContentContainerClass">
             @Body
         </div>
     </main>
 </div>
+
+@code {
+    private string ContentContainerClass
+    {
+        get
+        {
+            var route = "/" + Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].Trim('/');
+            var isAnalytics = route.StartsWith("/admin/analytics", StringComparison.OrdinalIgnoreCase);
+            return isAnalytics
+                ? "mx-auto pl-2 pr-6 py-6"
+                : "max-w-6xl mx-auto pl-2 pr-6 py-6";
+        }
+    }
+}
