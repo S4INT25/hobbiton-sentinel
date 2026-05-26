@@ -5,6 +5,7 @@
 @inject Sentinel.Infrastructure.ClickHouseClient ClickHouse
 @inject AuthenticationStateProvider AuthState
 @inject IJSRuntime JS
+@inject NavigationManager Navigation
 @attribute [Authorize(Policy = AuthConstants.Policy)]
 @implements IDisposable
 
@@ -46,6 +47,10 @@
                         <option value="@db">@db</option>
                     }
                 </select>
+                @if (!string.IsNullOrEmpty(dbLoadError))
+                {
+                    <span class="text-[10px] text-rose-400 truncate max-w-xs" title="@dbLoadError">⚠ DB load failed</span>
+                }
                 @if (activePolls.Count > 0)
                 {
                     <span class="flex items-center gap-1.5 text-[10px] text-emerald-400">
@@ -200,16 +205,21 @@
 </div>
 
 @code {
+    [SupplyParameterFromQuery(Name = "id")]
+    public string? ConversationIdParam { get; set; }
+
     private List<ChatMessage> messages = [];
     private string input = "";
     private bool loading;
     private string database = "";
     private List<string> databases = [];
+    private string? dbLoadError;
     private List<AnalyticsConversation> conversations = [];
     private string? activeConversationId;
     private Dictionary<string, PeriodicTimer> activePolls = [];
     private ElementReference messagesContainer;
     private string userId = "default";
+    private bool _renderChartsAfterUpdate;
 
     protected override async Task OnInitializedAsync()
     {
@@ -217,6 +227,19 @@
         userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "default";
         await LoadDatabases();
         await LoadConversations();
+
+        // Restore active conversation from URL query param (persists across browser refresh)
+        if (!string.IsNullOrEmpty(ConversationIdParam))
+            await LoadConversation(ConversationIdParam, updateUrl: false);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_renderChartsAfterUpdate)
+        {
+            _renderChartsAfterUpdate = false;
+            await RenderCharts();
+        }
     }
 
     private static readonly HashSet<string> SystemDatabases =
@@ -225,9 +248,18 @@
     private async Task LoadDatabases()
     {
         databases = ["lipila_blaze"];
+        dbLoadError = null;
         try
         {
             var json = await ClickHouse.QueryAsync("SHOW DATABASES");
+
+            // ClickHouseClient returns error strings (not JSON) on failure
+            if (json.StartsWith("ClickHouse error") || json.StartsWith("Error:") || json.StartsWith("Query failed:"))
+            {
+                dbLoadError = json;
+                return;
+            }
+
             using var doc = System.Text.Json.JsonDocument.Parse(json);
             if (doc.RootElement.TryGetProperty("data", out var data))
             {
@@ -242,9 +274,9 @@
                     databases = loaded;
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // keep fallback
+            dbLoadError = ex.Message;
         }
 
         if (databases.Count > 0 && string.IsNullOrEmpty(database))
@@ -256,7 +288,7 @@
         conversations = await ChatStore.ListConversationsAsync(userId);
     }
 
-    private async Task LoadConversation(string id)
+    private async Task LoadConversation(string id, bool updateUrl = true)
     {
         var conv = await ChatStore.GetConversationAsync(userId, id);
         if (conv == null) return;
@@ -285,6 +317,13 @@
             return new ChatMessage { Role = m.Role ?? "user", Content = m.Content };
         }).ToList();
 
+        // Schedule chart render after next DOM update
+        _renderChartsAfterUpdate = true;
+
+        // Persist the active conversation in the URL so browser refresh restores it
+        if (updateUrl)
+            Navigation.NavigateTo($"/admin/analytics?id={id}", replace: true);
+
         // Check pending jobs
         var jobs = await JobStore.GetUserJobsAsync(userId, id);
         foreach (var job in jobs.Where(j => j.Status == "pending" || j.Status == "running"))
@@ -297,6 +336,7 @@
     {
         activeConversationId = null;
         ClearChat();
+        Navigation.NavigateTo("/admin/analytics", replace: true);
     }
 
     private async Task DeleteConversation(string id)
@@ -389,8 +429,8 @@
                             });
                         }
                         loading = false;
+                        _renderChartsAfterUpdate = true;
                         await InvokeAsync(StateHasChanged);
-                        await RenderCharts();
                         break;
                     }
                     else if (job.Status == "failed")
