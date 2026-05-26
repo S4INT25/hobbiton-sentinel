@@ -14,7 +14,8 @@ public class AnalyticsAgent(
 {
     private const int MaxHistoryExchanges = 10;
 
-    public async Task<AnalyticsResponse> AskAsync(string prompt, string database = "lipila_blaze", List<ChatEntry>? history = null)
+    public async Task<AnalyticsResponse> AskAsync(string prompt, string database = "lipila_blaze",
+        List<ChatEntry>? history = null)
     {
         var modelName = config["DigitalOcean:ModelName"]!;
         var schema = await schemaLoader.GetSchemaBlockAsync(database);

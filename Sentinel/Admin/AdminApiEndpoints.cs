@@ -55,21 +55,21 @@ public static class AdminApiEndpoints
             return Results.Ok(new { summary, logs });
         });
 
-        api.MapPost("/runs/trigger", async (IServiceProvider sp, IAuditLogStore audit, HttpContext ctx) =>
+        api.MapPost("/runs/trigger", async ( IAuditLogStore audit, HttpContext ctx) =>
         {
             var username = ctx.User.Identity?.Name ?? "unknown";
-            Hangfire.BackgroundJob.Enqueue<Sentinel.Jobs.SentinelJob>(
+            Hangfire.BackgroundJob.Enqueue<Jobs.SentinelJob>(
                 j => j.RunAsync($"manual:{username}"));
             await AuditAction(audit, ctx, "trigger_run", "run", "", $"Manual trigger by {username}");
             return Results.Accepted();
         });
 
         // ── Cases ──
-        api.MapGet("/cases", async (Sentinel.Memory.ICaseStore store) =>
+        api.MapGet("/cases", async (Memory.ICaseStore store) =>
             Results.Ok(await store.GetOpenCasesAsync()));
 
         api.MapPost("/cases/{id}/feedback", async (string id, CaseFeedbackRequest req,
-            Sentinel.Memory.ICaseStore caseStore, IFeedbackRuleStore ruleStore,
+            Memory.ICaseStore caseStore, IFeedbackRuleStore ruleStore,
             IAuditLogStore audit, HttpContext ctx) =>
         {
             switch (req.Action)
@@ -339,11 +339,9 @@ public static class AdminApiEndpoints
     }
 }
 
-// Request DTOs
 public record LoginRequest(string Username, string Password);
 public record CreateUserRequest(string Username, string Password, string Role, string DisplayName, string? Email);
 public record CaseFeedbackRequest(string Action, string? Reason, FeedbackRule? CreateRule);
 public record PromptUpdateRequest(string PromptText);
-public record AnalyticsRequest(string Prompt, string? Database);
 public record AnalyticsAskRequest(string Prompt, string? Database, string? ConversationId = null);
 public record CreateConversationRequest(string Database);
