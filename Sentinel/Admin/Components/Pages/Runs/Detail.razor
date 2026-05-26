@@ -1,7 +1,6 @@
 @page "/admin/runs/{RunId}"
 @inject IRunLogStore RunLogStore
 @attribute [Authorize(Policy = AuthConstants.Policy)]
-@rendermode InteractiveServer
 
 <PageTitle>Run @RunId — Sentinel</PageTitle>
 

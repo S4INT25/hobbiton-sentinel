@@ -6,7 +6,6 @@
 @inject IHttpContextAccessor HttpContextAccessor
 @inject NavigationManager Navigation
 @attribute [Authorize(Policy = AuthConstants.Policy)]
-@rendermode InteractiveServer
 
 <PageTitle>Case @(fraudCase?.Id?[..8]) — Sentinel</PageTitle>
 
