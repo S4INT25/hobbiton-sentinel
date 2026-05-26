@@ -6,7 +6,9 @@ using Serilog;
 using Serilog.Events;
 using StackExchange.Redis;
 using System.ClientModel;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Sentinel.Admin;
+using Sentinel.Admin.Auth;
 using Sentinel.Admin.Stores;
 using Sentinel.Agent;
 using Sentinel.Infrastructure;
@@ -73,6 +75,11 @@ try
         builder.Services.AddSingleton<ICaseStore, InMemoryCaseStore>();
         builder.Services.AddSingleton<IAnalyticsChatStore, InMemoryAnalyticsChatStore>();
         builder.Services.AddSingleton<IAnalyticsJobStore, InMemoryAnalyticsJobStore>();
+        builder.Services.AddSingleton<IFeedbackRuleStore, InMemoryFeedbackRuleStore>();
+        builder.Services.AddSingleton<IRunLogStore, InMemoryRunLogStore>();
+        builder.Services.AddSingleton<ISystemPromptStore, InMemorySystemPromptStore>();
+        builder.Services.AddSingleton<IUserStore, InMemoryUserStore>();
+        builder.Services.AddSingleton<IAuditLogStore, InMemoryAuditLogStore>();
         builder.Services.AddFusionCache();
         builder.Services.AddHangfire(config => config.UseInMemoryStorage());
     }
@@ -83,6 +90,11 @@ try
         builder.Services.AddSingleton<ICaseStore, CaseStore>();
         builder.Services.AddSingleton<IAnalyticsChatStore, RedisAnalyticsChatStore>();
         builder.Services.AddSingleton<IAnalyticsJobStore, RedisAnalyticsJobStore>();
+        builder.Services.AddSingleton<IFeedbackRuleStore, FeedbackRuleStore>();
+        builder.Services.AddScoped<IRunLogStore, RunLogStore>();
+        builder.Services.AddSingleton<ISystemPromptStore, SystemPromptStore>();
+        builder.Services.AddSingleton<IUserStore, UserStore>();
+        builder.Services.AddScoped<IAuditLogStore, AuditLogStore>();
         // L2 distributed cache — Redis as persistent cache storage
         builder.Services.AddStackExchangeRedisCache(o => o.Configuration = redisConnectionString!);
         builder.Services.AddFusionCache()
@@ -111,6 +123,20 @@ try
 
     builder.Services.AddRazorPages();
 
+    builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+        .AddCookie(options =>
+        {
+            options.LoginPath = "/admin/login";
+            options.AccessDeniedPath = "/admin/login";
+            options.ExpireTimeSpan = TimeSpan.FromHours(12);
+        });
+
+    builder.Services.AddAuthorization(options =>
+    {
+        options.AddPolicy(AuthConstants.Policy, policy => policy.RequireAuthenticatedUser());
+        options.AddPolicy(AuthConstants.AdminOnlyPolicy, policy => policy.RequireRole("admin"));
+    });
+
     var app = builder.Build();
 
     var dashOptions = new DashboardOptions { DashboardTitle = "Sentinel" };
@@ -132,6 +158,9 @@ try
     }
 
     app.UseHangfireDashboard("/hangfire", dashOptions);
+
+    app.UseAuthentication();
+    app.UseAuthorization();
 
     app.MapRazorPages();
     app.MapAdminApi();
