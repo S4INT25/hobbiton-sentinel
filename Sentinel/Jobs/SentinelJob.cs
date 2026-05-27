@@ -9,7 +9,8 @@ namespace Sentinel.Jobs;
 public class SentinelJob(FraudAgent agent, IActiveRunTracker runTracker, ILogger<SentinelJob> logger)
 {
     
-    public async Task RunAsync(string triggeredBy = "scheduler", string? runId = null)
+    public async Task RunAsync(string triggeredBy = "scheduler", string? runId = null, string? database = null,
+        string? customPrompt = null)
     {
         var effectiveRunId = string.IsNullOrWhiteSpace(runId)
             ? DateTime.UtcNow.ToString("yyyyMMddHHmmssfff")
@@ -21,7 +22,7 @@ public class SentinelJob(FraudAgent agent, IActiveRunTracker runTracker, ILogger
 
         try
         {
-            await agent.RunAsync(triggeredBy, effectiveRunId);
+            await agent.RunAsync(triggeredBy, effectiveRunId, database, customPrompt);
             await runTracker.MarkCompletedAsync(effectiveRunId);
             logger.LogInformation("Fraud detector job completed at {Time}", DateTime.UtcNow);
         }

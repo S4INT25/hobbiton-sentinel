@@ -183,16 +183,28 @@ public class AnalyticsAgent(
                 };
             }
 
+            var normalizedSql = TryBuildCaseInsensitiveFilterSql(sql);
+            if (!string.Equals(normalizedSql, sql, StringComparison.Ordinal))
+            {
+                await Emit(onEvent, new AnalyticsStreamEvent
+                {
+                    Type = "fixing",
+                    Message = "Normalizing status-like filters to case-insensitive matching…",
+                    Sql = normalizedSql,
+                    Attempt = attempt
+                });
+            }
+
             await Emit(onEvent, new AnalyticsStreamEvent
             {
                 Type = "sql",
                 Message = "Executing SQL…",
-                Sql = sql,
+                Sql = normalizedSql,
                 Attempt = attempt
             });
 
             // Execute the query
-            var result = await ch.QueryAsync(sql);
+            var result = await ch.QueryAsync(normalizedSql);
 
             if (result.StartsWith("ClickHouse error") || result.StartsWith("Error:") || result.StartsWith("Query failed:"))
             {
@@ -201,7 +213,7 @@ public class AnalyticsAgent(
                 {
                     Type = "error",
                     Message = result,
-                    Sql = sql,
+                    Sql = normalizedSql,
                     Attempt = attempt
                 });
 
@@ -215,7 +227,7 @@ public class AnalyticsAgent(
                     return new AnalyticsResponse
                     {
                         Success = false,
-                        Sql = sql,
+                        Sql = normalizedSql,
                         Error = $"Failed after {MaxRetries} attempts. Last error: {result}",
                         Thinking = thinking,
                         InputTokens = totalInput,
@@ -228,15 +240,16 @@ public class AnalyticsAgent(
 
             // Success
             var tableData = ParseQueryResult(result);
-            if (tableData.Rows.Count == 0)
+            if (tableData.Rows.Count == 0 && HasStatusLikeFilter(normalizedSql))
             {
-                var fallbackSql = TryBuildCaseInsensitiveFilterSql(sql);
-                if (!string.IsNullOrWhiteSpace(fallbackSql) && !string.Equals(fallbackSql, sql, StringComparison.Ordinal))
+                var fallbackSql = TryBuildStatusFilterRelaxedSql(normalizedSql);
+                if (!string.IsNullOrWhiteSpace(fallbackSql) &&
+                    !string.Equals(fallbackSql, normalizedSql, StringComparison.Ordinal))
                 {
                     await Emit(onEvent, new AnalyticsStreamEvent
                     {
                         Type = "fixing",
-                        Message = "No rows returned. Retrying with case-insensitive filters…",
+                        Message = "No rows with selected status filters. Retrying with status filters relaxed…",
                         Sql = fallbackSql,
                         Attempt = attempt
                     });
@@ -258,7 +271,9 @@ public class AnalyticsAgent(
                             {
                                 Success = true,
                                 Sql = fallbackSql,
-                                Explanation = explanation,
+                                Explanation = string.IsNullOrWhiteSpace(explanation)
+                                    ? "No rows matched the exact status filter. Showing results with relaxed status filters."
+                                    : $"{explanation}\n\n(Status filters were relaxed automatically because the original values returned no rows.)",
                                 Thinking = thinking,
                                 ChartType = chartType ?? "none",
                                 RawResult = fallbackResult,
@@ -283,7 +298,7 @@ public class AnalyticsAgent(
             return new AnalyticsResponse
             {
                 Success = true,
-                Sql = sql,
+                Sql = normalizedSql,
                 Explanation = explanation,
                 Thinking = thinking,
                 ChartType = chartType ?? "none",
@@ -322,6 +337,22 @@ public class AnalyticsAgent(
         RegexOptions.Compiled);
 
     private static readonly Regex SqlStringLiteralRegex = new(@"'([^']+)'", RegexOptions.Compiled);
+    private static readonly Regex AnyStatusFilterRegex = new(
+        @"(?ix)\b(?:lower\()?[a-z_][a-z0-9_\.]*(?:status|state|type|result|outcome)\)?\b\s*(?:=|\s+IN\s*\()",
+        RegexOptions.Compiled);
+    private static readonly Regex StatusPredicateRegex = new(
+        @"(?ix)
+        (?:(?:AND|OR)\s+)?
+        (?:
+            lower\(\s*[a-z_][a-z0-9_\.]*(?:status|state|type|result|outcome)\s*\)\s*=\s*lower\('[^']+'\)
+            |
+            lower\(\s*[a-z_][a-z0-9_\.]*(?:status|state|type|result|outcome)\s*\)\s+IN\s*\((?:[^)]*)\)
+            |
+            [a-z_][a-z0-9_\.]*(?:status|state|type|result|outcome)\s*=\s*'[^']+'
+            |
+            [a-z_][a-z0-9_\.]*(?:status|state|type|result|outcome)\s+IN\s*\((?:[^)]*)\)
+        )",
+        RegexOptions.Compiled);
 
     private static string TryBuildCaseInsensitiveFilterSql(string sql)
     {
@@ -336,6 +367,18 @@ public class AnalyticsAgent(
             return $"lower({col}) IN ({string.Join(", ", vals)})";
         });
 
+        return rewritten;
+    }
+
+    private static bool HasStatusLikeFilter(string sql) => AnyStatusFilterRegex.IsMatch(sql);
+
+    private static string TryBuildStatusFilterRelaxedSql(string sql)
+    {
+        var rewritten = StatusPredicateRegex.Replace(sql, " 1=1 ");
+        rewritten = Regex.Replace(rewritten, @"(?ix)\bWHERE\s+(?:1=1\s*(?:AND\s*)?)+", "WHERE ");
+        rewritten = Regex.Replace(rewritten, @"(?ix)\s+(AND|OR)\s+1=1(\s+|$)", " ");
+        rewritten = Regex.Replace(rewritten, @"(?ix)\s+1=1\s+(AND|OR)\s+", " ");
+        rewritten = Regex.Replace(rewritten, @"\s{2,}", " ").Trim();
         return rewritten;
     }
 

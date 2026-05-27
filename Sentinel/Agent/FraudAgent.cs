@@ -25,7 +25,7 @@ public class FraudAgent(
     ILogger<FraudAgent> logger)
 {
     private string BuildSystemPrompt(string openCasesSummary, int lookbackMinutes,
-        string schemaBlock, string suppressionBlock)
+        string schemaBlock, string suppressionBlock, string database)
     {
         var casesContext = openCasesSummary == "No open cases."
             ? "no open cases."
@@ -37,7 +37,7 @@ public class FraudAgent(
                 ## ClickHouse SQL Rules (strict)
                 Native ClickHouse only. Banned: `IIIF`, `IIF`, `NVL`, `ISNULL`, `COALESCE` (use `ifNull()`), `DATEDIFF`, `TOP`, `CHARINDEX`, `PATINDEX`, `COUNT(CASE WHEN ...)`.
                 Use: `if()`, `multiIf()`, `countIf()`, `sumIf()`, `ifNull()`, `toStartOfHour()`, `now() - INTERVAL N DAY`, `positionCaseInsensitive()`, `match()`.
-                If unsure a function exists — don't use it. Always qualify: `lipila_blaze.<table>`.
+                If unsure a function exists — don't use it. Always qualify: `{database}.<table>`.
 
                 {schemaBlock}
 
@@ -83,21 +83,24 @@ public class FraudAgent(
                 Observations only — never verdicts. Use "appears to", "may indicate", "pattern suggests". Findings are for human review.
 
                 ## Query Rules
-                - Always qualify: `lipila_blaze.<table>`. Time filter: `created_at >= now() - INTERVAL {lookbackMinutes} MINUTE`. Max 50 rows per query. Single quotes for strings. On error: re-DESCRIBE and retry.
+                - Always qualify: `{database}.<table>`. Time filter: `created_at >= now() - INTERVAL {lookbackMinutes} MINUTE`. Max 50 rows per query. Single quotes for strings. On error: re-DESCRIBE and retry.
                 - **ALWAYS use the `queries` array — even for a single query.** Never call `run_sql` more than once in a row when the queries are independent. Batch everything you need into one call. This is mandatory, not optional.
                 """;
     }
 
-    public async Task RunAsync(string triggeredBy = "scheduler", string? runId = null)
+    public async Task RunAsync(string triggeredBy = "scheduler", string? runId = null, string? database = null,
+        string? customPrompt = null)
     {
         var currentRunId = string.IsNullOrWhiteSpace(runId)
             ? DateTime.UtcNow.ToString("yyyyMMddHHmmssfff")
             : runId;
+        var effectiveDatabase = string.IsNullOrWhiteSpace(database) ? "lipila_blaze" : database.Trim();
         var runStartedAt = DateTime.UtcNow;
         var lookback = config.GetValue("Sentinel:LookbackMinutes", 70);
         var modelName = config["DigitalOcean:ModelName"]!;
 
-        logger.LogInformation("Fraud agent run {RunId} started (triggered by: {TriggeredBy})", currentRunId, triggeredBy);
+        logger.LogInformation("Fraud agent run {RunId} started (triggered by: {TriggeredBy}, db: {Database}, customPrompt: {HasCustomPrompt})",
+            currentRunId, triggeredBy, effectiveDatabase, !string.IsNullOrWhiteSpace(customPrompt));
 
         // Auto-resolve cases that have gone stale (no agent activity for N days)
         var staleDays = config.GetValue("Sentinel:StaleCase:ThresholdDays", 7);
@@ -109,7 +112,7 @@ public class FraudAgent(
         // Load open cases, schema, feedback rules, and prompt override concurrently
         var openCasesSummaryTask = caseStore.GetOpenCasesSummaryAsync();
         var openCasesTask = caseStore.GetOpenCasesAsync();
-        var schemaBlockTask = schemaLoader.GetSchemaBlockAsync();
+        var schemaBlockTask = schemaLoader.GetSchemaBlockAsync(effectiveDatabase);
         var rulesTask = feedbackRuleStore.GetActiveRulesAsync();
         var promptOverrideTask = systemPromptStore.GetOverrideAsync();
 
@@ -136,7 +139,7 @@ public class FraudAgent(
         // Use prompt override if set, otherwise build from code
         var systemPrompt = promptOverride?.PromptText is { Length: > 0 }
             ? promptOverride.PromptText
-            : BuildSystemPrompt(openCasesSummary, lookback, schemaBlock, suppressionBlock);
+            : BuildSystemPrompt(openCasesSummary, lookback, schemaBlock, suppressionBlock, effectiveDatabase);
 
         // Inject follow-up queries from open cases into the first user message
         var followUpContext = openCases.Count > 0 && openCases.Any(c => c.FollowUpQueries.Count > 0)
@@ -146,11 +149,15 @@ public class FraudAgent(
                   .SelectMany(c => c.FollowUpQueries.Select(q => $"-- Case {c.Id}: {c.Title}\n{q}")))
             : "";
 
+        var customPromptBlock = string.IsNullOrWhiteSpace(customPrompt)
+            ? ""
+            : $"\n\nAdmin custom instructions for this run:\n{customPrompt.Trim()}";
+
         var messages = new List<ChatMessage>
         {
             new SystemChatMessage(systemPrompt),
             new UserChatMessage(
-                $"Run ID: {currentRunId}. Start your investigation now.{followUpContext}")
+                $"Run ID: {currentRunId}. Database: {effectiveDatabase}. Start your investigation now.{followUpContext}{customPromptBlock}")
         };
 
         var tools = FraudAgentTools.GetToolDefinitions();

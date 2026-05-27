@@ -1,6 +1,9 @@
 @page "/admin/runs"
 @inject IRunLogStore RunLogStore
 @inject IActiveRunTracker RunTracker
+@inject Sentinel.Infrastructure.ClickHouseClient ClickHouse
+@inject AuthenticationStateProvider AuthState
+@inject Microsoft.AspNetCore.Authorization.IAuthorizationService AuthorizationService
 @attribute [Authorize(Policy = AuthConstants.Policy)]
 @implements IDisposable
 
@@ -19,6 +22,29 @@
                 @(triggerLoading ? "Queueing…" : "Run Now")
             </button>
         </div>
+
+        @if (canRunCustom)
+        {
+            <div class="border border-gray-800 rounded-lg p-3 bg-gray-900/30 space-y-2">
+                <div class="text-xs text-gray-400">Admin Custom Run</div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <select @bind="customRunDatabase" class="px-2.5 py-2 bg-gray-900 border border-gray-800 rounded text-xs text-white">
+                        @foreach (var db in runDatabases)
+                        {
+                            <option value="@db">@db</option>
+                        }
+                    </select>
+                    <input type="text" @bind="customRunPrompt" placeholder="Custom prompt instructions for this run"
+                           class="md:col-span-2 px-3 py-2 bg-gray-900 border border-gray-800 rounded text-xs text-white placeholder-gray-600" />
+                </div>
+                <div class="flex items-center justify-end">
+                    <button @onclick="TriggerCustomRun" disabled="@customTriggerLoading"
+                            class="px-3 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                        @(customTriggerLoading ? "Queueing custom…" : "Run Custom")
+                    </button>
+                </div>
+            </div>
+        }
     </div>
 
     @if (!string.IsNullOrEmpty(activeRunId))
@@ -97,6 +123,11 @@
     private string activeRunStatus = "queued";
     private string activeRunTriggeredBy = "scheduler";
     private DateTime? activeRunStartedAt;
+    private bool canRunCustom;
+    private bool customTriggerLoading;
+    private string customRunDatabase = "lipila_blaze";
+    private string customRunPrompt = "";
+    private List<string> runDatabases = ["lipila_blaze"];
     private int activeLogCount;
     private PeriodicTimer? runPollTimer;
     private CancellationTokenSource? runPollCts;
@@ -109,6 +140,9 @@
 
     protected override async Task OnInitializedAsync()
     {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        canRunCustom = (await AuthorizationService.AuthorizeAsync(authState.User, AuthConstants.AdminOnlyPolicy)).Succeeded;
+        await LoadRunDatabases();
         await LoadRuns();
         var trackedRun = await RunTracker.GetLatestTrackedRunAsync();
         if (trackedRun is not null)
@@ -118,6 +152,42 @@
             activeRunTriggeredBy = trackedRun.TriggeredBy;
             activeRunStartedAt = trackedRun.StartedAtUtc;
             StartRunMonitoring(trackedRun.RunId);
+        }
+    }
+
+    private static readonly HashSet<string> SystemDatabases =
+        ["system", "INFORMATION_SCHEMA", "information_schema", "default"];
+
+    private async Task LoadRunDatabases()
+    {
+        try
+        {
+            var json = await ClickHouse.QueryAsync("SHOW DATABASES");
+            if (json.StartsWith("ClickHouse error") || json.StartsWith("Error:") || json.StartsWith("Query failed:"))
+                return;
+
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("data", out var data))
+                return;
+
+            var loaded = data.EnumerateArray()
+                .Where(r => r.TryGetProperty("name", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
+                .Select(r => r.GetProperty("name").GetString()!)
+                .Where(s => !string.IsNullOrWhiteSpace(s) && !SystemDatabases.Contains(s))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(s => s)
+                .ToList();
+
+            if (loaded.Count > 0)
+            {
+                runDatabases = loaded;
+                if (!runDatabases.Contains(customRunDatabase, StringComparer.OrdinalIgnoreCase))
+                    customRunDatabase = runDatabases[0];
+            }
+        }
+        catch
+        {
+            // keep default db list
         }
     }
 
@@ -169,6 +239,44 @@
             triggerMessage = "Failed to trigger run";
         }
         triggerLoading = false;
+    }
+
+    private async Task TriggerCustomRun()
+    {
+        if (!canRunCustom) return;
+        var prompt = customRunPrompt.Trim();
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            triggerSuccess = false;
+            triggerMessage = "Enter a custom prompt before running";
+            return;
+        }
+
+        customTriggerLoading = true;
+        triggerMessage = null;
+        try
+        {
+            var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+            var db = string.IsNullOrWhiteSpace(customRunDatabase) ? "lipila_blaze" : customRunDatabase;
+            var triggeredBy = $"manual:runs_custom:{db}";
+            await RunTracker.MarkQueuedAsync(runId, triggeredBy, DateTime.UtcNow);
+            Hangfire.BackgroundJob.Enqueue<Sentinel.Jobs.SentinelJob>(
+                j => j.RunAsync(triggeredBy, runId, db, prompt));
+            activeRunId = runId;
+            activeRunStatus = "queued";
+            activeRunTriggeredBy = triggeredBy;
+            activeRunStartedAt = DateTime.UtcNow;
+            activeLogCount = 0;
+            StartRunMonitoring(runId);
+            triggerSuccess = true;
+            triggerMessage = $"Custom run queued ({runId}) on {db}";
+        }
+        catch
+        {
+            triggerSuccess = false;
+            triggerMessage = "Failed to trigger custom run";
+        }
+        customTriggerLoading = false;
     }
 
     private void StartRunMonitoring(string runId)
