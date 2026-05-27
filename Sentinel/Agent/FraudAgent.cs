@@ -20,7 +20,6 @@ public class FraudAgent(
     SchemaLoader schemaLoader,
     IFeedbackRuleStore feedbackRuleStore,
     IRunLogStore runLogStore,
-    ISystemPromptStore systemPromptStore,
     IConfiguration config,
     ILogger<FraudAgent> logger)
 {
@@ -109,20 +108,18 @@ public class FraudAgent(
             logger.LogInformation("Auto-resolved {Count} stale case(s) (threshold: {Days} days)", staleClosed,
                 staleDays);
 
-        // Load open cases, schema, feedback rules, and prompt override concurrently
+        // Load open cases, schema, and feedback rules concurrently
         var openCasesSummaryTask = caseStore.GetOpenCasesSummaryAsync();
         var openCasesTask = caseStore.GetOpenCasesAsync();
         var schemaBlockTask = schemaLoader.GetSchemaBlockAsync(effectiveDatabase);
         var rulesTask = feedbackRuleStore.GetActiveRulesAsync();
-        var promptOverrideTask = systemPromptStore.GetOverrideAsync();
 
-        await Task.WhenAll(openCasesSummaryTask, openCasesTask, schemaBlockTask, rulesTask, promptOverrideTask);
+        await Task.WhenAll(openCasesSummaryTask, openCasesTask, schemaBlockTask, rulesTask);
 
         var openCasesSummary = await openCasesSummaryTask;
         var openCases = await openCasesTask;
         var schemaBlock = await schemaBlockTask;
         var activeRules = await rulesTask;
-        var promptOverride = await promptOverrideTask;
 
         logger.LogInformation("Loaded {Count} open cases, {RuleCount} suppression rules",
             openCases.Count, activeRules.Count);
@@ -136,10 +133,7 @@ public class FraudAgent(
               + "\n\n"
             : "\n";
 
-        // Use prompt override if set, otherwise build from code
-        var systemPrompt = promptOverride?.PromptText is { Length: > 0 }
-            ? promptOverride.PromptText
-            : BuildSystemPrompt(openCasesSummary, lookback, schemaBlock, suppressionBlock, effectiveDatabase);
+        var systemPrompt = BuildSystemPrompt(openCasesSummary, lookback, schemaBlock, suppressionBlock, effectiveDatabase);
 
         // Inject follow-up queries from open cases into the first user message
         var followUpContext = openCases.Count > 0 && openCases.Any(c => c.FollowUpQueries.Count > 0)

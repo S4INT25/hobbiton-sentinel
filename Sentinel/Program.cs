@@ -79,7 +79,6 @@ try
         builder.Services.AddSingleton<IRunLogStore, InMemoryRunLogStore>();
         builder.Services.AddSingleton<IAuditLogStore, InMemoryAuditLogStore>();
         builder.Services.AddSingleton<IUserStore, InMemoryUserStore>();
-        builder.Services.AddSingleton<ISystemPromptStore, InMemorySystemPromptStore>();
         builder.Services.AddSingleton<IAnalyticsChatStore, InMemoryAnalyticsChatStore>();
         builder.Services.AddSingleton<IAnalyticsJobStore, InMemoryAnalyticsJobStore>();
         builder.Services.AddSingleton<IActiveRunTracker, InMemoryActiveRunTracker>();
@@ -93,7 +92,6 @@ try
         builder.Services.AddSingleton<ICaseStore, CaseStore>();
         builder.Services.AddSingleton<IFeedbackRuleStore, FeedbackRuleStore>();
         builder.Services.AddSingleton<IUserStore, UserStore>();
-        builder.Services.AddSingleton<ISystemPromptStore, SystemPromptStore>();
         builder.Services.AddSingleton<IAnalyticsChatStore, RedisAnalyticsChatStore>();
         builder.Services.AddSingleton<IAnalyticsJobStore, RedisAnalyticsJobStore>();
         builder.Services.AddSingleton<IActiveRunTracker, RedisActiveRunTracker>();

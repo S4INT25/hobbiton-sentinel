@@ -208,29 +208,6 @@ public static class AdminApiEndpoints
             return Results.Ok();
         });
 
-        // ── System Prompt ──
-        api.MapGet("/prompt", async (ISystemPromptStore store) =>
-        {
-            var current = await store.GetOverrideAsync();
-            var history = await store.GetHistoryAsync();
-            return Results.Ok(new { current, history });
-        });
-
-        api.MapPut("/prompt", async (PromptUpdateRequest req, ISystemPromptStore store,
-            IAuditLogStore audit, HttpContext ctx) =>
-        {
-            await store.SaveOverrideAsync(req.PromptText, ctx.User.Identity?.Name ?? "unknown");
-            await AuditAction(audit, ctx, "update", "prompt", "system_prompt", "Prompt updated");
-            return Results.Ok();
-        });
-
-        api.MapDelete("/prompt", async (ISystemPromptStore store, IAuditLogStore audit, HttpContext ctx) =>
-        {
-            await store.ClearOverrideAsync();
-            await AuditAction(audit, ctx, "reset", "prompt", "system_prompt", "Reverted to default");
-            return Results.Ok();
-        });
-
         // ── Analytics ──
         var analytics = api.MapGroup("/analytics");
 
@@ -386,6 +363,5 @@ public static class AdminApiEndpoints
 public record LoginRequest(string Username, string Password);
 public record CreateUserRequest(string Username, string Password, string Role, string DisplayName, string? Email);
 public record CaseFeedbackRequest(string Action, string? Reason, FeedbackRule? CreateRule);
-public record PromptUpdateRequest(string PromptText);
 public record AnalyticsAskRequest(string Prompt, string? Database, string? ConversationId = null);
 public record CreateConversationRequest(string Database);
