@@ -56,10 +56,7 @@ public class ClickHouseClient(HttpClient http, IConfiguration config, ILogger<Cl
                 logger.LogError("ClickHouse error {Status}: {Content}", response.StatusCode, content[..Math.Min(300, content.Length)]);
                 return $"ClickHouse error ({response.StatusCode}): {content[..Math.Min(300, content.Length)]}";
             }
-
-            if (content.Length > maxLength)
-                content = content[..maxLength] + $"\n\n[TRUNCATED — result exceeded {maxLength} chars. Add LIMIT or narrow the query.]";
-
+            
             return content;
         }
         catch (Exception ex)
