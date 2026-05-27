@@ -142,6 +142,7 @@
     private bool triggerSuccess;
     private string? activeRunId;
     private string activeRunStatus = "queued";
+    private string activeRunTriggeredBy = "scheduler";
     private DateTime? activeRunStartedAt;
     private List<RunLog> activeRunLogs = [];
     private PeriodicTimer? runPollTimer;
@@ -161,6 +162,7 @@
         {
             activeRunId = trackedRun.RunId;
             activeRunStatus = trackedRun.Status;
+            activeRunTriggeredBy = trackedRun.TriggeredBy;
             activeRunStartedAt = trackedRun.StartedAtUtc;
             StartRunMonitoring(trackedRun.RunId);
         }
@@ -193,7 +195,7 @@
                 StartedAt = activeRunStartedAt ?? DateTime.UtcNow,
                 FinishedAt = activeRunStartedAt ?? DateTime.UtcNow,
                 Status = activeRunStatus,
-                TriggeredBy = "manual:dashboard"
+                TriggeredBy = activeRunTriggeredBy
             });
         }
 
@@ -214,6 +216,7 @@
             activeRunId = runId;
             activeRunStartedAt = DateTime.UtcNow;
             activeRunStatus = "queued";
+            activeRunTriggeredBy = "manual:dashboard";
             activeRunLogs = [];
             StartRunMonitoring(runId);
 
@@ -253,6 +256,8 @@
                     else
                     {
                         var tracked = await RunTracker.GetAsync(runId);
+                        if (tracked is not null)
+                            activeRunTriggeredBy = tracked.TriggeredBy;
                         activeRunStatus = tracked?.Status ?? (logs.Count > 0 ? "running" : "queued");
                     }
 

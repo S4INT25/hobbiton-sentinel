@@ -95,6 +95,7 @@
     private bool triggerSuccess;
     private string? activeRunId;
     private string activeRunStatus = "queued";
+    private string activeRunTriggeredBy = "scheduler";
     private DateTime? activeRunStartedAt;
     private int activeLogCount;
     private PeriodicTimer? runPollTimer;
@@ -114,6 +115,7 @@
         {
             activeRunId = trackedRun.RunId;
             activeRunStatus = trackedRun.Status;
+            activeRunTriggeredBy = trackedRun.TriggeredBy;
             activeRunStartedAt = trackedRun.StartedAtUtc;
             StartRunMonitoring(trackedRun.RunId);
         }
@@ -136,7 +138,7 @@
                 StartedAt = activeRunStartedAt ?? DateTime.UtcNow,
                 FinishedAt = activeRunStartedAt ?? DateTime.UtcNow,
                 Status = activeRunStatus,
-                TriggeredBy = "manual:runs_page"
+                TriggeredBy = activeRunTriggeredBy
             });
         }
 
@@ -154,6 +156,7 @@
             Hangfire.BackgroundJob.Enqueue<Sentinel.Jobs.SentinelJob>(j => j.RunAsync("manual:runs_page", runId));
             activeRunId = runId;
             activeRunStatus = "queued";
+            activeRunTriggeredBy = "manual:runs_page";
             activeRunStartedAt = DateTime.UtcNow;
             activeLogCount = 0;
             StartRunMonitoring(runId);
@@ -191,6 +194,8 @@
                     else
                     {
                         var tracked = await RunTracker.GetAsync(runId);
+                        if (tracked is not null)
+                            activeRunTriggeredBy = tracked.TriggeredBy;
                         activeRunStatus = tracked?.Status ?? (logs.Count > 0 ? "running" : "queued");
                     }
 

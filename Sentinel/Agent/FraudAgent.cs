@@ -309,8 +309,8 @@ public class FraudAgent(
             "[Run:{RunId}] Completed — {N} iterations | tokens: {TotalTokens} total (in={In} out={Out})",
             currentRunId, iteration, totalInputTokens + totalOutputTokens, totalInputTokens, totalOutputTokens);
 
-        // Write run summary (fire-and-forget)
-        _ = runLogStore.SaveSummaryAsync(new RunSummary
+        // Persist run summary before the job scope is disposed.
+        await runLogStore.SaveSummaryAsync(new RunSummary
         {
             RunId = currentRunId,
             StartedAt = runStartedAt,
