@@ -9,124 +9,174 @@
 <PageTitle>Dashboard — Sentinel</PageTitle>
 
 <div class="space-y-6">
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <h1 class="text-lg font-semibold text-white">Dashboard</h1>
-        <div class="flex items-center gap-2">
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+        <div>
+            <h1 class="text-xl font-semibold text-white tracking-tight">Dashboard</h1>
+            <p class="text-xs text-gray-500 mt-0.5">Fraud detection overview</p>
+        </div>
+        <div class="flex items-center gap-3">
             @if (!string.IsNullOrEmpty(triggerMessage))
             {
-                <span class="text-xs @(triggerSuccess ? "text-emerald-400" : "text-rose-400")">@triggerMessage</span>
+                <span class="text-xs animate-fade @(triggerSuccess ? "text-emerald-400" : "text-rose-400")">@triggerMessage</span>
             }
             <button @onclick="TriggerRun" disabled="@triggerLoading"
-                    class="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    class="px-4 py-2 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-lg shadow-sm shadow-emerald-900/20 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed">
                 @(triggerLoading ? "Queueing…" : "Run Now")
             </button>
         </div>
     </div>
 
+    <!-- Active Run Banner -->
     @if (!string.IsNullOrEmpty(activeRunId))
     {
-        <div class="border border-gray-800 rounded-lg p-4 bg-gray-900/40 space-y-3">
+        <div class="border border-emerald-500/20 rounded-xl p-4 bg-gradient-to-r from-emerald-950/30 to-gray-900/50 space-y-3 animate-in">
             <div class="flex items-center justify-between">
                 <div class="flex items-center gap-3">
-                    <div class="text-xs text-gray-400">Current run</div>
-                    <a href="/admin/runs/@activeRunId" class="text-emerald-400 hover:text-emerald-300 font-mono text-xs">@activeRunId</a>
+                    <div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+                    <span class="text-xs text-gray-400">Active run</span>
+                    <a href="/admin/runs/@activeRunId" class="text-emerald-400 hover:text-emerald-300 font-mono text-xs transition-colors">@activeRunId</a>
                     <span class="@RunStatusClasses(activeRunStatus)">@activeRunStatus</span>
                 </div>
                 @if (activeRunStartedAt is not null)
                 {
-                    <span class="text-[10px] text-gray-500 font-mono">@activeRunStartedAt.Value.ToString("MMM dd HH:mm:ss")</span>
+                    <span class="text-[10px] text-gray-600 font-mono hidden sm:inline">@activeRunStartedAt.Value.ToString("MMM dd HH:mm:ss")</span>
                 }
             </div>
             @if (activeRunLogs.Any())
             {
-                <div>
-                    <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Latest Tool Calls</div>
-                    <div class="space-y-1.5">
-                        @foreach (var log in activeRunLogs.Take(6))
-                        {
-                            <div class="flex items-center justify-between text-xs bg-gray-950/70 border border-gray-800 rounded px-2.5 py-1.5">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-gray-600 font-mono">@log.Iteration</span>
-                                    <span class="text-emerald-400 font-mono">@log.ToolName</span>
-                                </div>
-                                <span class="text-gray-500 font-mono">@log.StartedAt.ToString("HH:mm:ss")</span>
+                <div class="space-y-1">
+                    @foreach (var log in activeRunLogs.Take(5))
+                    {
+                        <div class="flex items-center justify-between text-xs bg-gray-950/60 border border-gray-800/60 rounded-lg px-3 py-1.5">
+                            <div class="flex items-center gap-2.5">
+                                <span class="text-gray-600 font-mono w-4 text-right">@log.Iteration</span>
+                                <span class="text-emerald-400/90 font-mono">@log.ToolName</span>
                             </div>
-                        }
-                    </div>
+                            <span class="text-gray-600 font-mono text-[10px]">@log.StartedAt.ToString("HH:mm:ss")</span>
+                        </div>
+                    }
                 </div>
             }
             else
             {
-                <div class="text-xs text-gray-500">No tool logs yet. The run is still starting.</div>
+                <div class="flex items-center gap-2 text-xs text-gray-500">
+                    <svg class="w-3 h-3 animate-spin text-gray-600" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    Initializing…
+                </div>
             }
         </div>
     }
 
-    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-        <div class="p-4 bg-gray-900 border border-gray-800 rounded-lg">
-            <div class="text-xs text-gray-500 mb-1">Open Cases</div>
-            <div class="text-2xl font-semibold text-white">@openCases</div>
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div class="p-4 rounded-xl bg-gray-900/60 border border-gray-800/60 hover:border-gray-700/60 transition-colors duration-200">
+            <div class="flex items-center gap-2 mb-2">
+                <div class="w-7 h-7 rounded-lg bg-rose-500/10 flex items-center justify-center">
+                    <svg class="w-3.5 h-3.5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+                </div>
+                <span class="text-[11px] text-gray-500 font-medium">Open Cases</span>
+            </div>
+            <div class="text-2xl font-semibold text-white tabular-nums">@openCases</div>
         </div>
-        <div class="p-4 bg-gray-900 border border-gray-800 rounded-lg">
-            <div class="text-xs text-gray-500 mb-1">Runs (24h)</div>
-            <div class="text-2xl font-semibold text-white">@recentRuns</div>
+        <div class="p-4 rounded-xl bg-gray-900/60 border border-gray-800/60 hover:border-gray-700/60 transition-colors duration-200">
+            <div class="flex items-center gap-2 mb-2">
+                <div class="w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                    <svg class="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                </div>
+                <span class="text-[11px] text-gray-500 font-medium">Runs (24h)</span>
+            </div>
+            <div class="text-2xl font-semibold text-white tabular-nums">@recentRuns</div>
         </div>
-        <div class="p-4 bg-gray-900 border border-gray-800 rounded-lg">
-            <div class="text-xs text-gray-500 mb-1">Active Rules</div>
-            <div class="text-2xl font-semibold text-white">@activeRules</div>
+        <div class="p-4 rounded-xl bg-gray-900/60 border border-gray-800/60 hover:border-gray-700/60 transition-colors duration-200">
+            <div class="flex items-center gap-2 mb-2">
+                <div class="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                    <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+                </div>
+                <span class="text-[11px] text-gray-500 font-medium">Active Rules</span>
+            </div>
+            <div class="text-2xl font-semibold text-white tabular-nums">@activeRules</div>
         </div>
-        <div class="p-4 bg-gray-900 border border-gray-800 rounded-lg">
-            <div class="text-xs text-gray-500 mb-1">Tokens (24h)</div>
-            <div class="text-2xl font-semibold text-white font-mono text-lg">@tokensUsed.ToString("N0")</div>
+        <div class="p-4 rounded-xl bg-gray-900/60 border border-gray-800/60 hover:border-gray-700/60 transition-colors duration-200">
+            <div class="flex items-center gap-2 mb-2">
+                <div class="w-7 h-7 rounded-lg bg-purple-500/10 flex items-center justify-center">
+                    <svg class="w-3.5 h-3.5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg>
+                </div>
+                <span class="text-[11px] text-gray-500 font-medium">Tokens (24h)</span>
+            </div>
+            <div class="text-xl font-semibold text-white tabular-nums font-mono">@tokensUsed.ToString("N0")</div>
         </div>
     </div>
 
+    <!-- Recent Runs Table -->
     <div>
-        <h2 class="text-sm font-medium text-gray-400 mb-3">Recent Runs</h2>
-        <div class="border border-gray-800 rounded-lg overflow-hidden">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-medium text-gray-300">Recent Runs</h2>
+            <a href="/admin/runs" class="text-[11px] text-gray-500 hover:text-gray-300 transition-colors">View all →</a>
+        </div>
+        <div class="border border-gray-800/60 rounded-xl overflow-hidden">
             <div class="overflow-x-auto">
-            <table class="w-full text-sm min-w-[720px]">
-                <thead class="bg-gray-900/50">
-                    <tr class="text-xs text-gray-500 border-b border-gray-800">
-                        <th class="text-left px-4 py-2 font-medium">Run ID</th>
-                        <th class="text-left px-4 py-2 font-medium">Started</th>
-                        <th class="text-left px-4 py-2 font-medium">Iterations</th>
-                        <th class="text-left px-4 py-2 font-medium">Tokens</th>
-                        <th class="text-left px-4 py-2 font-medium">Status</th>
-                        <th class="text-left px-4 py-2 font-medium">Triggered By</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-800/50">
-                    @foreach (var run in PagedRuns)
-                    {
-                        <tr class="hover:bg-gray-900/30 transition-colors">
-                            <td class="px-4 py-2.5">
-                                <a href="/admin/runs/@run.RunId" class="text-emerald-400 hover:text-emerald-300 font-mono text-xs">@run.RunId</a>
-                            </td>
-                            <td class="px-4 py-2.5 text-gray-400 text-xs">@run.StartedAt.ToString("MMM dd HH:mm")</td>
-                            <td class="px-4 py-2.5 text-gray-300 font-mono text-xs">@run.Iterations</td>
-                            <td class="px-4 py-2.5 text-gray-300 font-mono text-xs">@((run.InputTokens + run.OutputTokens).ToString("N0"))</td>
-                            <td class="px-4 py-2.5">
-                                <span class="@RunStatusClasses(run.Status)">@run.Status</span>
-                            </td>
-                            <td class="px-4 py-2.5 text-gray-500 text-xs">@run.TriggeredBy</td>
+                <table class="w-full text-sm min-w-[640px]">
+                    <thead>
+                        <tr class="border-b border-gray-800/60 bg-gray-900/30">
+                            <th class="text-left px-4 py-2.5 text-[11px] font-medium text-gray-500 uppercase tracking-wider">Run</th>
+                            <th class="text-left px-4 py-2.5 text-[11px] font-medium text-gray-500 uppercase tracking-wider">Started</th>
+                            <th class="text-left px-4 py-2.5 text-[11px] font-medium text-gray-500 uppercase tracking-wider">Iterations</th>
+                            <th class="text-left px-4 py-2.5 text-[11px] font-medium text-gray-500 uppercase tracking-wider">Tokens</th>
+                            <th class="text-left px-4 py-2.5 text-[11px] font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            <th class="text-left px-4 py-2.5 text-[11px] font-medium text-gray-500 uppercase tracking-wider">Trigger</th>
                         </tr>
-                    }
-                    @if (!DisplayRuns.Any())
-                    {
-                        <tr><td colspan="6" class="px-4 py-8 text-center text-gray-600 text-xs">No runs recorded yet</td></tr>
-                    }
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody class="divide-y divide-gray-800/40">
+                        @foreach (var run in PagedRuns)
+                        {
+                            <tr class="hover:bg-gray-900/40">
+                                <td class="px-4 py-2.5">
+                                    <a href="/admin/runs/@run.RunId" class="text-emerald-400 hover:text-emerald-300 font-mono text-xs transition-colors">@run.RunId[..Math.Min(12, run.RunId.Length)]</a>
+                                </td>
+                                <td class="px-4 py-2.5 text-gray-400 text-xs">@run.StartedAt.ToString("MMM dd HH:mm")</td>
+                                <td class="px-4 py-2.5 text-gray-300 font-mono text-xs tabular-nums">@run.Iterations</td>
+                                <td class="px-4 py-2.5 text-gray-300 font-mono text-xs tabular-nums">@((run.InputTokens + run.OutputTokens).ToString("N0"))</td>
+                                <td class="px-4 py-2.5">
+                                    <span class="@RunStatusClasses(run.Status)">@run.Status</span>
+                                </td>
+                                <td class="px-4 py-2.5 text-gray-500 text-xs truncate max-w-[120px]">@run.TriggeredBy</td>
+                            </tr>
+                        }
+                        @if (!DisplayRuns.Any())
+                        {
+                            <tr><td colspan="6" class="px-4 py-10 text-center text-gray-600 text-xs">No runs recorded yet</td></tr>
+                        }
+                    </tbody>
+                </table>
             </div>
         </div>
-        @if (DisplayRuns.Count > PageSize)
+
+        @if (TotalPages > 1)
         {
-            <div class="mt-3 flex items-center justify-between text-xs">
-                <span class="text-gray-500">Page @currentPage / @TotalPages</span>
-                <div class="flex items-center gap-2">
-                    <button @onclick="PrevPage" disabled="@(currentPage <= 1)" class="px-2.5 py-1 border border-gray-800 rounded text-gray-300 disabled:opacity-40">Previous</button>
-                    <button @onclick="NextPage" disabled="@(currentPage >= TotalPages)" class="px-2.5 py-1 border border-gray-800 rounded text-gray-300 disabled:opacity-40">Next</button>
+            <div class="mt-3 flex items-center justify-between">
+                <span class="text-[11px] text-gray-600">@DisplayRuns.Count total · page @currentPage of @TotalPages</span>
+                <div class="flex items-center gap-1">
+                    <button @onclick="PrevPage" disabled="@(currentPage <= 1)"
+                            class="px-2.5 py-1 text-xs rounded-md border border-gray-800 text-gray-400 hover:text-white hover:border-gray-700 disabled:opacity-30 disabled:pointer-events-none transition-all duration-150">
+                        ← Prev
+                    </button>
+                    @for (var p = 1; p <= TotalPages && p <= 5; p++)
+                    {
+                        var page = p;
+                        <button @onclick="() => GoToPage(page)"
+                                class="@(page == currentPage ? "px-2.5 py-1 text-xs rounded-md bg-gray-800 text-white font-medium" : "px-2.5 py-1 text-xs rounded-md text-gray-500 hover:text-white transition-colors")">
+                            @(page)
+                        </button>
+                    }
+                    @if (TotalPages > 5)
+                    {
+                        <span class="text-xs text-gray-600 px-1">…</span>
+                    }
+                    <button @onclick="NextPage" disabled="@(currentPage >= TotalPages)"
+                            class="px-2.5 py-1 text-xs rounded-md border border-gray-800 text-gray-400 hover:text-white hover:border-gray-700 disabled:opacity-30 disabled:pointer-events-none transition-all duration-150">
+                        Next →
+                    </button>
                 </div>
             </div>
         }
@@ -292,23 +342,18 @@
     {
         return status switch
         {
-            "completed" => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
-            "error" => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20",
-            "running" => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20",
-            "queued" => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-700/40 text-gray-300 border border-gray-700",
-            _ => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20"
+            "completed" => "inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-emerald-500/10 text-emerald-400",
+            "error" or "failed" => "inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-rose-500/10 text-rose-400",
+            "stopped" => "inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-orange-500/10 text-orange-400",
+            "running" => "inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-blue-500/10 text-blue-400",
+            "queued" => "inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-gray-500/10 text-gray-400",
+            _ => "inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-amber-500/10 text-amber-400"
         };
     }
 
-    private void PrevPage()
-    {
-        if (currentPage > 1) currentPage--;
-    }
-
-    private void NextPage()
-    {
-        if (currentPage < TotalPages) currentPage++;
-    }
+    private void GoToPage(int page) => currentPage = page;
+    private void PrevPage() { if (currentPage > 1) currentPage--; }
+    private void NextPage() { if (currentPage < TotalPages) currentPage++; }
 
     public void Dispose()
     {
