@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using OpenAI;
 using OpenAI.Chat;
 using Sentinel.Admin;
@@ -40,6 +41,8 @@ public class AnalyticsAgent(
                              - Add `LIMIT 50` unless the user specifies otherwise.
                              - Use single quotes for string literals.
                              - Name the first column as the label/category and numeric columns as values for clear chart rendering.
+                             - For categorical filters like status/state/type, prefer case-insensitive matching, e.g. `lower(status) = lower('completed')`.
+                             - If a query returns 0 rows, double-check filter assumptions (especially casing) and retry with safer case-insensitive filters before concluding there's no data.
 
                              ## Response Format
                              Respond with a JSON object (no markdown fences):
@@ -225,6 +228,51 @@ public class AnalyticsAgent(
 
             // Success
             var tableData = ParseQueryResult(result);
+            if (tableData.Rows.Count == 0)
+            {
+                var fallbackSql = TryBuildCaseInsensitiveFilterSql(sql);
+                if (!string.IsNullOrWhiteSpace(fallbackSql) && !string.Equals(fallbackSql, sql, StringComparison.Ordinal))
+                {
+                    await Emit(onEvent, new AnalyticsStreamEvent
+                    {
+                        Type = "fixing",
+                        Message = "No rows returned. Retrying with case-insensitive filters…",
+                        Sql = fallbackSql,
+                        Attempt = attempt
+                    });
+
+                    var fallbackResult = await ch.QueryAsync(fallbackSql);
+                    if (!(fallbackResult.StartsWith("ClickHouse error") || fallbackResult.StartsWith("Error:") || fallbackResult.StartsWith("Query failed:")))
+                    {
+                        var fallbackData = ParseQueryResult(fallbackResult);
+                        if (fallbackData.Rows.Count > 0)
+                        {
+                            await Emit(onEvent, new AnalyticsStreamEvent
+                            {
+                                Type = "done",
+                                Message = $"Recovered with case-insensitive filters: {fallbackData.Rows.Count} rows",
+                                Attempt = attempt
+                            });
+
+                            return new AnalyticsResponse
+                            {
+                                Success = true,
+                                Sql = fallbackSql,
+                                Explanation = explanation,
+                                Thinking = thinking,
+                                ChartType = chartType ?? "none",
+                                RawResult = fallbackResult,
+                                Columns = fallbackData.Columns,
+                                Rows = fallbackData.Rows,
+                                RowCount = fallbackData.Rows.Count,
+                                InputTokens = totalInput,
+                                OutputTokens = totalOutput
+                            };
+                        }
+                    }
+                }
+            }
+
             await Emit(onEvent, new AnalyticsStreamEvent
             {
                 Type = "done",
@@ -256,6 +304,39 @@ public class AnalyticsAgent(
     {
         if (onEvent != null)
             await onEvent(evt);
+    }
+
+    private static readonly Regex StatusEqualsRegex = new(
+        @"(?ix)
+        (?<!lower\()
+        \b(?<col>[a-z_][a-z0-9_\.]*(?:status|state|type|result|outcome))\b
+        \s*=\s*
+        '(?<val>[^']+)'",
+        RegexOptions.Compiled);
+
+    private static readonly Regex StatusInRegex = new(
+        @"(?ix)
+        (?<!lower\()
+        \b(?<col>[a-z_][a-z0-9_\.]*(?:status|state|type|result|outcome))\b
+        \s+IN\s*\((?<vals>\s*'[^']+'\s*(?:,\s*'[^']+'\s*)*)\)",
+        RegexOptions.Compiled);
+
+    private static readonly Regex SqlStringLiteralRegex = new(@"'([^']+)'", RegexOptions.Compiled);
+
+    private static string TryBuildCaseInsensitiveFilterSql(string sql)
+    {
+        var rewritten = StatusEqualsRegex.Replace(sql, m =>
+            $"lower({m.Groups["col"].Value}) = lower('{m.Groups["val"].Value}')");
+
+        rewritten = StatusInRegex.Replace(rewritten, m =>
+        {
+            var col = m.Groups["col"].Value;
+            var vals = SqlStringLiteralRegex.Matches(m.Groups["vals"].Value)
+                .Select(v => $"lower('{v.Groups[1].Value}')");
+            return $"lower({col}) IN ({string.Join(", ", vals)})";
+        });
+
+        return rewritten;
     }
 
     private static TableData ParseQueryResult(string json)

@@ -219,22 +219,13 @@
                 </button>
             </form>
             <div class="mt-2 flex flex-wrap gap-2">
-                <button @onclick="QuickAskTopMerchants"
-                        class="px-2 py-1 text-[10px] text-gray-500 border border-gray-800 rounded hover:bg-gray-900 hover:text-gray-300 transition-colors">
-                    Top merchants today
-                </button>
-                <button @onclick="QuickAskHourlyVolume"
-                        class="px-2 py-1 text-[10px] text-gray-500 border border-gray-800 rounded hover:bg-gray-900 hover:text-gray-300 transition-colors">
-                    Hourly volume (24h)
-                </button>
-                <button @onclick="QuickAskStatusBreakdown"
-                        class="px-2 py-1 text-[10px] text-gray-500 border border-gray-800 rounded hover:bg-gray-900 hover:text-gray-300 transition-colors">
-                    Status breakdown
-                </button>
-                <button @onclick="QuickAskTopRecipients"
-                        class="px-2 py-1 text-[10px] text-gray-500 border border-gray-800 rounded hover:bg-gray-900 hover:text-gray-300 transition-colors">
-                    Top recipients this week
-                </button>
+                @foreach (var suggestion in quickAskSuggestions)
+                {
+                    <button @onclick="() => QuickAsk(suggestion.Prompt)"
+                            class="px-2 py-1 text-[10px] text-gray-500 border border-gray-800 rounded hover:bg-gray-900 hover:text-gray-300 transition-colors">
+                        @suggestion.Label
+                    </button>
+                }
             </div>
         </div>
     </div>
@@ -257,6 +248,8 @@
     private string userId = "default";
     private bool _renderChartsAfterUpdate;
     private ChatMessage? _pendingMessage;
+    private HashSet<string> databaseTables = new(StringComparer.OrdinalIgnoreCase);
+    private List<QuickAskSuggestion> quickAskSuggestions = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -324,12 +317,15 @@
             database = saved;
         else if (databases.Count > 0)
             database = databases[0];
+
+        await RefreshDatabaseContext();
     }
 
     private async Task OnDatabaseChanged(ChangeEventArgs e)
     {
         database = e.Value?.ToString() ?? database;
         try { await Cache.SetAsync(DbPrefKey, database, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) }); } catch { /* best-effort */ }
+        await RefreshDatabaseContext();
     }
 
     private async Task LoadConversations()
@@ -345,6 +341,7 @@
         activeConversationId = conv.Id;
         database = conv.Database;
         try { await Cache.SetAsync(DbPrefKey, database, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) }); } catch { /* best-effort */ }
+        await RefreshDatabaseContext();
         messages = (conv.Messages ?? []).Select(m =>
         {
             if (m.Role == "assistant" && m.Response != null)
@@ -525,16 +522,109 @@
         }
     }
 
-    private Task QuickAskTopMerchants() => QuickAsk("Top 10 merchants by disbursement volume today");
-    private Task QuickAskHourlyVolume() => QuickAsk("Hourly transaction count for the last 24 hours");
-    private Task QuickAskStatusBreakdown() => QuickAsk("Transaction status breakdown today");
-    private Task QuickAskTopRecipients() => QuickAsk("Which wallets received the most disbursements this week?");
-
     private async Task QuickAsk(string prompt)
     {
         input = prompt;
         await Send();
     }
+
+    private async Task RefreshDatabaseContext()
+    {
+        await LoadDatabaseTables();
+        BuildQuickAskSuggestions();
+    }
+
+    private async Task LoadDatabaseTables()
+    {
+        databaseTables.Clear();
+        if (string.IsNullOrWhiteSpace(database)) return;
+
+        try
+        {
+            var escapedDb = database.Replace("`", "``");
+            var json = await ClickHouse.QueryAsync($"SHOW TABLES FROM `{escapedDb}`");
+            if (json.StartsWith("ClickHouse error") || json.StartsWith("Error:") || json.StartsWith("Query failed:"))
+                return;
+
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("data", out var data))
+                return;
+
+            foreach (var row in data.EnumerateArray())
+            {
+                foreach (var prop in row.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.String)
+                    {
+                        var tableName = prop.Value.GetString();
+                        if (!string.IsNullOrWhiteSpace(tableName))
+                            databaseTables.Add(tableName);
+                        break;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // best-effort metadata load
+        }
+    }
+
+    private void BuildQuickAskSuggestions()
+    {
+        var hasTransactions = HasTableLike("transaction");
+        var hasMerchants = HasTableLike("merchant");
+        var hasWallets = HasTableLike("wallet");
+        var hasBatchPayments = HasTableLike("batch_payment");
+
+        var suggestions = new List<QuickAskSuggestion>();
+
+        if (hasTransactions || hasBatchPayments)
+        {
+            suggestions.Add(new QuickAskSuggestion(
+                "Hourly volume (24h)",
+                $"Hourly transaction count for the last 24 hours in database '{database}'"));
+
+            suggestions.Add(new QuickAskSuggestion(
+                "Status breakdown",
+                $"Transaction status breakdown today in database '{database}'. Use case-insensitive status filters."));
+        }
+
+        if (hasMerchants && (hasTransactions || hasBatchPayments))
+        {
+            suggestions.Add(new QuickAskSuggestion(
+                "Top merchants today",
+                $"Top 10 merchants by disbursement volume today in database '{database}'. If status filtering is used, compare status case-insensitively."));
+        }
+
+        if (hasWallets && (hasTransactions || hasBatchPayments))
+        {
+            suggestions.Add(new QuickAskSuggestion(
+                "Top recipients this week",
+                $"Which wallets received the most disbursements this week in database '{database}'?"));
+        }
+
+        if (suggestions.Count == 0)
+        {
+            suggestions.Add(new QuickAskSuggestion(
+                "Explore recent activity",
+                $"Show key activity trends for the last 24 hours in database '{database}' based on available tables."));
+            suggestions.Add(new QuickAskSuggestion(
+                "Top entities",
+                $"Show top entities by volume in database '{database}' using the most relevant transactional tables."));
+            suggestions.Add(new QuickAskSuggestion(
+                "Status mix",
+                $"Show status distribution for recent records in database '{database}' and use case-insensitive matching for status-like fields."));
+            suggestions.Add(new QuickAskSuggestion(
+                "Anomalies",
+                $"Find unusual spikes or drops in the last 7 days in database '{database}' using available metrics."));
+        }
+
+        quickAskSuggestions = suggestions.Take(4).ToList();
+    }
+
+    private bool HasTableLike(string token) =>
+        databaseTables.Any(t => t.Contains(token, StringComparison.OrdinalIgnoreCase));
 
     private async Task RenderCharts()
     {
@@ -626,4 +716,6 @@
         public int OutputTokens { get; set; }
         public List<AnalyticsStreamEvent>? StreamEvents { get; set; }
     }
+
+    private sealed record QuickAskSuggestion(string Label, string Prompt);
 }
