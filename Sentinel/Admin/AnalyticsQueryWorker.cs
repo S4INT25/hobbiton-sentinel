@@ -63,7 +63,7 @@ public class AnalyticsQueryWorker(
             using var scope = scopeFactory.CreateScope();
             var agent = scope.ServiceProvider.GetRequiredService<AnalyticsAgent>();
 
-            var result = await agent.AskAsync(job.Prompt, job.Database, history,
+            var result = await agent.AskAsync(job.Prompt, job.Database, history, job.Mode,
                 onEvent: async evt =>
                 {
                     job.StreamEvents.Add(evt);
@@ -82,9 +82,14 @@ public class AnalyticsQueryWorker(
                 {
                     Id = job.ConversationId,
                     Database = job.Database,
+                    Mode = job.Mode,
                     UserId = job.UserId,
                     Title = GenerateTitle(job.Prompt)
                 };
+            }
+            else
+            {
+                conversation.Mode = string.IsNullOrWhiteSpace(job.Mode) ? conversation.Mode : job.Mode;
             }
 
             conversation.Messages.Add(new ChatEntry { Role = "user", Content = job.Prompt });

@@ -22,12 +22,42 @@ public class AnalyticsAgent(
         string prompt,
         string database = "lipila_blaze",
         List<ChatEntry>? history = null,
+        string mode = "general",
         Func<AnalyticsStreamEvent, Task>? onEvent = null)
     {
         var modelName = config["DigitalOcean:ModelName"]!;
         var schema = await schemaLoader.GetSchemaBlockAsync(database);
+        var isFraudMode = string.Equals(mode, "fraud", StringComparison.OrdinalIgnoreCase);
 
-        var systemPrompt = $$"""
+        var systemPrompt = isFraudMode
+            ? $$"""
+               You are a fraud-detection analytics assistant for ClickHouse. Analyse data and return findings in a strict JSON format so the UI can render a fraud report.
+
+               ## Database: {{database}}
+               {{schema}}
+
+               ## Rules
+               - ONLY produce SELECT/WITH queries. Never INSERT/UPDATE/DELETE/DROP.
+               - Always qualify tables: `{{database}}.<table>`.
+               - Use native ClickHouse functions: `ifNull()`, `countIf()`, `sumIf()`, `toStartOfHour()`, `formatReadableQuantity()`.
+               - Banned: `COALESCE`, `ISNULL`, `DATEDIFF`, `IIF`, `NVL`, `TOP`.
+               - Add `LIMIT 50` unless the user specifies otherwise.
+               - Use case-insensitive categorical filtering by default (e.g. `lower(status)=lower('completed')`).
+               - If a query returns 0 rows, reassess status/type filters before concluding no risk.
+
+               ## Fraud Response Format (strict JSON, no markdown)
+               {
+                 "thinking": "Brief internal reasoning",
+                 "sql": "SELECT ... or null",
+                 "summary": "Analyst-facing summary",
+                 "risk_level": "low|medium|high|critical",
+                 "findings": ["Finding 1", "Finding 2"],
+                 "recommended_actions": ["Action 1", "Action 2"],
+                 "explanation": "Detailed plain-English explanation",
+                 "chart": "bar" | "line" | "doughnut" | "none"
+               }
+               """
+            : $$"""
                              You are a SQL analytics assistant for ClickHouse. The user asks questions in natural language and you translate them into ClickHouse SQL queries, execute them, and explain the results clearly.
 
                              ## Database: {{database}}
@@ -143,7 +173,9 @@ public class AnalyticsAgent(
             text = text.Trim();
 
             // Parse LLM response
-            string? thinking, sql, explanation, chartType;
+            string? thinking, sql, explanation, chartType, summary, riskLevel;
+            List<string> findings = [];
+            List<string> recommendedActions = [];
             try
             {
                 using var doc = JsonDocument.Parse(text);
@@ -152,6 +184,24 @@ public class AnalyticsAgent(
                 sql = root.TryGetProperty("sql", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() : null;
                 explanation = root.TryGetProperty("explanation", out var e) ? e.GetString() : null;
                 chartType = root.TryGetProperty("chart", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : "none";
+                summary = root.TryGetProperty("summary", out var sm) && sm.ValueKind == JsonValueKind.String ? sm.GetString() : null;
+                riskLevel = root.TryGetProperty("risk_level", out var rl) && rl.ValueKind == JsonValueKind.String ? rl.GetString() : null;
+                if (root.TryGetProperty("findings", out var f) && f.ValueKind == JsonValueKind.Array)
+                {
+                    findings = f.EnumerateArray()
+                        .Where(x => x.ValueKind == JsonValueKind.String)
+                        .Select(x => x.GetString()!)
+                        .Where(x => !string.IsNullOrWhiteSpace(x))
+                        .ToList();
+                }
+                if (root.TryGetProperty("recommended_actions", out var ra) && ra.ValueKind == JsonValueKind.Array)
+                {
+                    recommendedActions = ra.EnumerateArray()
+                        .Where(x => x.ValueKind == JsonValueKind.String)
+                        .Select(x => x.GetString()!)
+                        .Where(x => !string.IsNullOrWhiteSpace(x))
+                        .ToList();
+                }
             }
             catch (JsonException)
             {
@@ -177,6 +227,10 @@ public class AnalyticsAgent(
                     Success = true,
                     Explanation = explanation ?? text,
                     Thinking = thinking,
+                    Summary = summary,
+                    RiskLevel = riskLevel,
+                    Findings = findings,
+                    RecommendedActions = recommendedActions,
                     ChartType = chartType ?? "none",
                     InputTokens = totalInput,
                     OutputTokens = totalOutput
@@ -275,6 +329,10 @@ public class AnalyticsAgent(
                                     ? "No rows matched the exact status filter. Showing results with relaxed status filters."
                                     : $"{explanation}\n\n(Status filters were relaxed automatically because the original values returned no rows.)",
                                 Thinking = thinking,
+                                Summary = summary,
+                                RiskLevel = riskLevel,
+                                Findings = findings,
+                                RecommendedActions = recommendedActions,
                                 ChartType = chartType ?? "none",
                                 RawResult = fallbackResult,
                                 Columns = fallbackData.Columns,
@@ -301,6 +359,10 @@ public class AnalyticsAgent(
                 Sql = normalizedSql,
                 Explanation = explanation,
                 Thinking = thinking,
+                Summary = summary,
+                RiskLevel = riskLevel,
+                Findings = findings,
+                RecommendedActions = recommendedActions,
                 ChartType = chartType ?? "none",
                 RawResult = result,
                 Columns = tableData.Columns,
@@ -431,6 +493,10 @@ public class AnalyticsResponse
     public string? Sql { get; set; }
     public string? Explanation { get; set; }
     public string? Thinking { get; set; }
+    public string? Summary { get; set; }
+    public string? RiskLevel { get; set; }
+    public List<string> Findings { get; set; } = [];
+    public List<string> RecommendedActions { get; set; } = [];
 
     [System.Text.Json.Serialization.JsonIgnore]
     public string? RawResult { get; set; }

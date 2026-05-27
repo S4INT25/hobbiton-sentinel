@@ -9,6 +9,7 @@ public class AnalyticsQueryJob
     public string UserId { get; set; } = "default";
     public string Prompt { get; set; } = string.Empty;
     public string Database { get; set; } = string.Empty;
+    public string Mode { get; set; } = "general"; // general | fraud
     public string Status { get; set; } = "pending"; // pending | running | completed | failed
     public DateTime SubmittedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }

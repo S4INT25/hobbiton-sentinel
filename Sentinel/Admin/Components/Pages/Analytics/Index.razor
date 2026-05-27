@@ -1,3 +1,4 @@
+@page "/admin/chat"
 @page "/admin/analytics"
 @inject IAnalyticsChatStore ChatStore
 @inject IAnalyticsJobStore JobStore
@@ -10,11 +11,11 @@
 @attribute [Authorize(Policy = AuthConstants.Policy)]
 @implements IDisposable
 
-<PageTitle>Analytics — Sentinel</PageTitle>
+<PageTitle>Chat — Sentinel</PageTitle>
 
-<div class="flex h-[calc(100vh-6rem)]">
+<div class="flex flex-col md:flex-row h-[calc(100vh-6rem)]">
     <!-- Conversation Sidebar -->
-    <div class="w-56 border-r border-gray-800 flex flex-col shrink-0">
+    <div class="@(showHistoryMobile ? "flex" : "hidden") md:flex w-full md:w-56 border-b md:border-b-0 md:border-r border-gray-800 flex-col shrink-0 max-h-64 md:max-h-none">
         <div class="flex items-center justify-between px-3 py-2 border-b border-gray-800">
             <span class="text-xs font-medium text-gray-400">History</span>
             <button @onclick="NewConversation" class="px-2 py-1 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white rounded transition-colors">+ New</button>
@@ -41,12 +42,17 @@
     <!-- Main Chat Area -->
     <div class="flex-1 flex flex-col min-w-0">
         <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800">
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-2 md:gap-3 flex-wrap">
+                <button @onclick="ToggleHistoryMobile" class="md:hidden px-2 py-1.5 bg-gray-900 border border-gray-800 rounded text-[10px] text-gray-300">History</button>
                 <select value="@database" @onchange="OnDatabaseChanged" class="px-2.5 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white">
                     @foreach (var db in databases)
                     {
                         <option value="@db">@db</option>
                     }
+                </select>
+                <select value="@mode" @onchange="OnModeChanged" class="px-2.5 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white">
+                    <option value="general">General</option>
+                    <option value="fraud">Fraud Detection</option>
                 </select>
                 @if (!string.IsNullOrEmpty(dbLoadError))
                 {
@@ -63,7 +69,7 @@
                     </span>
                 }
             </div>
-            <button @onclick="ClearChat" class="px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-300 border border-gray-800 rounded hover:bg-gray-900 transition-colors">
+            <button @onclick="ClearChat" class="px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-300 border border-gray-800 rounded hover:bg-gray-900 transition-colors whitespace-nowrap">
                 Clear
             </button>
         </div>
@@ -94,6 +100,41 @@
                         @if (!string.IsNullOrEmpty(msg.Explanation))
                         {
                             <div class="text-sm text-gray-300">@msg.Explanation</div>
+                        }
+                        @if (!string.IsNullOrEmpty(msg.Summary) || !string.IsNullOrEmpty(msg.RiskLevel) || (msg.Findings?.Count > 0) || (msg.RecommendedActions?.Count > 0))
+                        {
+                            <div class="border border-gray-800 rounded-lg p-3 bg-gray-900/40 space-y-2">
+                                @if (!string.IsNullOrEmpty(msg.Summary))
+                                {
+                                    <div class="text-sm text-gray-200">@msg.Summary</div>
+                                }
+                                @if (!string.IsNullOrEmpty(msg.RiskLevel))
+                                {
+                                    <div class="text-xs">
+                                        <span class="@RiskLevelClasses(msg.RiskLevel)">@msg.RiskLevel</span>
+                                    </div>
+                                }
+                                @if (msg.Findings?.Count > 0)
+                                {
+                                    <div>
+                                        <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Findings</div>
+                                        @foreach (var finding in msg.Findings)
+                                        {
+                                            <div class="text-xs text-gray-300">• @finding</div>
+                                        }
+                                    </div>
+                                }
+                                @if (msg.RecommendedActions?.Count > 0)
+                                {
+                                    <div>
+                                        <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Recommended Actions</div>
+                                        @foreach (var action in msg.RecommendedActions)
+                                        {
+                                            <div class="text-xs text-gray-300">• @action</div>
+                                        }
+                                    </div>
+                                }
+                            </div>
                         }
 
                         @if (!string.IsNullOrEmpty(msg.Error))
@@ -239,6 +280,7 @@
     private string input = "";
     private bool loading;
     private string database = "";
+    private string mode = "general";
     private List<string> databases = [];
     private string? dbLoadError;
     private List<AnalyticsConversation> conversations = [];
@@ -248,6 +290,7 @@
     private string userId = "default";
     private bool _renderChartsAfterUpdate;
     private ChatMessage? _pendingMessage;
+    private bool showHistoryMobile;
     private HashSet<string> databaseTables = new(StringComparer.OrdinalIgnoreCase);
     private List<QuickAskSuggestion> quickAskSuggestions = [];
 
@@ -276,6 +319,7 @@
         ["system", "INFORMATION_SCHEMA", "information_schema", "default"];
 
     private string DbPrefKey => $"analytics:prefs:{userId}:database";
+    private string ModePrefKey => $"analytics:prefs:{userId}:mode";
 
     private async Task LoadDatabases()
     {
@@ -318,6 +362,9 @@
         else if (databases.Count > 0)
             database = databases[0];
 
+        var savedMode = await Cache.GetOrDefaultAsync<string>(ModePrefKey);
+        mode = savedMode is "fraud" ? "fraud" : "general";
+
         await RefreshDatabaseContext();
     }
 
@@ -326,6 +373,13 @@
         database = e.Value?.ToString() ?? database;
         try { await Cache.SetAsync(DbPrefKey, database, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) }); } catch { /* best-effort */ }
         await RefreshDatabaseContext();
+    }
+
+    private async Task OnModeChanged(ChangeEventArgs e)
+    {
+        mode = e.Value?.ToString() is "fraud" ? "fraud" : "general";
+        try { await Cache.SetAsync(ModePrefKey, mode, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) }); } catch { /* best-effort */ }
+        BuildQuickAskSuggestions();
     }
 
     private async Task LoadConversations()
@@ -340,7 +394,9 @@
 
         activeConversationId = conv.Id;
         database = conv.Database;
+        mode = conv.Mode is "fraud" ? "fraud" : "general";
         try { await Cache.SetAsync(DbPrefKey, database, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) }); } catch { /* best-effort */ }
+        try { await Cache.SetAsync(ModePrefKey, mode, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) }); } catch { /* best-effort */ }
         await RefreshDatabaseContext();
         messages = (conv.Messages ?? []).Select(m =>
         {
@@ -352,6 +408,10 @@
                     Thinking = m.Response.Thinking,
                     Sql = m.Response.Sql,
                     Explanation = m.Response.Explanation,
+                    Summary = m.Response.Summary,
+                    RiskLevel = m.Response.RiskLevel,
+                    Findings = m.Response.Findings ?? [],
+                    RecommendedActions = m.Response.RecommendedActions ?? [],
                     Error = m.Response.Error,
                     ChartType = m.Response.ChartType ?? "none",
                     Columns = m.Response.Columns ?? [],
@@ -369,7 +429,7 @@
 
         // Persist the active conversation in the URL so browser refresh restores it
         if (updateUrl)
-            Navigation.NavigateTo($"/admin/analytics?id={id}", replace: true);
+            Navigation.NavigateTo($"/admin/chat?id={id}", replace: true);
 
         // Check pending jobs
         var jobs = await JobStore.GetUserJobsAsync(userId, id);
@@ -383,7 +443,7 @@
     {
         activeConversationId = null;
         ClearChat();
-        Navigation.NavigateTo("/admin/analytics", replace: true);
+        Navigation.NavigateTo("/admin/chat", replace: true);
     }
 
     private async Task DeleteConversation(string id)
@@ -411,6 +471,7 @@
                 var conversation = new AnalyticsConversation
                 {
                     Database = database,
+                    Mode = mode,
                     UserId = userId,
                     Title = prompt.Length > 50 ? prompt[..47] + "..." : prompt
                 };
@@ -425,7 +486,8 @@
                 ConversationId = conversationId,
                 UserId = userId,
                 Prompt = prompt,
-                Database = database
+                Database = database,
+                Mode = mode
             };
 
             await JobStore.CreateAsync(job);
@@ -477,6 +539,10 @@
                                 Thinking = job.Result.Thinking,
                                 Sql = job.Result.Sql,
                                 Explanation = job.Result.Explanation,
+                                Summary = job.Result.Summary,
+                                RiskLevel = job.Result.RiskLevel,
+                                Findings = job.Result.Findings ?? [],
+                                RecommendedActions = job.Result.RecommendedActions ?? [],
                                 Error = job.Result.Error,
                                 ChartType = job.Result.ChartType ?? "none",
                                 Columns = job.Result.Columns ?? [],
@@ -572,6 +638,18 @@
 
     private void BuildQuickAskSuggestions()
     {
+        if (mode == "fraud")
+        {
+            quickAskSuggestions =
+            [
+                new QuickAskSuggestion("High-risk patterns (24h)", $"Run fraud detection on '{database}' for last 24 hours. Return risk level, findings, and recommended actions."),
+                new QuickAskSuggestion("Merchant anomaly scan", $"Identify unusual merchant behaviour in '{database}' over last 24 hours and classify risk."),
+                new QuickAskSuggestion("Wallet risk hotspots", $"Find risky wallet/recipient concentration patterns in '{database}' this week."),
+                new QuickAskSuggestion("Status mismatch checks", $"Detect suspicious status/amount inconsistencies in '{database}' with fraud-focused findings.")
+            ];
+            return;
+        }
+
         var hasTransactions = HasTableLike("transaction");
         var hasMerchants = HasTableLike("merchant");
         var hasWallets = HasTableLike("wallet");
@@ -625,6 +703,8 @@
 
     private bool HasTableLike(string token) =>
         databaseTables.Any(t => t.Contains(token, StringComparison.OrdinalIgnoreCase));
+
+    private void ToggleHistoryMobile() => showHistoryMobile = !showHistoryMobile;
 
     private async Task RenderCharts()
     {
@@ -700,6 +780,14 @@
         _ => "text-gray-400"
     };
 
+    private static string RiskLevelClasses(string? riskLevel) => (riskLevel ?? "").ToLowerInvariant() switch
+    {
+        "critical" => "inline-flex px-2 py-0.5 rounded text-[10px] font-medium bg-rose-500/20 text-rose-300 border border-rose-500/30",
+        "high" => "inline-flex px-2 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30",
+        "medium" => "inline-flex px-2 py-0.5 rounded text-[10px] font-medium bg-blue-500/20 text-blue-300 border border-blue-500/30",
+        _ => "inline-flex px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+    };
+
     private class ChatMessage
     {
         public string Role { get; set; } = "";
@@ -707,6 +795,10 @@
         public string? Thinking { get; set; }
         public string? Sql { get; set; }
         public string? Explanation { get; set; }
+        public string? Summary { get; set; }
+        public string? RiskLevel { get; set; }
+        public List<string>? Findings { get; set; }
+        public List<string>? RecommendedActions { get; set; }
         public string? Error { get; set; }
         public string? ChartType { get; set; }
         public List<string>? Columns { get; set; }

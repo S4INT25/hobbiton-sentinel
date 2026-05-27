@@ -9,7 +9,7 @@
 <PageTitle>Dashboard — Sentinel</PageTitle>
 
 <div class="space-y-6">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <h1 class="text-lg font-semibold text-white">Dashboard</h1>
         <div class="flex items-center gap-2">
             @if (!string.IsNullOrEmpty(triggerMessage))
@@ -62,7 +62,7 @@
         </div>
     }
 
-    <div class="grid grid-cols-4 gap-3">
+    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         <div class="p-4 bg-gray-900 border border-gray-800 rounded-lg">
             <div class="text-xs text-gray-500 mb-1">Open Cases</div>
             <div class="text-2xl font-semibold text-white">@openCases</div>
@@ -84,7 +84,8 @@
     <div>
         <h2 class="text-sm font-medium text-gray-400 mb-3">Recent Runs</h2>
         <div class="border border-gray-800 rounded-lg overflow-hidden">
-            <table class="w-full text-sm">
+            <div class="overflow-x-auto">
+            <table class="w-full text-sm min-w-[720px]">
                 <thead class="bg-gray-900/50">
                     <tr class="text-xs text-gray-500 border-b border-gray-800">
                         <th class="text-left px-4 py-2 font-medium">Run ID</th>
@@ -117,6 +118,7 @@
                     }
                 </tbody>
             </table>
+            </div>
         </div>
         @if (DisplayRuns.Count > PageSize)
         {
