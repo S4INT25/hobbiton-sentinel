@@ -1,66 +1,48 @@
-using System.Text.Json;
 using Sentinel.Admin.Models;
-using StackExchange.Redis;
+using ZiggyCreatures.Caching.Fusion;
 
 namespace Sentinel.Admin.Stores;
 
-public class UserStore(IConnectionMultiplexer redis) : IUserStore
+public class UserStore(IFusionCache cache) : IUserStore
 {
-    private readonly IDatabase _db = redis.GetDatabase();
-    private const string SetKey = "sentinel:users";
-    private const string Prefix = "sentinel:user:";
-    private const string UsernameIndex = "sentinel:user:username:";
+    private const string Key = "sentinel:users";
 
-    public async Task<List<AdminUser>> GetAllAsync()
-    {
-        var ids = await _db.SetMembersAsync(SetKey);
-        var users = new List<AdminUser>();
+    private async Task<List<AdminUser>> LoadAsync() =>
+        await cache.GetOrDefaultAsync<List<AdminUser>>(Key) ?? [];
 
-        foreach (var id in ids)
-        {
-            var json = await _db.StringGetAsync($"{Prefix}{id}");
-            if (json.IsNullOrEmpty) continue;
-            var user = JsonSerializer.Deserialize<AdminUser>((string)json!);
-            if (user != null) users.Add(user);
-        }
+    private Task PersistAsync(List<AdminUser> users) =>
+        cache.SetAsync(Key, users, o => o.SetDuration(TimeSpan.MaxValue)).AsTask();
 
-        return users.OrderBy(u => u.Username).ToList();
-    }
+    public async Task<List<AdminUser>> GetAllAsync() =>
+        (await LoadAsync()).OrderBy(u => u.Username).ToList();
 
-    public async Task<AdminUser?> GetByIdAsync(string id)
-    {
-        var json = await _db.StringGetAsync($"{Prefix}{id}");
-        return json.IsNullOrEmpty ? null : JsonSerializer.Deserialize<AdminUser>((string)json!);
-    }
+    public async Task<AdminUser?> GetByIdAsync(string id) =>
+        (await LoadAsync()).FirstOrDefault(u => u.Id == id);
 
-    public async Task<AdminUser?> GetByUsernameAsync(string username)
-    {
-        var id = await _db.StringGetAsync($"{UsernameIndex}{username.ToLowerInvariant()}");
-        return id.IsNullOrEmpty ? null : await GetByIdAsync((string)id!);
-    }
+    public async Task<AdminUser?> GetByUsernameAsync(string username) =>
+        (await LoadAsync()).FirstOrDefault(u =>
+            u.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
 
     public async Task SaveAsync(AdminUser user)
     {
-        var json = JsonSerializer.Serialize(user);
-        await _db.StringSetAsync($"{Prefix}{user.Id}", json);
-        await _db.SetAddAsync(SetKey, user.Id);
-        await _db.StringSetAsync($"{UsernameIndex}{user.Username.ToLowerInvariant()}", user.Id);
+        var users = await LoadAsync();
+        users.RemoveAll(u => u.Id == user.Id);
+        users.Add(user);
+        await PersistAsync(users);
     }
 
     public async Task DeleteAsync(string id)
     {
-        var user = await GetByIdAsync(id);
-        if (user == null) return;
-        await _db.KeyDeleteAsync($"{Prefix}{id}");
-        await _db.SetRemoveAsync(SetKey, id);
-        await _db.KeyDeleteAsync($"{UsernameIndex}{user.Username.ToLowerInvariant()}");
+        var users = await LoadAsync();
+        users.RemoveAll(u => u.Id == id);
+        await PersistAsync(users);
     }
 
     public async Task UpdateLastLoginAsync(string id)
     {
-        var user = await GetByIdAsync(id);
-        if (user == null) return;
-        user.LastLoginAt = DateTime.UtcNow;
-        await SaveAsync(user);
+        var users = await LoadAsync();
+        var user = users.FirstOrDefault(u => u.Id == id);
+        if (user != null) user.LastLoginAt = DateTime.UtcNow;
+        await PersistAsync(users);
     }
 }

@@ -1,20 +1,15 @@
-using System.Text.Json;
 using Sentinel.Admin.Models;
-using StackExchange.Redis;
+using ZiggyCreatures.Caching.Fusion;
 
 namespace Sentinel.Admin.Stores;
 
-public class SystemPromptStore(IConnectionMultiplexer redis) : ISystemPromptStore
+public class SystemPromptStore(IFusionCache cache) : ISystemPromptStore
 {
-    private readonly IDatabase _db = redis.GetDatabase();
     private const string CurrentKey = "sentinel:prompt:current";
     private const string HistoryKey = "sentinel:prompt:history";
 
-    public async Task<SystemPromptOverride?> GetOverrideAsync()
-    {
-        var json = await _db.StringGetAsync(CurrentKey);
-        return json.IsNullOrEmpty ? null : JsonSerializer.Deserialize<SystemPromptOverride>((string)json!);
-    }
+    public async Task<SystemPromptOverride?> GetOverrideAsync() =>
+        await cache.GetOrDefaultAsync<SystemPromptOverride>(CurrentKey);
 
     public async Task SaveOverrideAsync(string promptText, string updatedBy)
     {
@@ -25,24 +20,17 @@ public class SystemPromptStore(IConnectionMultiplexer redis) : ISystemPromptStor
             UpdatedAt = DateTime.UtcNow
         };
 
-        var json = JsonSerializer.Serialize(entry);
-        await _db.StringSetAsync(CurrentKey, json);
-        await _db.ListLeftPushAsync(HistoryKey, json);
-        await _db.ListTrimAsync(HistoryKey, 0, 9); // keep last 10
+        await cache.SetAsync(CurrentKey, entry, o => o.SetDuration(TimeSpan.MaxValue));
+
+        var history = await cache.GetOrDefaultAsync<List<SystemPromptOverride>>(HistoryKey) ?? [];
+        history.Insert(0, entry);
+        if (history.Count > 10) history = history.Take(10).ToList();
+        await cache.SetAsync(HistoryKey, history, o => o.SetDuration(TimeSpan.MaxValue));
     }
 
-    public async Task ClearOverrideAsync()
-    {
-        await _db.KeyDeleteAsync(CurrentKey);
-    }
+    public async Task ClearOverrideAsync() =>
+        await cache.RemoveAsync(CurrentKey);
 
-    public async Task<List<SystemPromptOverride>> GetHistoryAsync(int limit = 5)
-    {
-        var entries = await _db.ListRangeAsync(HistoryKey, 0, limit - 1);
-        return entries
-            .Select(e => JsonSerializer.Deserialize<SystemPromptOverride>((string)e!))
-            .Where(e => e != null)
-            .Select(e => e!)
-            .ToList();
-    }
+    public async Task<List<SystemPromptOverride>> GetHistoryAsync(int limit = 5) =>
+        (await cache.GetOrDefaultAsync<List<SystemPromptOverride>>(HistoryKey) ?? []).Take(limit).ToList();
 }

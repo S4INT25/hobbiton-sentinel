@@ -1,53 +1,80 @@
-using System.Collections.Concurrent;
+using ZiggyCreatures.Caching.Fusion;
 
 namespace Sentinel.Admin;
 
-/// <summary>In-memory implementation used in development / when Redis is unavailable.</summary>
-public class InMemoryActiveRunTracker : IActiveRunTracker
+public class ActiveRunTracker(IFusionCache cache, ILogger<ActiveRunTracker> logger) : IActiveRunTracker
 {
-    private readonly ConcurrentDictionary<string, ActiveRunState> _runs = new();
+    private static readonly TimeSpan RunTtl = TimeSpan.FromHours(24);
+    private const string IndexKey = "sentinel:active-runs:index";
 
-    public Task MarkQueuedAsync(string runId, string triggeredBy, DateTime startedAtUtc)
+    private static string Key(string runId) => $"sentinel:active-run:{runId}";
+
+    public Task MarkQueuedAsync(string runId, string triggeredBy, DateTime startedAtUtc) =>
+        UpsertAsync(runId, "queued", triggeredBy, startedAtUtc);
+
+    public Task MarkRunningAsync(string runId, string triggeredBy, DateTime startedAtUtc) =>
+        UpsertAsync(runId, "running", triggeredBy, startedAtUtc);
+
+    public async Task MarkFailedAsync(string runId)
     {
-        _runs.AddOrUpdate(runId,
-            _ => new ActiveRunState(runId, "queued", triggeredBy, startedAtUtc, DateTime.UtcNow),
-            (_, cur) => cur with { Status = "queued", TriggeredBy = triggeredBy, StartedAtUtc = startedAtUtc, UpdatedAtUtc = DateTime.UtcNow });
-        return Task.CompletedTask;
+        var state = await GetAsync(runId);
+        if (state is null) return;
+        await UpsertAsync(runId, "failed", state.TriggeredBy, state.StartedAtUtc);
     }
 
-    public Task MarkRunningAsync(string runId, string triggeredBy, DateTime startedAtUtc)
+    public async Task MarkStoppedAsync(string runId)
     {
-        _runs.AddOrUpdate(runId,
-            _ => new ActiveRunState(runId, "running", triggeredBy, startedAtUtc, DateTime.UtcNow),
-            (_, cur) => cur with { Status = "running", TriggeredBy = triggeredBy, StartedAtUtc = startedAtUtc, UpdatedAtUtc = DateTime.UtcNow });
-        return Task.CompletedTask;
+        var state = await GetAsync(runId);
+        if (state is null) return;
+        await UpsertAsync(runId, "stopped", state.TriggeredBy, state.StartedAtUtc);
     }
 
-    public Task MarkFailedAsync(string runId)
+    public async Task MarkCompletedAsync(string runId)
     {
-        if (_runs.TryGetValue(runId, out var cur))
-            _runs[runId] = cur with { Status = "failed", UpdatedAtUtc = DateTime.UtcNow };
-        return Task.CompletedTask;
+        await cache.RemoveAsync(Key(runId));
+        var index = await cache.GetOrDefaultAsync<List<string>>(IndexKey) ?? [];
+        index.Remove(runId);
+        await cache.SetAsync(IndexKey, index, o => o.SetDuration(TimeSpan.MaxValue));
+        logger.LogDebug("Run {RunId} removed from active tracker", runId);
     }
 
-    public Task MarkStoppedAsync(string runId)
+    public async Task<ActiveRunState?> GetAsync(string runId) =>
+        await cache.GetOrDefaultAsync<ActiveRunState>(Key(runId));
+
+    public async Task<ActiveRunState?> GetLatestTrackedRunAsync()
     {
-        if (_runs.TryGetValue(runId, out var cur))
-            _runs[runId] = cur with { Status = "stopped", UpdatedAtUtc = DateTime.UtcNow };
-        return Task.CompletedTask;
+        var index = await cache.GetOrDefaultAsync<List<string>>(IndexKey) ?? [];
+        var stale = new List<string>();
+
+        foreach (var runId in index)
+        {
+            var state = await cache.GetOrDefaultAsync<ActiveRunState>(Key(runId));
+            if (state != null) return state;
+            stale.Add(runId); // run TTL expired, clean up index
+        }
+
+        if (stale.Count > 0)
+        {
+            index.RemoveAll(stale.Contains);
+            await cache.SetAsync(IndexKey, index, o => o.SetDuration(TimeSpan.MaxValue));
+        }
+
+        return null;
     }
 
-    public Task MarkCompletedAsync(string runId)
+    private async Task UpsertAsync(string runId, string status, string triggeredBy, DateTime startedAtUtc)
     {
-        _runs.TryRemove(runId, out _);
-        return Task.CompletedTask;
+        var state = new ActiveRunState(runId, status, triggeredBy, startedAtUtc, DateTime.UtcNow);
+        await cache.SetAsync(Key(runId), state, o => o.SetDuration(RunTtl));
+
+        var index = await cache.GetOrDefaultAsync<List<string>>(IndexKey) ?? [];
+        index.Remove(runId);
+        index.Insert(0, runId); // most recent first
+        if (index.Count > 20) index = index.Take(20).ToList();
+        await cache.SetAsync(IndexKey, index, o => o.SetDuration(TimeSpan.MaxValue));
+
+        logger.LogDebug("Run {RunId} marked {Status}", runId, status);
     }
-
-    public Task<ActiveRunState?> GetAsync(string runId) =>
-        Task.FromResult(_runs.TryGetValue(runId, out var state) ? state : (ActiveRunState?)null);
-
-    public Task<ActiveRunState?> GetLatestTrackedRunAsync() =>
-        Task.FromResult(_runs.Values.OrderByDescending(r => r.UpdatedAtUtc).FirstOrDefault());
 }
 
 public sealed record ActiveRunState(

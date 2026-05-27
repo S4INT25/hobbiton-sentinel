@@ -70,16 +70,19 @@ try
     builder.Services.AddHttpClient<IpLookupClient>();
     builder.Services.AddSingleton<EmailClient>();
 
+    // Stores backed by FusionCache — single implementation for dev and prod
+    builder.Services.AddSingleton<ICaseStore, CaseStore>();
+    builder.Services.AddSingleton<IFeedbackRuleStore, FeedbackRuleStore>();
+    builder.Services.AddSingleton<IUserStore, UserStore>();
+    builder.Services.AddSingleton<ISystemPromptStore, SystemPromptStore>();
+    builder.Services.AddSingleton<IAnalyticsChatStore, AnalyticsChatStore>();
+    builder.Services.AddSingleton<IAnalyticsJobStore, AnalyticsJobStore>();
+    builder.Services.AddSingleton<IActiveRunTracker, ActiveRunTracker>();
+
     if (useInMemory)
     {
-        builder.Services.AddSingleton<ICaseStore, InMemoryCaseStore>();
-        builder.Services.AddSingleton<IFeedbackRuleStore, InMemoryFeedbackRuleStore>();
         builder.Services.AddSingleton<IRunLogStore, InMemoryRunLogStore>();
         builder.Services.AddSingleton<IAuditLogStore, InMemoryAuditLogStore>();
-        builder.Services.AddSingleton<IUserStore, InMemoryUserStore>();
-        builder.Services.AddSingleton<IAnalyticsChatStore, InMemoryAnalyticsChatStore>();
-        builder.Services.AddSingleton<IAnalyticsJobStore, InMemoryAnalyticsJobStore>();
-        builder.Services.AddSingleton<IActiveRunTracker, InMemoryActiveRunTracker>();
         builder.Services.AddSingleton<IFraudPatternStore, InMemoryFraudPatternStore>();
         builder.Services.AddFusionCache();
         builder.Services.AddHangfire(config => config.UseInMemoryStorage());
@@ -88,12 +91,6 @@ try
     {
         builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
             ConnectionMultiplexer.Connect(redisConnectionString!));
-        builder.Services.AddSingleton<ICaseStore, CaseStore>();
-        builder.Services.AddSingleton<IFeedbackRuleStore, FeedbackRuleStore>();
-        builder.Services.AddSingleton<IUserStore, UserStore>();
-        builder.Services.AddSingleton<IAnalyticsChatStore, RedisAnalyticsChatStore>();
-        builder.Services.AddSingleton<IAnalyticsJobStore, RedisAnalyticsJobStore>();
-        builder.Services.AddSingleton<IActiveRunTracker, RedisActiveRunTracker>();
 
         // ClickHouse EF Core — run logs + audit (constructed from ClickHouse config section)
         var chHost = new Uri(builder.Configuration["ClickHouse:Host"] ?? "http://localhost:8123");
