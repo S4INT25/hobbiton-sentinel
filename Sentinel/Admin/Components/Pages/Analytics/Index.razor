@@ -289,6 +289,7 @@
     private ElementReference messagesContainer;
     private string userId = "default";
     private bool _renderChartsAfterUpdate;
+    private bool _shouldScrollToBottom;
     private ChatMessage? _pendingMessage;
     private bool showHistoryMobile;
     private HashSet<string> databaseTables = new(StringComparer.OrdinalIgnoreCase);
@@ -308,6 +309,11 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_shouldScrollToBottom)
+        {
+            _shouldScrollToBottom = false;
+            try { await JS.InvokeVoidAsync("chartInterop.scrollToBottom", messagesContainer); } catch { }
+        }
         if (_renderChartsAfterUpdate)
         {
             _renderChartsAfterUpdate = false;
@@ -426,6 +432,7 @@
 
         // Schedule chart render after next DOM update
         _renderChartsAfterUpdate = true;
+        _shouldScrollToBottom = true;
 
         // Persist the active conversation in the URL so browser refresh restores it
         if (updateUrl)
@@ -459,6 +466,7 @@
         if (string.IsNullOrEmpty(prompt) || loading || string.IsNullOrEmpty(database)) return;
 
         messages.Add(new ChatMessage { Role = "user", Content = prompt });
+        _shouldScrollToBottom = true;
         input = "";
         loading = true;
 
@@ -524,6 +532,7 @@
                     if (_pendingMessage != null && job.StreamEvents.Count > (_pendingMessage.StreamEvents?.Count ?? 0))
                     {
                         _pendingMessage.StreamEvents = job.StreamEvents;
+                        _shouldScrollToBottom = true;
                         await InvokeAsync(StateHasChanged);
                     }
 
@@ -554,6 +563,7 @@
                         }
                         loading = false;
                         _renderChartsAfterUpdate = true;
+                        _shouldScrollToBottom = true;
                         await InvokeAsync(StateHasChanged);
                         break;
                     }
@@ -563,6 +573,7 @@
                         _pendingMessage = null;
                         messages.Add(new ChatMessage { Role = "assistant", Error = job.Error ?? "Query failed" });
                         loading = false;
+                        _shouldScrollToBottom = true;
                         await InvokeAsync(StateHasChanged);
                         break;
                     }

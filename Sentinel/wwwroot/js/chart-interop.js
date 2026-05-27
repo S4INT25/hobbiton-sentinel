@@ -62,5 +62,11 @@ window.chartInterop = {
     destroyAllCharts: function () {
         Object.values(this.charts).forEach(c => c.destroy());
         this.charts = {};
+    },
+
+    scrollToBottom: function (element) {
+        if (element) {
+            element.scrollTop = element.scrollHeight;
+        }
     }
 };
