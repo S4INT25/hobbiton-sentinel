@@ -1,5 +1,3 @@
-using System.ClientModel;
-using System.ClientModel.Primitives;
 using System.Diagnostics;
 using System.Text.Json;
 using Sentinel.Admin.Models;
@@ -114,13 +112,6 @@ public class FraudAgent(
 
         logger.LogInformation("Fraud agent run {RunId} started (triggered by: {TriggeredBy}, db: {Database}, customPrompt: {HasCustomPrompt})",
             currentRunId, triggeredBy, effectiveDatabase, !string.IsNullOrWhiteSpace(customPrompt));
-
-        // Auto-resolve cases that have gone stale (no agent activity for N days)
-        var staleDays = config.GetValue("Sentinel:StaleCase:ThresholdDays", 7);
-        var staleClosed = await caseStore.AutoResolveStaleAsync(staleDays);
-        if (staleClosed > 0)
-            logger.LogInformation("Auto-resolved {Count} stale case(s) (threshold: {Days} days)", staleClosed,
-                staleDays);
 
         // Load open cases, schema, and feedback rules concurrently
         var openCasesSummaryTask = caseStore.GetOpenCasesSummaryAsync();

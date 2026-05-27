@@ -23,6 +23,16 @@ public class FraudSchedulerService(
                 TimeZone = TimeZoneInfo.Utc
             });
 
+        jobs.AddOrUpdate<StaleResolutionJob>(
+            recurringJobId: "stale-case-resolution-daily",
+            methodCall: job => job.RunAsync(),
+            cronExpression: Cron.Daily(),
+            queue: "fraud",
+            options: new RecurringJobOptions
+            {
+                TimeZone = TimeZoneInfo.Utc
+            });
+
         logger.LogInformation("Fraud detector scheduled: {Cron}", cron);
         return Task.CompletedTask;
     }

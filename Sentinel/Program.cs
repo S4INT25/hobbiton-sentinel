@@ -19,7 +19,6 @@ using Sentinel.Memory;
 using ZiggyCreatures.Caching.Fusion;
 using ZiggyCreatures.Caching.Fusion.Serialization.SystemTextJson;
 
-// Bootstrap a minimal logger for startup errors before full config is loaded
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Warning()
     .WriteTo.Console()
@@ -36,7 +35,6 @@ try
         .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true)
         .AddEnvironmentVariables();
 
-    // ── Serilog — configured via host context so it has access to full config ──
     builder.Host.UseSerilog((ctx, services, cfg) =>
     {
         var seqUrl = ctx.Configuration["Seq:Url"] ?? "http://localhost:5341";
@@ -101,7 +99,8 @@ try
         var chHost = new Uri(builder.Configuration["ClickHouse:Host"] ?? "http://localhost:8123");
         var chUser = builder.Configuration["ClickHouse:User"] ?? "default";
         var chPass = builder.Configuration["ClickHouse:Password"] ?? "";
-        var chConnectionString = $"Host={chHost.Host};Port={chHost.Port};Database=sentinel;Username={chUser};Password={chPass}";
+        var chConnectionString =
+            $"Host={chHost.Host};Port={chHost.Port};Database=sentinel;Username={chUser};Password={chPass}";
         builder.Services.AddDbContext<SentinelClickHouseContext>(options => options.UseClickHouse(chConnectionString));
         builder.Services.AddScoped<IRunLogStore, RunLogStore>();
         builder.Services.AddScoped<IAuditLogStore, AuditLogStore>();
