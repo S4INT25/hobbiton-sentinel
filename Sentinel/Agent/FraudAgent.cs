@@ -255,8 +255,8 @@ public class FraudAgent(
                     var result = await ExecuteToolAsync(toolCall, currentRunId);
                     var durationMs = (int)Stopwatch.GetElapsedTime(toolStart).TotalMilliseconds;
 
-                    // Fire-and-forget log to ClickHouse
-                    _ = runLogStore.LogToolCallAsync(new RunLog
+                    // Log to ClickHouse (await to prevent scope disposal issues)
+                    await runLogStore.LogToolCallAsync(new RunLog
                     {
                         RunId = currentRunId,
                         Iteration = (ushort)iteration,

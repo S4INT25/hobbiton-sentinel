@@ -69,6 +69,13 @@ public class CaseStore(IConnectionMultiplexer redis, ILogger<CaseStore> logger) 
         logger.LogInformation("Case {Id} resolved: {Resolution}", id, resolution);
     }
 
+    public async Task DeleteCaseAsync(string id)
+    {
+        await _db.KeyDeleteAsync($"{CaseKeyPrefix}{id}");
+        await _db.SetRemoveAsync(CaseSetKey, id);
+        logger.LogInformation("Case {Id} deleted", id);
+    }
+
     /// <summary>
     /// Auto-resolves open cases that have not been updated in <paramref name="thresholdDays"/> days.
     /// Returns the number of cases resolved.

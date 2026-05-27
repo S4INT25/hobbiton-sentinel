@@ -1,14 +1,26 @@
 @page "/admin/cases"
 @inject ICaseStore CaseStore
+@inject IAuditLogStore AuditStore
+@inject AuthenticationStateProvider AuthState
 @attribute [Authorize(Policy = AuthConstants.Policy)]
 
 <PageTitle>Cases — Sentinel</PageTitle>
 
 <div class="space-y-4">
-    <h1 class="text-lg font-semibold text-white">Cases</h1>
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <h1 class="text-lg font-semibold text-white">Cases</h1>
+        <div class="flex items-center gap-3">
+            <select @bind="sortOrder" @bind:after="ApplySort" class="px-2.5 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white">
+                <option value="severity">Sort: Severity</option>
+                <option value="newest">Sort: Newest first</option>
+                <option value="oldest">Sort: Oldest first</option>
+            </select>
+        </div>
+    </div>
 
     <div class="border border-gray-800 rounded-lg overflow-hidden">
-        <table class="w-full text-sm">
+        <div class="overflow-x-auto">
+        <table class="w-full text-sm min-w-[640px]">
             <thead class="bg-gray-900/50">
                 <tr class="text-xs text-gray-500 border-b border-gray-800">
                     <th class="text-left px-4 py-2 font-medium">ID</th>
@@ -22,22 +34,19 @@
             <tbody class="divide-y divide-gray-800/50">
                 @foreach (var c in PagedCases)
                 {
-                    var sevColor = c.Severity switch
-                    {
-                        "critical" => "rose",
-                        "warning" => "amber",
-                        _ => "blue"
-                    };
                     <tr class="hover:bg-gray-900/30 transition-colors">
-                        <td class="px-4 py-2.5 font-mono text-xs text-gray-400">@c.Id[..8]</td>
+                        <td class="px-4 py-2.5 font-mono text-xs text-gray-400">@c.Id[..Math.Min(8, c.Id.Length)]</td>
                         <td class="px-4 py-2.5 text-xs text-gray-200 max-w-sm truncate">@c.Title</td>
                         <td class="px-4 py-2.5">
-                            <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-@(sevColor)-500/10 text-@(sevColor)-400 border border-@(sevColor)-500/20">@c.Severity</span>
+                            <span class="@SeverityClasses(c.Severity)">@c.Severity</span>
                         </td>
                         <td class="px-4 py-2.5 text-xs text-gray-500">@c.Status</td>
                         <td class="px-4 py-2.5 text-xs text-gray-500">@c.FirstSeen.ToString("MMM dd HH:mm")</td>
-                        <td class="px-4 py-2.5 flex gap-2">
-                            <a href="/admin/cases/@c.Id" class="text-xs text-emerald-400 hover:text-emerald-300">View</a>
+                        <td class="px-4 py-2.5">
+                            <div class="flex items-center gap-2">
+                                <a href="/admin/cases/@c.Id" class="text-xs text-emerald-400 hover:text-emerald-300 transition-colors">View</a>
+                                <button @onclick="() => DeleteCase(c.Id)" class="text-xs text-gray-600 hover:text-rose-400 transition-colors">Delete</button>
+                            </div>
                         </td>
                     </tr>
                 }
@@ -47,14 +56,15 @@
                 }
             </tbody>
         </table>
+        </div>
     </div>
     @if (cases.Count > PageSize)
     {
         <div class="mt-3 flex items-center justify-between text-xs">
-            <span class="text-gray-500">Page @currentPage / @TotalPages</span>
+            <span class="text-gray-500">@cases.Count cases · page @currentPage of @TotalPages</span>
             <div class="flex items-center gap-2">
-                <button @onclick="PrevPage" disabled="@(currentPage <= 1)" class="px-2.5 py-1 border border-gray-800 rounded text-gray-300 disabled:opacity-40">Previous</button>
-                <button @onclick="NextPage" disabled="@(currentPage >= TotalPages)" class="px-2.5 py-1 border border-gray-800 rounded text-gray-300 disabled:opacity-40">Next</button>
+                <button @onclick="PrevPage" disabled="@(currentPage <= 1)" class="px-2.5 py-1 border border-gray-800 rounded text-gray-300 disabled:opacity-40 transition-colors hover:border-gray-700">Previous</button>
+                <button @onclick="NextPage" disabled="@(currentPage >= TotalPages)" class="px-2.5 py-1 border border-gray-800 rounded text-gray-300 disabled:opacity-40 transition-colors hover:border-gray-700">Next</button>
             </div>
         </div>
     }
@@ -64,22 +74,64 @@
     private List<FraudCase> cases = [];
     private int currentPage = 1;
     private const int PageSize = 15;
+    private string sortOrder = "newest";
     private int TotalPages => Math.Max(1, (int)Math.Ceiling((double)cases.Count / PageSize));
     private IEnumerable<FraudCase> PagedCases => cases.Skip((currentPage - 1) * PageSize).Take(PageSize);
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadCases();
+    }
+
+    private async Task LoadCases()
+    {
         cases = await CaseStore.GetOpenCasesAsync();
+        ApplySort();
         currentPage = Math.Min(currentPage, TotalPages);
     }
 
-    private void PrevPage()
+    private void ApplySort()
     {
-        if (currentPage > 1) currentPage--;
+        cases = sortOrder switch
+        {
+            "newest" => cases.OrderByDescending(c => c.FirstSeen).ToList(),
+            "oldest" => cases.OrderBy(c => c.FirstSeen).ToList(),
+            _ => cases.OrderByDescending(c => c.Severity switch
+            {
+                "critical" => 4, "high" => 3, "medium" => 2, _ => 1
+            }).ToList()
+        };
+        currentPage = 1;
     }
 
-    private void NextPage()
+    private async Task DeleteCase(string id)
     {
-        if (currentPage < TotalPages) currentPage++;
+        await CaseStore.DeleteCaseAsync(id);
+
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var user = authState.User;
+        await AuditStore.LogAsync(new AuditLog
+        {
+            UserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+            Username = user.Identity?.Name ?? "unknown",
+            Action = "delete",
+            ResourceType = "case",
+            ResourceId = id,
+            Details = "Case deleted by admin",
+            IpAddress = ""
+        });
+
+        await LoadCases();
     }
+
+    private static string SeverityClasses(string severity) => severity switch
+    {
+        "critical" => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20",
+        "high" => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20",
+        "warning" or "medium" => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20",
+        _ => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20"
+    };
+
+    private void PrevPage() { if (currentPage > 1) currentPage--; }
+    private void NextPage() { if (currentPage < TotalPages) currentPage++; }
 }

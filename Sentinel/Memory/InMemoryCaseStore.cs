@@ -48,6 +48,13 @@ public class InMemoryCaseStore(ILogger<InMemoryCaseStore> logger) : ICaseStore
         logger.LogInformation("Case {Id} resolved: {Resolution}", id, resolution);
     }
 
+    public Task DeleteCaseAsync(string id)
+    {
+        _cases.TryRemove(id, out _);
+        logger.LogInformation("Case {Id} deleted", id);
+        return Task.CompletedTask;
+    }
+
     public async Task<string> GetOpenCasesSummaryAsync()
     {
         var cases = await GetOpenCasesAsync();
