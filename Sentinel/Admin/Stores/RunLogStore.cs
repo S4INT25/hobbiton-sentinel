@@ -1,3 +1,4 @@
+using ClickHouse.EntityFrameworkCore.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Sentinel.Admin.Data;
 using Sentinel.Admin.Models;
@@ -8,14 +9,12 @@ public class RunLogStore(SentinelClickHouseContext db) : IRunLogStore
 {
     public async Task LogToolCallAsync(RunLog entry)
     {
-        db.RunLogs.Add(entry);
-        await db.SaveChangesAsync();
+        await db.BulkInsertAsync([entry]);
     }
 
     public async Task SaveSummaryAsync(RunSummary summary)
     {
-        db.RunSummaries.Add(summary);
-        await db.SaveChangesAsync();
+        await db.BulkInsertAsync([summary]);
     }
 
     public async Task<List<RunSummary>> GetRecentRunsAsync(int limit = 50, int offset = 0)
