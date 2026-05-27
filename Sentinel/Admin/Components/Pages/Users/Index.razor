@@ -2,7 +2,6 @@
 @inject IUserStore UserStore
 @inject IAuditLogStore AuditStore
 @inject AuthenticationStateProvider AuthState
-@inject IHttpContextAccessor HttpContextAccessor
 @attribute [Authorize(Policy = AuthConstants.AdminOnlyPolicy)]
 
 <PageTitle>Users — Sentinel</PageTitle>
@@ -127,6 +126,9 @@
 
     private async Task CreateUser()
     {
+        if (string.IsNullOrWhiteSpace(newUsername) || string.IsNullOrWhiteSpace(newPassword))
+            return;
+
         var authState = await AuthState.GetAuthenticationStateAsync();
         var user = authState.User;
 
@@ -147,7 +149,7 @@
             ResourceType = "user",
             ResourceId = newUser.Id,
             Details = $"Created user: {newUsername} ({newRole})",
-            IpAddress = HttpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? ""
+            IpAddress = ""
         });
 
         newUsername = "";
@@ -172,7 +174,7 @@
             Action = "delete",
             ResourceType = "user",
             ResourceId = userId,
-            IpAddress = HttpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? ""
+            IpAddress = ""
         });
 
         users = await UserStore.GetAllAsync();
