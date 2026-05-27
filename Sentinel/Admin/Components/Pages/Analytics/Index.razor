@@ -3,7 +3,7 @@
 @inject IAnalyticsChatStore ChatStore
 @inject IAnalyticsJobStore JobStore
 @inject AnalyticsQueryWorker Worker
-@inject Sentinel.Infrastructure.ClickHouseClient ClickHouse
+@inject Infrastructure.ClickHouseClient ClickHouse
 @inject ZiggyCreatures.Caching.Fusion.IFusionCache Cache
 @inject AuthenticationStateProvider AuthState
 @inject IJSRuntime JS
@@ -731,7 +731,7 @@
                 {
                     await JS.InvokeVoidAsync("chartInterop.renderChart", $"chart-{i}", msg.ChartType, labels, datasets, null);
                 }
-                catch (Microsoft.JSInterop.JSException)
+                catch (JSException)
                 {
                     // chartInterop not yet available (script still loading) — skip silently
                 }
