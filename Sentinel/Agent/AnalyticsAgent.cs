@@ -15,7 +15,7 @@ public class AnalyticsAgent(
     ILogger<AnalyticsAgent> logger)
 {
     private const int MaxHistoryExchanges = 10;
-    private const int MaxRetries = 3;
+    private const int MaxRetries = 5;
 
     /// <param name="onEvent">Optional callback invoked for each streaming event (thinking, retrying, etc.).</param>
     public async Task<AnalyticsResponse> AskAsync(
@@ -43,7 +43,7 @@ public class AnalyticsAgent(
                - Banned: `COALESCE`, `ISNULL`, `DATEDIFF`, `IIF`, `NVL`, `TOP`.
                - Add `LIMIT 50` unless the user specifies otherwise.
                - Use case-insensitive categorical filtering by default (e.g. `lower(status)=lower('completed')`).
-               - If a query returns 0 rows, reassess status/type filters before concluding no risk.
+               - If a query returns 0 rows, reassess status/type filters and query assumptions, then iterate with a corrected query instead of stopping.
 
                ## Fraud Response Format (strict JSON, no markdown)
                {
@@ -72,7 +72,7 @@ public class AnalyticsAgent(
                              - Use single quotes for string literals.
                              - Name the first column as the label/category and numeric columns as values for clear chart rendering.
                              - For categorical filters like status/state/type, prefer case-insensitive matching, e.g. `lower(status) = lower('completed')`.
-                             - If a query returns 0 rows, double-check filter assumptions (especially casing) and retry with safer case-insensitive filters before concluding there's no data.
+                             - If a query returns 0 rows, double-check filter assumptions (especially casing/value choices/time windows), then iterate with a corrected query instead of concluding there is no data.
 
                              ## Response Format
                              Respond with a JSON object (no markdown fences):
@@ -136,7 +136,7 @@ public class AnalyticsAgent(
                     Attempt = attempt
                 });
                 messages.Add(new UserChatMessage(
-                    $"The SQL you generated returned this error from ClickHouse:\n\n{lastError}\n\nPlease analyse the error carefully and produce corrected SQL."));
+                    $"The previous SQL produced this execution feedback:\n\n{lastError}\n\nPlease analyse this carefully and produce corrected SQL."));
             }
 
             await Emit(onEvent, new AnalyticsStreamEvent
@@ -344,6 +344,47 @@ public class AnalyticsAgent(
                         }
                     }
                 }
+            }
+
+            if (tableData.Rows.Count == 0)
+            {
+                await Emit(onEvent, new AnalyticsStreamEvent
+                {
+                    Type = "fixing",
+                    Message = $"No rows returned (iteration {attempt}/{MaxRetries}). Re-checking assumptions and retrying…",
+                    Sql = normalizedSql,
+                    Attempt = attempt
+                });
+
+                messages.Add(new AssistantChatMessage(text));
+                lastError =
+                    $"The query below returned 0 rows. Re-check categorical filter values (status/type/state), case sensitivity, join keys, and time window. Return corrected SQL.\n\nSQL:\n{normalizedSql}";
+
+                if (attempt == MaxRetries)
+                {
+                    return new AnalyticsResponse
+                    {
+                        Success = true,
+                        Sql = normalizedSql,
+                        Explanation = string.IsNullOrWhiteSpace(explanation)
+                            ? "No rows found after iterative self-corrections. Try broadening the date range or removing strict filters."
+                            : $"{explanation}\n\nNo rows found after iterative self-corrections. Consider broadening date range or relaxing strict filters.",
+                        Thinking = thinking,
+                        Summary = summary,
+                        RiskLevel = riskLevel,
+                        Findings = findings,
+                        RecommendedActions = recommendedActions,
+                        ChartType = chartType ?? "none",
+                        RawResult = result,
+                        Columns = tableData.Columns,
+                        Rows = tableData.Rows,
+                        RowCount = tableData.Rows.Count,
+                        InputTokens = totalInput,
+                        OutputTokens = totalOutput
+                    };
+                }
+
+                continue;
             }
 
             await Emit(onEvent, new AnalyticsStreamEvent
