@@ -42,8 +42,8 @@ public class AnalyticsAgent(
                - Use native ClickHouse functions: `ifNull()`, `countIf()`, `sumIf()`, `toStartOfHour()`, `formatReadableQuantity()`.
                - Banned: `COALESCE`, `ISNULL`, `DATEDIFF`, `IIF`, `NVL`, `TOP`.
                - Add `LIMIT 50` unless the user specifies otherwise.
-               - Use case-insensitive categorical filtering by default (e.g. `lower(status)=lower('completed')`).
-               - If a query returns 0 rows, reassess status/type filters and query assumptions, then iterate with a corrected query instead of stopping.
+               - CRITICAL: Use the EXACT column values shown in "Sample values" above. Do NOT guess or change the casing of status/type/category values. If the schema shows status values like 'completed', use 'completed' not 'COMPLETED'.
+               - If a query returns 0 rows, first check sample values in the schema above to confirm you're using correct filter values, then iterate with a corrected query.
 
                ## Fraud Response Format (strict JSON, no markdown)
                {
@@ -71,8 +71,8 @@ public class AnalyticsAgent(
                              - Add `LIMIT 50` unless the user specifies otherwise.
                              - Use single quotes for string literals.
                              - Name the first column as the label/category and numeric columns as values for clear chart rendering.
-                             - For categorical filters like status/state/type, prefer case-insensitive matching, e.g. `lower(status) = lower('completed')`.
-                             - If a query returns 0 rows, double-check filter assumptions (especially casing/value choices/time windows), then iterate with a corrected query instead of concluding there is no data.
+                             - CRITICAL: Use the EXACT column values shown in "Sample values" above. Do NOT guess or invent status/type/category values. The schema provides the real values — use them as-is with exact casing.
+                             - If a query returns 0 rows, refer back to the sample values in the schema, verify your filter values match exactly, then iterate with a corrected query.
 
                              ## Response Format
                              Respond with a JSON object (no markdown fences):

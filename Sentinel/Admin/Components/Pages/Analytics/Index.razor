@@ -4,6 +4,7 @@
 @inject IAnalyticsJobStore JobStore
 @inject AnalyticsQueryWorker Worker
 @inject Infrastructure.ClickHouseClient ClickHouse
+@inject Infrastructure.SchemaLoader SchemaLoader
 @inject ZiggyCreatures.Caching.Fusion.IFusionCache Cache
 @inject AuthenticationStateProvider AuthState
 @inject IJSRuntime JS
@@ -321,9 +322,6 @@
         }
     }
 
-    private static readonly HashSet<string> SystemDatabases =
-        ["system", "INFORMATION_SCHEMA", "information_schema", "default"];
-
     private string DbPrefKey => $"analytics:prefs:{userId}:database";
     private string ModePrefKey => $"analytics:prefs:{userId}:mode";
 
@@ -333,28 +331,9 @@
         dbLoadError = null;
         try
         {
-            var json = await ClickHouse.QueryAsync("SHOW DATABASES");
-
-            if (json.StartsWith("ClickHouse error") || json.StartsWith("Error:") || json.StartsWith("Query failed:"))
-            {
-                dbLoadError = json;
-            }
-            else
-            {
-                using var doc = System.Text.Json.JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("data", out var data))
-                {
-                    var loaded = data.EnumerateArray()
-                        .Where(r => r.TryGetProperty("name", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
-                        .Select(r => r.GetProperty("name").GetString()!)
-                        .Where(s => !string.IsNullOrWhiteSpace(s) && !SystemDatabases.Contains(s))
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .OrderBy(s => s)
-                        .ToList();
-                    if (loaded.Count > 0)
-                        databases = loaded;
-                }
-            }
+            var loaded = await SchemaLoader.GetDatabasesAsync();
+            if (loaded.Count > 0)
+                databases = loaded.OrderBy(s => s).ToList();
         }
         catch (Exception ex)
         {

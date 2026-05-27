@@ -227,14 +227,17 @@ public static class AdminApiEndpoints
         // ── Analytics ──
         var analytics = api.MapGroup("/analytics");
 
-        analytics.MapGet("/databases", async (ClickHouseClient ch) =>
+        analytics.MapGet("/databases", async (SchemaLoader schemaLoader) =>
         {
-            var json = await ch.QueryAsync("SHOW DATABASES");
-            var databases = ParseDatabaseNames(json)
-                .Where(db => !SystemDatabases.Contains(db))
-                .OrderBy(db => db)
-                .ToList();
-            return Results.Ok(databases);
+            var databases = await schemaLoader.GetDatabasesAsync();
+            return Results.Ok(databases.OrderBy(db => db).ToList());
+        });
+
+        analytics.MapPost("/schema/refresh", async (SchemaLoader schemaLoader) =>
+        {
+            await schemaLoader.InvalidateAllAsync();
+            await schemaLoader.WarmAllAsync();
+            return Results.Ok(new { message = "Schema cache refreshed" });
         });
 
         analytics.MapGet("/conversations", async (IAnalyticsChatStore store, HttpContext ctx) =>
@@ -374,30 +377,12 @@ public static class AdminApiEndpoints
         });
     }
 
-    private static readonly HashSet<string> SystemDatabases =
-        ["system", "INFORMATION_SCHEMA", "information_schema", "default"];
-
     private static string GenerateTitle(string message)
     {
         var title = message.Trim();
         if (title.Length > 50)
             title = title[..47] + "...";
         return title;
-    }
-
-    private static List<string> ParseDatabaseNames(string json)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("data", out var data)) return [];
-            return data.EnumerateArray()
-                .Where(r => r.TryGetProperty("name", out var v) && v.ValueKind == JsonValueKind.String)
-                .Select(r => r.GetProperty("name").GetString()!)
-                .Where(s => !string.IsNullOrWhiteSpace(s))
-                .ToList();
-        }
-        catch { return []; }
     }
 
     private static async Task AuditAction(IAuditLogStore audit, HttpContext ctx,

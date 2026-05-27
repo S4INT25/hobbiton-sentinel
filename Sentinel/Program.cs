@@ -179,6 +179,20 @@ try
 
     await SeedAdminUser(app);
 
+    // Warm schema cache for all databases at startup (non-blocking)
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            var schemaLoader = app.Services.GetRequiredService<SchemaLoader>();
+            await schemaLoader.WarmAllAsync();
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogWarning(ex, "Schema warm-up failed — will load on demand");
+        }
+    });
+
     app.UseAuthentication();
     app.UseAuthorization();
     app.UseStaticFiles();
