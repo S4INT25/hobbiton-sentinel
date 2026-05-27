@@ -91,8 +91,9 @@ public class ClickHouseFraudPatternStore(SentinelClickHouseContext db, ILogger<C
                 Enabled = p.EnabledByDefault,
                 CreatedBy = "system"
             });
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
         }
-        await db.SaveChangesAsync();
         logger.LogInformation("Seeded {Count} default fraud patterns to ClickHouse", defaults.Count());
     }
 }
