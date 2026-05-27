@@ -1,6 +1,7 @@
 @page "/admin/runs"
 @inject IRunLogStore RunLogStore
 @inject IActiveRunTracker RunTracker
+@inject RunCancellationRegistry CancellationRegistry
 @attribute [Authorize(Policy = AuthConstants.Policy)]
 @implements IDisposable
 
@@ -25,11 +26,20 @@
     @if (!string.IsNullOrEmpty(activeRunId))
     {
         <div class="border border-gray-800 rounded-lg p-3 bg-gray-900/30">
-            <div class="flex items-center gap-2 text-xs">
-                <span class="text-gray-400">Current run:</span>
-                <a href="/admin/runs/@activeRunId" class="text-emerald-400 hover:text-emerald-300 font-mono">@activeRunId</a>
-                <span class="@RunStatusClasses(activeRunStatus)">@activeRunStatus</span>
-                <span class="text-gray-600">(@activeLogCount tool calls)</span>
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2 text-xs">
+                    <span class="text-gray-400">Current run:</span>
+                    <a href="/admin/runs/@activeRunId" class="text-emerald-400 hover:text-emerald-300 font-mono">@activeRunId</a>
+                    <span class="@RunStatusClasses(activeRunStatus)">@activeRunStatus</span>
+                    <span class="text-gray-600">(@activeLogCount tool calls)</span>
+                </div>
+                @if (activeRunStatus is "running" or "queued")
+                {
+                    <button @onclick="StopRun" disabled="@stopping"
+                            class="px-2.5 py-1 text-xs font-medium bg-rose-600/80 hover:bg-rose-500 text-white rounded-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">
+                        @(stopping ? "Stopping…" : "Stop")
+                    </button>
+                }
             </div>
         </div>
     }
@@ -96,6 +106,7 @@
     private bool triggerLoading;
     private string? triggerMessage;
     private bool triggerSuccess;
+    private bool stopping;
     private string? activeRunId;
     private string activeRunStatus = "queued";
     private string activeRunTriggeredBy = "scheduler";
@@ -174,6 +185,22 @@
         triggerLoading = false;
     }
 
+    private async Task StopRun()
+    {
+        if (string.IsNullOrEmpty(activeRunId)) return;
+        stopping = true;
+        try
+        {
+            CancellationRegistry.Cancel(activeRunId);
+            await RunTracker.MarkStoppedAsync(activeRunId);
+            activeRunStatus = "stopped";
+            StopRunMonitoring();
+            await LoadRuns();
+        }
+        catch { }
+        stopping = false;
+    }
+
     private void StartRunMonitoring(string runId)
     {
         StopRunMonitoring();
@@ -232,7 +259,8 @@
         return status switch
         {
             "completed" => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
-            "error" => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20",
+            "error" or "failed" => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20",
+            "stopped" => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20",
             "running" => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20",
             "queued" => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-700/40 text-gray-300 border border-gray-700",
             _ => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20"

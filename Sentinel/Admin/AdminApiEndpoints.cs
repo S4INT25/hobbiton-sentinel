@@ -108,6 +108,22 @@ public static class AdminApiEndpoints
             return Results.Accepted();
         });
 
+        api.MapPost("/runs/{runId}/stop", async (string runId, RunCancellationRegistry cancellation,
+            IActiveRunTracker runTracker, IAuditLogStore audit, HttpContext ctx) =>
+        {
+            var cancelled = cancellation.Cancel(runId);
+            if (!cancelled)
+            {
+                // Try to mark as stopped even if CTS not found (may have already been removed)
+                var state = await runTracker.GetAsync(runId);
+                if (state is null) return Results.NotFound();
+            }
+            await runTracker.MarkStoppedAsync(runId);
+            var username = ctx.User.Identity?.Name ?? "unknown";
+            await AuditAction(audit, ctx, "stop_run", "run", runId, $"Stopped by {username}");
+            return Results.Ok(new { stopped = true });
+        });
+
         // ── Cases ──
         api.MapGet("/cases", async (Memory.ICaseStore store) =>
             Results.Ok(await store.GetOpenCasesAsync()));
@@ -315,6 +331,46 @@ public static class AdminApiEndpoints
                 submittedAt = j.SubmittedAt,
                 completedAt = j.CompletedAt
             }));
+        });
+
+        // ── Fraud Patterns (Settings) ──
+        var patterns = api.MapGroup("/patterns").RequireAuthorization(AuthConstants.AdminOnlyPolicy);
+
+        patterns.MapGet("/", async (IFraudPatternStore store) =>
+            Results.Ok(await store.GetAllAsync()));
+
+        patterns.MapGet("/{id:int}", async (int id, IFraudPatternStore store) =>
+        {
+            var pattern = await store.GetByIdAsync(id);
+            return pattern is null ? Results.NotFound() : Results.Ok(pattern);
+        });
+
+        patterns.MapPost("/", async (FraudPatternEntity pattern, IFraudPatternStore store,
+            IAuditLogStore audit, HttpContext ctx) =>
+        {
+            pattern.CreatedBy = ctx.User.Identity?.Name ?? "unknown";
+            pattern.CreatedAt = DateTime.UtcNow;
+            await store.UpsertAsync(pattern);
+            await AuditAction(audit, ctx, "create", "fraud_pattern", pattern.Id.ToString(), pattern.Name);
+            return Results.Created($"/api/patterns/{pattern.Id}", pattern);
+        });
+
+        patterns.MapPut("/{id:int}", async (int id, FraudPatternEntity pattern, IFraudPatternStore store,
+            IAuditLogStore audit, HttpContext ctx) =>
+        {
+            pattern.Id = id;
+            pattern.CreatedBy = ctx.User.Identity?.Name ?? "unknown";
+            await store.UpsertAsync(pattern);
+            await AuditAction(audit, ctx, "update", "fraud_pattern", id.ToString(), pattern.Name);
+            return Results.Ok(pattern);
+        });
+
+        patterns.MapDelete("/{id:int}", async (int id, IFraudPatternStore store,
+            IAuditLogStore audit, HttpContext ctx) =>
+        {
+            await store.DeleteAsync(id);
+            await AuditAction(audit, ctx, "delete", "fraud_pattern", id.ToString());
+            return Results.NoContent();
         });
     }
 

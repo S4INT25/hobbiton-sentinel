@@ -20,11 +20,12 @@ public class FraudAgent(
     SchemaLoader schemaLoader,
     IFeedbackRuleStore feedbackRuleStore,
     IRunLogStore runLogStore,
+    IFraudPatternStore fraudPatternStore,
     IConfiguration config,
     ILogger<FraudAgent> logger)
 {
     private string BuildSystemPrompt(string openCasesSummary, int lookbackMinutes,
-        string schemaBlock, string suppressionBlock, string database)
+        string schemaBlock, string suppressionBlock, string database, string patternsBlock)
     {
         var casesContext = openCasesSummary == "No open cases."
             ? "no open cases."
@@ -44,7 +45,7 @@ public class FraudAgent(
                 Betting/gaming merchants legitimately disburse 50–200+/hr. Before flagging any velocity pattern, query the merchant's 30-day hourly disbursement history (`toStartOfHour`, `count()`, `INTERVAL 30 DAY`) and use their own avg/max as the baseline. Only flag if the current rate is a meaningful outlier.
 
                 ## Fraud Patterns
-                {FraudPatternRegistry.ToPromptBlock()}
+                {patternsBlock}
                 {suppressionBlock}
                 ## Open Cases
                 You have {casesContext}
@@ -55,7 +56,7 @@ public class FraudAgent(
 
                 **Step 1 — Follow up open cases.** Re-query each; escalate/watch/resolve as appropriate.
 
-                **Step 2 — Pattern scan.** Check all {FraudPatternRegistry.GetEnabled().Count()} patterns against data from the last {lookbackMinutes} minutes.
+                **Step 2 — Pattern scan.** Check all enabled patterns against data from the last {lookbackMinutes} minutes.
 
                 **Step 2b — Activity log review.** Query user_activity_logs. Flag: datacenter/hosting logins, brute force (failed→success), midnight–5am CAT logins, sensitive actions (wallet/key/merchant edits), internal-IP actions with no portal login. Cross-reference suspicious logins against transactions from same IP/merchant/wallet.
 
@@ -87,8 +88,21 @@ public class FraudAgent(
                 """;
     }
 
+    private static string BuildPatternsBlock(List<FraudPatternEntity> patterns)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var p in patterns)
+        {
+            sb.AppendLine($"        {p.Id}. **{p.Name}**");
+            foreach (var line in p.Description.Trim().Split('\n'))
+                sb.AppendLine($"           {line.Trim()}");
+            sb.AppendLine();
+        }
+        return sb.ToString();
+    }
+
     public async Task RunAsync(string triggeredBy = "scheduler", string? runId = null, string? database = null,
-        string? customPrompt = null)
+        string? customPrompt = null, CancellationToken cancellationToken = default)
     {
         var currentRunId = string.IsNullOrWhiteSpace(runId)
             ? DateTime.UtcNow.ToString("yyyyMMddHHmmssfff")
@@ -113,13 +127,15 @@ public class FraudAgent(
         var openCasesTask = caseStore.GetOpenCasesAsync();
         var schemaBlockTask = schemaLoader.GetSchemaBlockAsync(effectiveDatabase);
         var rulesTask = feedbackRuleStore.GetActiveRulesAsync();
+        var patternsTask = fraudPatternStore.GetEnabledAsync();
 
-        await Task.WhenAll(openCasesSummaryTask, openCasesTask, schemaBlockTask, rulesTask);
+        await Task.WhenAll(openCasesSummaryTask, openCasesTask, schemaBlockTask, rulesTask, patternsTask);
 
         var openCasesSummary = await openCasesSummaryTask;
         var openCases = await openCasesTask;
         var schemaBlock = await schemaBlockTask;
         var activeRules = await rulesTask;
+        var enabledPatterns = await patternsTask;
 
         logger.LogInformation("Loaded {Count} open cases, {RuleCount} suppression rules",
             openCases.Count, activeRules.Count);
@@ -133,7 +149,10 @@ public class FraudAgent(
               + "\n\n"
             : "\n";
 
-        var systemPrompt = BuildSystemPrompt(openCasesSummary, lookback, schemaBlock, suppressionBlock, effectiveDatabase);
+        // Build patterns prompt block from store
+        var patternsBlock = BuildPatternsBlock(enabledPatterns);
+
+        var systemPrompt = BuildSystemPrompt(openCasesSummary, lookback, schemaBlock, suppressionBlock, effectiveDatabase, patternsBlock);
 
         // Inject follow-up queries from open cases into the first user message
         var followUpContext = openCases.Count > 0 && openCases.Any(c => c.FollowUpQueries.Count > 0)
@@ -166,6 +185,8 @@ public class FraudAgent(
 
         while (iteration++ < maxIterations)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var options = new ChatCompletionOptions
             {
                 MaxOutputTokenCount = 4096,

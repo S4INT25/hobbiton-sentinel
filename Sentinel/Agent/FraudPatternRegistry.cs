@@ -281,6 +281,9 @@ public static class FraudPatternRegistry
             PatternCategory.DataIntegrity),
     ];
 
+    /// <summary>Returns all hardcoded default patterns for seeding.</summary>
+    public static IEnumerable<FraudPattern> GetDefaults() => All;
+
     /// <summary>Returns all enabled patterns.</summary>
     public static IEnumerable<FraudPattern> GetEnabled() =>
         All.Where(p => p.EnabledByDefault);

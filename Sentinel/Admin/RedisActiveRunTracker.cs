@@ -26,6 +26,13 @@ public class RedisActiveRunTracker(IConnectionMultiplexer redis, ILogger<RedisAc
         await UpsertAsync(runId, "failed", state.TriggeredBy, state.StartedAtUtc);
     }
 
+    public async Task MarkStoppedAsync(string runId)
+    {
+        var state = await GetAsync(runId);
+        if (state is null) return;
+        await UpsertAsync(runId, "stopped", state.TriggeredBy, state.StartedAtUtc);
+    }
+
     public async Task MarkCompletedAsync(string runId)
     {
         await _db.KeyDeleteAsync(Key(runId));

@@ -2,72 +2,79 @@
 @inject NavigationManager Navigation
 @attribute [Authorize(Policy = AuthConstants.Policy)]
 
-<div class="h-full bg-gray-950">
-    <div class="md:hidden border-b border-gray-800 px-3 py-2 flex items-center justify-between">
-        <button @onclick="ToggleMobileNav" class="px-2 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-gray-300">Menu</button>
+<div class="h-full bg-gray-950 flex flex-col">
+    <!-- Mobile header -->
+    <header class="md:hidden sticky top-0 z-20 bg-gray-950/95 backdrop-blur-sm border-b border-gray-800/80 px-4 py-2.5 flex items-center justify-between">
+        <button @onclick="ToggleMobileNav" class="p-1.5 -ml-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/60 active:scale-95 transition-all duration-150">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
         <div class="flex items-center gap-2">
-            <img src="https://hobbiton.tech/assets/logo2-7db998ca.png" alt="Hobbition logo" class="h-6 w-6 rounded object-contain" />
-            <span class="font-semibold text-sm text-white">Sentinel</span>
+            <img src="https://hobbiton.tech/assets/logo2-7db998ca.png" alt="Hobbition" class="h-6 w-6 rounded object-contain" />
+            <span class="font-semibold text-sm text-white tracking-tight">Sentinel</span>
         </div>
-    </div>
+        <div class="w-8"></div>
+    </header>
 
-    @if (isMobileNavOpen)
-    {
-        <div class="fixed inset-0 bg-black/50 z-30 md:hidden" @onclick="CloseMobileNav"></div>
-    }
+    <!-- Overlay -->
+    <div class="@OverlayClass" @onclick="CloseMobileNav"></div>
 
-    <div class="flex h-[calc(100%-2.75rem)] md:h-full">
+    <div class="flex flex-1 min-h-0">
+        <!-- Sidebar -->
         <aside class="@SidebarClass">
-            <div class="p-4 border-b border-gray-800">
-                <div class="flex items-center gap-2">
-                    <img src="https://hobbiton.tech/assets/logo2-7db998ca.png" alt="Hobbition logo" class="h-7 w-7 rounded object-contain" />
+            <div class="p-4 border-b border-gray-800/80">
+                <div class="flex items-center gap-2.5">
+                    <img src="https://hobbiton.tech/assets/logo2-7db998ca.png" alt="Hobbition" class="h-7 w-7 rounded object-contain" />
                     <div>
-                        <div class="font-semibold text-sm text-white leading-none">Sentinel</div>
+                        <div class="font-semibold text-sm text-white leading-none tracking-tight">Sentinel</div>
                         <div class="text-[10px] text-gray-500 leading-none mt-1">by Hobbition</div>
                     </div>
                 </div>
             </div>
-            <nav class="flex-1 p-3 space-y-0.5 text-sm">
-                <NavLink href="/admin" Match="NavLinkMatch.All" class="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md hover:bg-gray-900 text-gray-300 hover:text-white transition-colors" ActiveClass="bg-gray-900 text-white">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+            <nav class="flex-1 overflow-y-auto p-3 space-y-0.5 text-sm" @onclick="OnNavClick">
+                <NavLink href="/admin" Match="NavLinkMatch.All" class="nav-item flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-gray-800/60 text-gray-400 hover:text-white transition-all duration-150" ActiveClass="bg-gray-800/80 text-white shadow-sm">
+                    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
                     Dashboard
                 </NavLink>
-                <NavLink href="/admin/chat" Match="NavLinkMatch.Prefix" class="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md hover:bg-gray-900 text-gray-300 hover:text-white transition-colors" ActiveClass="bg-gray-900 text-white">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h8M8 14h5m-9 6h16a2 2 0 002-2V6a2 2 0 00-2-2H4a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                <NavLink href="/admin/chat" Match="NavLinkMatch.Prefix" class="nav-item flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-gray-800/60 text-gray-400 hover:text-white transition-all duration-150" ActiveClass="bg-gray-800/80 text-white shadow-sm">
+                    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h8M8 14h5m-9 6h16a2 2 0 002-2V6a2 2 0 00-2-2H4a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
                     Chat
                 </NavLink>
-                <NavLink href="/admin/runs" Match="NavLinkMatch.Prefix" class="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md hover:bg-gray-900 text-gray-300 hover:text-white transition-colors" ActiveClass="bg-gray-900 text-white">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                <NavLink href="/admin/runs" Match="NavLinkMatch.Prefix" class="nav-item flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-gray-800/60 text-gray-400 hover:text-white transition-all duration-150" ActiveClass="bg-gray-800/80 text-white shadow-sm">
+                    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                     Runs
                 </NavLink>
-                <NavLink href="/admin/rules" Match="NavLinkMatch.Prefix" class="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md hover:bg-gray-900 text-gray-300 hover:text-white transition-colors" ActiveClass="bg-gray-900 text-white">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+                <NavLink href="/admin/rules" Match="NavLinkMatch.Prefix" class="nav-item flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-gray-800/60 text-gray-400 hover:text-white transition-all duration-150" ActiveClass="bg-gray-800/80 text-white shadow-sm">
+                    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
                     Rules
                 </NavLink>
-                <NavLink href="/admin/cases" Match="NavLinkMatch.Prefix" class="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md hover:bg-gray-900 text-gray-300 hover:text-white transition-colors" ActiveClass="bg-gray-900 text-white">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                <NavLink href="/admin/cases" Match="NavLinkMatch.Prefix" class="nav-item flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-gray-800/60 text-gray-400 hover:text-white transition-all duration-150" ActiveClass="bg-gray-800/80 text-white shadow-sm">
+                    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
                     Cases
                 </NavLink>
-                <NavLink href="/admin/users" Match="NavLinkMatch.Prefix" class="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md hover:bg-gray-900 text-gray-300 hover:text-white transition-colors" ActiveClass="bg-gray-900 text-white">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                <NavLink href="/admin/users" Match="NavLinkMatch.Prefix" class="nav-item flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-gray-800/60 text-gray-400 hover:text-white transition-all duration-150" ActiveClass="bg-gray-800/80 text-white shadow-sm">
+                    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
                     Users
                 </NavLink>
-                <NavLink href="/admin/audit" Match="NavLinkMatch.Prefix" class="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md hover:bg-gray-900 text-gray-300 hover:text-white transition-colors" ActiveClass="bg-gray-900 text-white">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+                <NavLink href="/admin/audit" Match="NavLinkMatch.Prefix" class="nav-item flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-gray-800/60 text-gray-400 hover:text-white transition-all duration-150" ActiveClass="bg-gray-800/80 text-white shadow-sm">
+                    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
                     Audit
+                </NavLink>
+                <NavLink href="/admin/settings" Match="NavLinkMatch.Prefix" class="nav-item flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-gray-800/60 text-gray-400 hover:text-white transition-all duration-150" ActiveClass="bg-gray-800/80 text-white shadow-sm">
+                    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    Settings
                 </NavLink>
             </nav>
             <AuthorizeView>
                 <Authorized>
-                    <div class="p-3 border-t border-gray-800">
+                    <div class="p-3 border-t border-gray-800/80">
                         <div class="flex items-center gap-2 px-2.5 py-1.5 text-xs text-gray-500">
-                            <div class="w-5 h-5 rounded-full bg-gray-800 flex items-center justify-center text-[10px] font-medium text-gray-400">
+                            <div class="w-6 h-6 rounded-full bg-gradient-to-br from-emerald-600 to-emerald-800 flex items-center justify-center text-[10px] font-semibold text-white shadow-sm">
                                 @(context.User.Identity?.Name?.ToUpper()[..1] ?? "?")
                             </div>
-                            <span>@context.User.Identity?.Name</span>
+                            <span class="truncate">@context.User.Identity?.Name</span>
                         </div>
                         <form method="post" action="/api/auth/logout" class="mt-1">
-                            <button type="submit" class="w-full text-left px-2.5 py-1 text-xs text-gray-500 hover:text-gray-300 rounded hover:bg-gray-900 transition-colors">
+                            <button type="submit" class="w-full text-left px-2.5 py-1.5 text-xs text-gray-500 hover:text-white rounded-lg hover:bg-gray-800/60 transition-all duration-150">
                                 Sign out
                             </button>
                         </form>
@@ -76,24 +83,29 @@
             </AuthorizeView>
         </aside>
 
-        <main class="flex-1 overflow-y-auto bg-gray-950">
+        <!-- Main content -->
+        <main class="flex-1 overflow-y-auto overflow-x-hidden bg-gray-950">
             <div class="@ContentContainerClass">
                 @Body
             </div>
         </main>
     </div>
- </div>
+</div>
 
 @code {
     private bool isMobileNavOpen;
 
-    private string SidebarClass =>
-        isMobileNavOpen
-            ? "fixed md:relative inset-y-0 left-0 z-40 w-64 md:w-56 border-r border-gray-800 bg-gray-950 flex flex-col"
-            : "hidden md:flex w-56 flex-shrink-0 border-r border-gray-800 bg-gray-950 flex-col";
+    private string SidebarClass => isMobileNavOpen
+        ? "fixed inset-y-0 left-0 z-40 w-72 border-r border-gray-800/80 bg-gray-950 flex flex-col transform translate-x-0 transition-transform duration-250 ease-out md:relative md:w-56 md:translate-x-0 md:transition-none"
+        : "fixed inset-y-0 left-0 z-40 w-72 border-r border-gray-800/80 bg-gray-950 flex flex-col transform -translate-x-full transition-transform duration-200 ease-in md:relative md:flex md:w-56 md:translate-x-0 md:transition-none";
+
+    private string OverlayClass => isMobileNavOpen
+        ? "fixed inset-0 z-30 bg-black/60 backdrop-blur-[2px] md:hidden transition-opacity duration-200 opacity-100"
+        : "fixed inset-0 z-30 bg-black/60 backdrop-blur-[2px] md:hidden transition-opacity duration-200 opacity-0 pointer-events-none";
 
     private void ToggleMobileNav() => isMobileNavOpen = !isMobileNavOpen;
     private void CloseMobileNav() => isMobileNavOpen = false;
+    private void OnNavClick() => isMobileNavOpen = false;
 
     private string ContentContainerClass
     {
@@ -103,8 +115,8 @@
             var isChat = route.StartsWith("/admin/chat", StringComparison.OrdinalIgnoreCase)
                          || route.StartsWith("/admin/analytics", StringComparison.OrdinalIgnoreCase);
             return isChat
-                ? "mx-auto px-2 md:pl-2 md:pr-6 py-3 md:py-6"
-                : "max-w-6xl mx-auto px-2 md:pl-2 md:pr-6 py-3 md:py-6";
+                ? "h-full px-3 sm:px-4 md:px-6 py-4 md:py-6"
+                : "max-w-6xl mx-auto px-3 sm:px-4 md:px-6 py-4 md:py-6";
         }
     }
 }

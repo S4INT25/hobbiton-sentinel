@@ -30,6 +30,13 @@ public class InMemoryActiveRunTracker : IActiveRunTracker
         return Task.CompletedTask;
     }
 
+    public Task MarkStoppedAsync(string runId)
+    {
+        if (_runs.TryGetValue(runId, out var cur))
+            _runs[runId] = cur with { Status = "stopped", UpdatedAtUtc = DateTime.UtcNow };
+        return Task.CompletedTask;
+    }
+
     public Task MarkCompletedAsync(string runId)
     {
         _runs.TryRemove(runId, out _);

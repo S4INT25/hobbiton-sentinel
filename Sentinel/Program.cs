@@ -82,6 +82,7 @@ try
         builder.Services.AddSingleton<IAnalyticsChatStore, InMemoryAnalyticsChatStore>();
         builder.Services.AddSingleton<IAnalyticsJobStore, InMemoryAnalyticsJobStore>();
         builder.Services.AddSingleton<IActiveRunTracker, InMemoryActiveRunTracker>();
+        builder.Services.AddSingleton<IFraudPatternStore, InMemoryFraudPatternStore>();
         builder.Services.AddFusionCache();
         builder.Services.AddHangfire(config => config.UseInMemoryStorage());
     }
@@ -104,6 +105,7 @@ try
         builder.Services.AddDbContext<SentinelClickHouseContext>(options => options.UseClickHouse(chConnectionString));
         builder.Services.AddScoped<IRunLogStore, RunLogStore>();
         builder.Services.AddScoped<IAuditLogStore, AuditLogStore>();
+        builder.Services.AddScoped<IFraudPatternStore, ClickHouseFraudPatternStore>();
 
         // L2 distributed cache — Redis as persistent cache storage
         builder.Services.AddStackExchangeRedisCache(o => o.Configuration = redisConnectionString!);
@@ -117,6 +119,7 @@ try
     }
 
     builder.Services.AddSingleton<SchemaLoader>();
+    builder.Services.AddSingleton<RunCancellationRegistry>();
 
     builder.Services.AddHangfireServer(options =>
     {
@@ -164,6 +167,14 @@ try
         using var scope = app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SentinelClickHouseContext>();
         await db.Database.EnsureCreatedAsync();
+        var patternStore = scope.ServiceProvider.GetRequiredService<IFraudPatternStore>();
+        await patternStore.EnsureTableAsync();
+        await patternStore.SeedDefaultsAsync();
+    }
+    else
+    {
+        var patternStore = app.Services.GetRequiredService<IFraudPatternStore>();
+        await patternStore.SeedDefaultsAsync();
     }
 
     await SeedAdminUser(app);
