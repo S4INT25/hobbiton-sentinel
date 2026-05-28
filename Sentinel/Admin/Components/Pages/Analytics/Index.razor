@@ -61,7 +61,7 @@
                 }
                 @if (activePolls.Count > 0)
                 {
-                    <span class="flex items-center gap-1.5 text-[10px] text-emerald-400">
+                    <span class="inline-flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
                         <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
@@ -70,205 +70,263 @@
                     </span>
                 }
             </div>
-            <button @onclick="ClearChat" class="px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-300 border border-gray-800 rounded hover:bg-gray-900 transition-colors whitespace-nowrap">
-                Clear
-            </button>
+            <div class="flex items-center gap-2">
+                <button @onclick="() => showInsightsPanel = !showInsightsPanel" class="px-2.5 py-1.5 text-xs text-gray-400 hover:text-gray-200 border border-gray-800 rounded hover:bg-gray-900 transition-colors whitespace-nowrap">
+                    Insights
+                </button>
+                <button @onclick="ClearChat" class="px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-300 border border-gray-800 rounded hover:bg-gray-900 transition-colors whitespace-nowrap">
+                    Clear
+                </button>
+            </div>
         </div>
 
-        <!-- Chat Messages -->
-        <div class="flex-1 overflow-y-auto space-y-4 p-4 pr-1" @ref="messagesContainer">
-            @foreach (var (msg, idx) in messages.Select((m, i) => (m, i)))
-            {
-                @if (msg.Role == "user")
-                {
-                    <div class="flex justify-end">
-                        <div class="max-w-2xl px-3 py-2 bg-emerald-600/20 border border-emerald-500/20 rounded-lg text-sm text-gray-200">
-                            @msg.Content
-                        </div>
-                    </div>
-                }
-                else
-                {
-                    <div class="space-y-3 max-w-full">
-                        @if (!string.IsNullOrEmpty(msg.Thinking))
-                        {
-                            <details class="text-xs">
-                                <summary class="text-gray-500 cursor-pointer hover:text-gray-400">Reasoning</summary>
-                                <div class="mt-1 p-2 bg-gray-900/50 border border-gray-800/50 rounded text-gray-500 italic">@msg.Thinking</div>
-                            </details>
-                        }
-
-                        @if (!string.IsNullOrEmpty(msg.Explanation))
-                        {
-                            <div class="text-sm text-gray-300">@msg.Explanation</div>
-                        }
-                        @if (!string.IsNullOrEmpty(msg.Summary) || !string.IsNullOrEmpty(msg.RiskLevel) || (msg.Findings?.Count > 0) || (msg.RecommendedActions?.Count > 0))
-                        {
-                            <div class="border border-gray-800 rounded-lg p-3 bg-gray-900/40 space-y-2">
-                                @if (!string.IsNullOrEmpty(msg.Summary))
-                                {
-                                    <div class="text-sm text-gray-200">@msg.Summary</div>
-                                }
-                                @if (!string.IsNullOrEmpty(msg.RiskLevel))
-                                {
-                                    <div class="text-xs">
-                                        <span class="@RiskLevelClasses(msg.RiskLevel)">@msg.RiskLevel</span>
-                                    </div>
-                                }
-                                @if (msg.Findings?.Count > 0)
-                                {
-                                    <div>
-                                        <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Findings</div>
-                                        @foreach (var finding in msg.Findings)
-                                        {
-                                            <div class="text-xs text-gray-300">• @finding</div>
-                                        }
-                                    </div>
-                                }
-                                @if (msg.RecommendedActions?.Count > 0)
-                                {
-                                    <div>
-                                        <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Recommended Actions</div>
-                                        @foreach (var action in msg.RecommendedActions)
-                                        {
-                                            <div class="text-xs text-gray-300">• @action</div>
-                                        }
-                                    </div>
-                                }
-                            </div>
-                        }
-
-                        @if (!string.IsNullOrEmpty(msg.Error))
-                        {
-                            <div class="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-xs text-rose-400 font-mono whitespace-pre-wrap">@msg.Error</div>
-                        }
-
-                        @if (!string.IsNullOrEmpty(msg.ChartType) && msg.ChartType != "none" && msg.Rows?.Count > 0)
-                        {
-                            <div class="border border-gray-800 rounded-lg p-4 bg-gray-900/30">
-                                <canvas id="chart-@idx" class="max-h-64 w-full"></canvas>
-                            </div>
-                        }
-
-                        @if (msg.Columns?.Count > 0 && msg.Rows?.Count > 0)
-                        {
-                            <div class="border border-gray-800 rounded-lg overflow-hidden">
-                                <div class="overflow-x-auto">
-                                    <table class="w-full text-xs">
-                                        <thead class="bg-gray-900/70 sticky top-0">
-                                            <tr>
-                                                @foreach (var col in msg.Columns)
-                                                {
-                                                    <th class="text-left px-3 py-2 font-medium text-gray-500 border-b border-gray-800 whitespace-nowrap">@col</th>
-                                                }
-                                            </tr>
-                                        </thead>
-                                        <tbody class="divide-y divide-gray-800/50">
-                                            @foreach (var row in msg.Rows)
-                                            {
-                                                <tr class="hover:bg-gray-900/30">
-                                                    @foreach (var col in msg.Columns)
-                                                    {
-                                                        <td class="px-3 py-1.5 text-gray-300 font-mono whitespace-nowrap">@FormatCell(row.GetValueOrDefault(col))</td>
-                                                    }
-                                                </tr>
-                                            }
-                                        </tbody>
-                                    </table>
-                                </div>
-                                <div class="px-3 py-1.5 bg-gray-900/50 border-t border-gray-800 text-[10px] text-gray-600 flex items-center justify-between">
-                                    <span>@msg.RowCount rows</span>
-                                    <span>@((msg.InputTokens + msg.OutputTokens).ToString("N0")) tokens</span>
-                                </div>
-                            </div>
-                        }
-
-                        @if (!string.IsNullOrEmpty(msg.Sql))
-                        {
-                            <details class="text-xs">
-                                <summary class="text-gray-500 cursor-pointer hover:text-gray-400 flex items-center gap-1.5">
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-                                    View SQL
-                                </summary>
-                                <div class="mt-1 border border-gray-800 rounded-lg overflow-hidden">
-                                    <div class="flex items-center justify-between px-3 py-1.5 bg-gray-900/70 border-b border-gray-800">
-                                        <span class="text-[10px] text-gray-500 uppercase tracking-wider">SQL</span>
-                                    </div>
-                                    <pre class="p-3 text-xs text-emerald-300 font-mono whitespace-pre-wrap bg-gray-950">@msg.Sql</pre>
-                                </div>
-                            </details>
-                        }
-                    </div>
-                }
-            }
-
-            @if (loading)
-            {
-                <div class="space-y-2 max-w-2xl">
-                    @if (_pendingMessage?.StreamEvents?.Count > 0)
+        <div class="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_20rem]">
+            <div class="flex flex-col min-h-0 min-w-0">
+                <!-- Chat Messages -->
+                <div class="flex-1 overflow-y-auto space-y-4 p-4 pr-2" @ref="messagesContainer">
+                    @foreach (var (msg, idx) in messages.Select((m, i) => (m, i)))
                     {
-                        <div class="border border-gray-800/60 rounded-lg overflow-hidden bg-gray-900/30">
-                            <div class="px-3 py-1.5 border-b border-gray-800/60 flex items-center gap-2">
-                                <svg class="w-3 h-3 animate-spin text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                                </svg>
-                                <span class="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Agent Reasoning</span>
+                        @if (msg.Role == "user")
+                        {
+                            <div class="flex justify-end">
+                                <div class="max-w-2xl px-3 py-2 bg-emerald-600/20 border border-emerald-500/20 rounded-xl text-sm text-gray-200">
+                                    @msg.Content
+                                </div>
                             </div>
-                            <div class="p-2.5 space-y-1.5">
-                                @foreach (var evt in _pendingMessage.StreamEvents)
+                        }
+                        else
+                        {
+                            <div class="space-y-3 max-w-full border rounded-xl p-3 bg-gray-900/35 transition-colors cursor-pointer @(selectedAssistantIdx == idx ? "border-emerald-500/30" : "border-gray-800 hover:border-gray-700")"
+                                 @onclick="() => SelectAssistantMessage(idx)">
+                                <div class="flex flex-wrap gap-1.5">
+                                    @if (HasSummaryContent(msg))
+                                    {
+                                        <button class="@MessageTabClass(msg, TabSummary)" @onclick="() => SelectTab(msg, TabSummary)" @onclick:stopPropagation="true">Summary</button>
+                                    }
+                                    @if (HasChartContent(msg))
+                                    {
+                                        <button class="@MessageTabClass(msg, TabChart)" @onclick="() => SelectTab(msg, TabChart)" @onclick:stopPropagation="true">Chart</button>
+                                    }
+                                    @if (HasTableContent(msg))
+                                    {
+                                        <button class="@MessageTabClass(msg, TabTable)" @onclick="() => SelectTab(msg, TabTable)" @onclick:stopPropagation="true">Table</button>
+                                    }
+                                    @if (HasSqlContent(msg))
+                                    {
+                                        <button class="@MessageTabClass(msg, TabSql)" @onclick="() => SelectTab(msg, TabSql)" @onclick:stopPropagation="true">SQL</button>
+                                    }
+                                    @if (HasReasoningContent(msg))
+                                    {
+                                        <button class="@MessageTabClass(msg, TabReasoning)" @onclick="() => SelectTab(msg, TabReasoning)" @onclick:stopPropagation="true">Reasoning</button>
+                                    }
+                                </div>
+
+                                @if (msg.ActiveTab == "summary")
                                 {
-                                    <div class="flex items-start gap-2 text-xs">
-                                        <span class="shrink-0 mt-0.5 @StreamEventDotClass(evt.Type) w-1.5 h-1.5 rounded-full"></span>
-                                        <div class="min-w-0">
-                                            <span class="@StreamEventTextClass(evt.Type)">@evt.Message</span>
-                                            @if (!string.IsNullOrEmpty(evt.Sql))
+                                    @if (!string.IsNullOrEmpty(msg.Explanation))
+                                    {
+                                        <div class="text-sm text-gray-300">@msg.Explanation</div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(msg.Summary) || !string.IsNullOrEmpty(msg.RiskLevel) || (msg.Findings?.Count > 0) || (msg.RecommendedActions?.Count > 0))
+                                    {
+                                        <div class="border border-gray-800 rounded-lg p-3 bg-gray-900/40 space-y-2">
+                                            @if (!string.IsNullOrEmpty(msg.Summary))
                                             {
-                                                <details class="mt-1">
-                                                    <summary class="text-gray-600 cursor-pointer hover:text-gray-500">View SQL</summary>
-                                                    <pre class="mt-1 p-2 text-[10px] bg-gray-950 text-emerald-300 rounded font-mono whitespace-pre-wrap border border-gray-800">@evt.Sql</pre>
-                                                </details>
+                                                <div class="text-sm text-gray-200">@msg.Summary</div>
                                             }
+                                            @if (!string.IsNullOrEmpty(msg.RiskLevel))
+                                            {
+                                                <div class="text-xs"><span class="@RiskLevelClasses(msg.RiskLevel)">@msg.RiskLevel</span></div>
+                                            }
+                                            @if (msg.Findings?.Count > 0)
+                                            {
+                                                <div>
+                                                    <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Findings</div>
+                                                    @foreach (var finding in msg.Findings)
+                                                    {
+                                                        <div class="text-xs text-gray-300">• @finding</div>
+                                                    }
+                                                </div>
+                                            }
+                                            @if (msg.RecommendedActions?.Count > 0)
+                                            {
+                                                <div>
+                                                    <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Recommended Actions</div>
+                                                    @foreach (var action in msg.RecommendedActions)
+                                                    {
+                                                        <div class="text-xs text-gray-300">• @action</div>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(msg.Error))
+                                    {
+                                        <div class="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-xs text-rose-400 font-mono whitespace-pre-wrap">@msg.Error</div>
+                                    }
+                                }
+                                else if (msg.ActiveTab == "chart" && HasChartContent(msg))
+                                {
+                                    <div class="border border-gray-800 rounded-lg p-4 bg-gray-900/30">
+                                        <canvas id="chart-@idx" class="max-h-64 w-full"></canvas>
+                                    </div>
+                                }
+                                else if (msg.ActiveTab == "table" && HasTableContent(msg))
+                                {
+                                    <div class="border border-gray-800 rounded-lg overflow-hidden">
+                                        <div class="overflow-x-auto">
+                                            <table class="w-full text-xs">
+                                                <thead class="bg-gray-900/70 sticky top-0">
+                                                    <tr>
+                                                        @foreach (var col in msg.Columns!)
+                                                        {
+                                                            <th class="text-left px-3 py-2 font-medium text-gray-500 border-b border-gray-800 whitespace-nowrap">@col</th>
+                                                        }
+                                                    </tr>
+                                                </thead>
+                                                <tbody class="divide-y divide-gray-800/50">
+                                                    @foreach (var row in msg.Rows!)
+                                                    {
+                                                        <tr class="hover:bg-gray-900/30">
+                                                            @foreach (var col in msg.Columns!)
+                                                            {
+                                                                <td class="px-3 py-1.5 text-gray-300 font-mono whitespace-nowrap">@FormatCell(row.GetValueOrDefault(col))</td>
+                                                            }
+                                                        </tr>
+                                                    }
+                                                </tbody>
+                                            </table>
                                         </div>
                                     </div>
                                 }
+                                else if (msg.ActiveTab == "sql" && HasSqlContent(msg))
+                                {
+                                    <div class="border border-gray-800 rounded-lg overflow-hidden">
+                                        <div class="px-3 py-1.5 bg-gray-900/70 border-b border-gray-800">
+                                            <span class="text-[10px] text-gray-500 uppercase tracking-wider">SQL</span>
+                                        </div>
+                                        <pre class="p-3 text-xs text-emerald-300 font-mono whitespace-pre-wrap bg-gray-950">@msg.Sql</pre>
+                                    </div>
+                                }
+                                else if (msg.ActiveTab == "reasoning" && HasReasoningContent(msg))
+                                {
+                                    <div class="p-3 bg-gray-900/50 border border-gray-800/50 rounded text-xs text-gray-400 italic whitespace-pre-wrap">@msg.Thinking</div>
+                                }
                             </div>
-                        </div>
+                        }
                     }
-                    else
+
+                    @if (loading)
                     {
-                        <div class="flex items-center gap-2 text-xs text-gray-500">
-                            <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                            </svg>
-                            Running query...
+                        <div class="space-y-2 max-w-2xl">
+                            @if (_pendingMessage?.StreamEvents?.Count > 0)
+                            {
+                                <div class="border border-gray-800/60 rounded-lg overflow-hidden bg-gray-900/30">
+                                    <div class="px-3 py-1.5 border-b border-gray-800/60 flex items-center gap-2">
+                                        <svg class="w-3 h-3 animate-spin text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                        </svg>
+                                        <span class="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Agent Timeline</span>
+                                    </div>
+                                    <div class="p-2.5 space-y-1.5">
+                                        @foreach (var evt in _pendingMessage.StreamEvents)
+                                        {
+                                            <div class="flex items-start gap-2 text-xs">
+                                                <span class="shrink-0 mt-0.5 @StreamEventDotClass(evt.Type) w-1.5 h-1.5 rounded-full"></span>
+                                                <div class="min-w-0">
+                                                    <span class="@StreamEventTextClass(evt.Type)">@evt.Message</span>
+                                                    @if (!string.IsNullOrEmpty(evt.Sql))
+                                                    {
+                                                        <details class="mt-1">
+                                                            <summary class="text-gray-600 cursor-pointer hover:text-gray-500">View SQL</summary>
+                                                            <pre class="mt-1 p-2 text-[10px] bg-gray-950 text-emerald-300 rounded font-mono whitespace-pre-wrap border border-gray-800">@evt.Sql</pre>
+                                                        </details>
+                                                    }
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="flex items-center gap-2 text-xs text-gray-500">
+                                    <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                    </svg>
+                                    Running query...
+                                </div>
+                            }
                         </div>
                     }
                 </div>
-            }
-        </div>
 
-        <!-- Input -->
-        <div class="border-t border-gray-800 p-3">
-            <form @onsubmit="Send" @onsubmit:preventDefault class="flex gap-2">
-                <input type="text" @bind="input" @bind:event="oninput" placeholder="Ask about your data... e.g. 'Top 10 merchants by volume this week'"
-                       disabled="@loading"
-                       class="flex-1 px-3 py-2.5 bg-gray-900 border border-gray-800 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 disabled:opacity-50" />
-                <button type="submit" disabled="@(loading || string.IsNullOrWhiteSpace(input) || string.IsNullOrEmpty(database))"
-                        class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-800 disabled:text-gray-600 text-white text-sm font-medium rounded-lg transition-colors">
-                    Ask
-                </button>
-            </form>
-            <div class="mt-2 flex flex-wrap gap-2">
-                @foreach (var suggestion in quickAskSuggestions)
-                {
-                    <button @onclick="() => QuickAsk(suggestion.Prompt)"
-                            class="px-2 py-1 text-[10px] text-gray-500 border border-gray-800 rounded hover:bg-gray-900 hover:text-gray-300 transition-colors">
-                        @suggestion.Label
-                    </button>
-                }
+                <!-- Input -->
+                <div class="border-t border-gray-800 p-3">
+                    <form @onsubmit="Send" @onsubmit:preventDefault class="space-y-2">
+                        <textarea @bind="input" @bind:event="oninput" rows="3" placeholder="Ask about your data... e.g. Top 10 merchants by volume this week"
+                                  disabled="@loading"
+                                  class="w-full px-3 py-2.5 bg-gray-900 border border-gray-800 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 disabled:opacity-50 resize-y min-h-[2.75rem] max-h-56"></textarea>
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-[10px] text-gray-600">Tip: use line breaks for context-rich prompts.</span>
+                            <button type="submit" disabled="@(loading || string.IsNullOrWhiteSpace(input) || string.IsNullOrEmpty(database))"
+                                    class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-800 disabled:text-gray-600 text-white text-sm font-medium rounded-lg transition-colors">
+                                Ask
+                            </button>
+                        </div>
+                    </form>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        @foreach (var suggestion in quickAskSuggestions)
+                        {
+                            <button @onclick="() => QuickAsk(suggestion.Prompt)"
+                                    class="px-2 py-1 text-[10px] text-gray-500 border border-gray-800 rounded hover:bg-gray-900 hover:text-gray-300 transition-colors">
+                                @suggestion.Label
+                            </button>
+                        }
+                    </div>
+                </div>
             </div>
+
+            @if (showInsightsPanel)
+            {
+                var insight = SelectedAssistantMessage;
+                <aside class="hidden xl:flex border-l border-gray-800 bg-gray-950/60 p-3 flex-col gap-3 overflow-y-auto">
+                    <div class="text-[11px] uppercase tracking-wider text-gray-500">Insights</div>
+                    @if (insight == null)
+                    {
+                        <div class="text-xs text-gray-600">Select an assistant response to inspect details.</div>
+                    }
+                    else
+                    {
+                        @if (!string.IsNullOrWhiteSpace(insight.RiskLevel))
+                        {
+                            <div>
+                                <div class="text-[10px] text-gray-500 mb-1">Risk</div>
+                                <span class="@RiskLevelClasses(insight.RiskLevel)">@insight.RiskLevel</span>
+                            </div>
+                        }
+                        <div class="grid grid-cols-2 gap-2 text-xs">
+                            <div class="border border-gray-800 rounded px-2 py-1.5">
+                                <div class="text-gray-500 text-[10px]">Rows</div>
+                                <div class="text-gray-200">@insight.RowCount</div>
+                            </div>
+                            <div class="border border-gray-800 rounded px-2 py-1.5">
+                                <div class="text-gray-500 text-[10px]">Tokens</div>
+                                <div class="text-gray-200">@((insight.InputTokens + insight.OutputTokens).ToString("N0"))</div>
+                            </div>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(insight.Sql))
+                        {
+                            <div class="border border-gray-800 rounded overflow-hidden">
+                                <div class="px-2 py-1 text-[10px] text-gray-500 bg-gray-900/70 border-b border-gray-800">SQL</div>
+                                <pre class="p-2 text-[10px] text-emerald-300 whitespace-pre-wrap font-mono">@insight.Sql</pre>
+                            </div>
+                        }
+                    }
+                </aside>
+            }
         </div>
     </div>
 </div>
@@ -295,6 +353,20 @@
     private bool showHistoryMobile;
     private HashSet<string> databaseTables = new(StringComparer.OrdinalIgnoreCase);
     private List<QuickAskSuggestion> quickAskSuggestions = [];
+    private int? selectedAssistantIdx;
+    private bool showInsightsPanel = true;
+    private const string TabSummary = "summary";
+    private const string TabChart = "chart";
+    private const string TabTable = "table";
+    private const string TabSql = "sql";
+    private const string TabReasoning = "reasoning";
+    private ChatMessage? SelectedAssistantMessage =>
+        selectedAssistantIdx is int idx &&
+        idx >= 0 &&
+        idx < messages.Count &&
+        messages[idx].Role == "assistant"
+            ? messages[idx]
+            : messages.LastOrDefault(m => m.Role == "assistant");
 
     protected override async Task OnInitializedAsync()
     {
@@ -387,7 +459,7 @@
         {
             if (m.Role == "assistant" && m.Response != null)
             {
-                return new ChatMessage
+                var assistant = new ChatMessage
                 {
                     Role = "assistant",
                     Thinking = m.Response.Thinking,
@@ -405,9 +477,12 @@
                     InputTokens = m.Response.InputTokens,
                     OutputTokens = m.Response.OutputTokens
                 };
+                NormalizeAssistantMessage(assistant);
+                return assistant;
             }
             return new ChatMessage { Role = m.Role ?? "user", Content = m.Content };
         }).ToList();
+        SelectLatestAssistantMessage();
 
         // Schedule chart render after next DOM update
         _renderChartsAfterUpdate = true;
@@ -483,7 +558,10 @@
         }
         catch (Exception ex)
         {
-            messages.Add(new ChatMessage { Role = "assistant", Error = "Request failed: " + ex.Message });
+            var assistant = new ChatMessage { Role = "assistant", Error = "Request failed: " + ex.Message };
+            NormalizeAssistantMessage(assistant);
+            messages.Add(assistant);
+            SelectLatestAssistantMessage();
             loading = false;
         }
     }
@@ -521,7 +599,7 @@
                         _pendingMessage = null;
                         if (job.Result != null)
                         {
-                            messages.Add(new ChatMessage
+                            var assistant = new ChatMessage
                             {
                                 Role = "assistant",
                                 Thinking = job.Result.Thinking,
@@ -538,7 +616,10 @@
                                 RowCount = job.Result.RowCount,
                                 InputTokens = job.Result.InputTokens,
                                 OutputTokens = job.Result.OutputTokens
-                            });
+                            };
+                            NormalizeAssistantMessage(assistant);
+                            messages.Add(assistant);
+                            SelectLatestAssistantMessage();
                         }
                         loading = false;
                         _renderChartsAfterUpdate = true;
@@ -550,7 +631,10 @@
                     {
                         StopPolling(jobId);
                         _pendingMessage = null;
-                        messages.Add(new ChatMessage { Role = "assistant", Error = job.Error ?? "Query failed" });
+                        var assistant = new ChatMessage { Role = "assistant", Error = job.Error ?? "Query failed" };
+                        NormalizeAssistantMessage(assistant);
+                        messages.Add(assistant);
+                        SelectLatestAssistantMessage();
                         loading = false;
                         _shouldScrollToBottom = true;
                         await InvokeAsync(StateHasChanged);
@@ -694,6 +778,61 @@
     private bool HasTableLike(string token) =>
         databaseTables.Any(t => t.Contains(token, StringComparison.OrdinalIgnoreCase));
 
+    private static bool HasSummaryContent(ChatMessage msg) =>
+        !string.IsNullOrWhiteSpace(msg.Explanation) ||
+        !string.IsNullOrWhiteSpace(msg.Summary) ||
+        !string.IsNullOrWhiteSpace(msg.RiskLevel) ||
+        (msg.Findings?.Count > 0) ||
+        (msg.RecommendedActions?.Count > 0) ||
+        !string.IsNullOrWhiteSpace(msg.Error);
+
+    private static bool HasChartContent(ChatMessage msg) =>
+        !string.IsNullOrWhiteSpace(msg.ChartType) && msg.ChartType != "none" && (msg.Rows?.Count > 0);
+
+    private static bool HasTableContent(ChatMessage msg) =>
+        (msg.Columns?.Count > 0) && (msg.Rows?.Count > 0);
+
+    private static bool HasSqlContent(ChatMessage msg) =>
+        !string.IsNullOrWhiteSpace(msg.Sql);
+
+    private static bool HasReasoningContent(ChatMessage msg) =>
+        !string.IsNullOrWhiteSpace(msg.Thinking);
+
+    private static string MessageTabClass(ChatMessage msg, string tab) =>
+        msg.ActiveTab == tab
+            ? "px-2 py-1 text-[10px] rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+            : "px-2 py-1 text-[10px] rounded border border-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-900";
+
+    private void SelectTab(ChatMessage msg, string tab)
+    {
+        msg.ActiveTab = tab;
+        StateHasChanged();
+    }
+
+    private void NormalizeAssistantMessage(ChatMessage msg)
+    {
+        if (msg.Role != "assistant") return;
+        var availableTabs = new List<string>();
+        if (HasSummaryContent(msg)) availableTabs.Add(TabSummary);
+        if (HasChartContent(msg)) availableTabs.Add(TabChart);
+        if (HasTableContent(msg)) availableTabs.Add(TabTable);
+        if (HasSqlContent(msg)) availableTabs.Add(TabSql);
+        if (HasReasoningContent(msg)) availableTabs.Add(TabReasoning);
+        msg.ActiveTab = availableTabs.Contains(msg.ActiveTab) ? msg.ActiveTab : availableTabs.FirstOrDefault() ?? TabSummary;
+    }
+
+    private void SelectAssistantMessage(int idx)
+    {
+        if (idx < 0 || idx >= messages.Count || messages[idx].Role != "assistant")
+            return;
+        selectedAssistantIdx = idx;
+    }
+
+    private void SelectLatestAssistantMessage()
+    {
+        selectedAssistantIdx = messages.FindLastIndex(m => m.Role == "assistant");
+    }
+
     private void ToggleHistoryMobile() => showHistoryMobile = !showHistoryMobile;
 
     private async Task RenderCharts()
@@ -734,6 +873,7 @@
         _ = JS.InvokeVoidAsync("chartInterop.destroyAllCharts");
         messages.Clear();
         _pendingMessage = null;
+        selectedAssistantIdx = null;
     }
 
     private static string FormatCell(string? value)
@@ -781,6 +921,7 @@
     private class ChatMessage
     {
         public string Role { get; set; } = "";
+        public string ActiveTab { get; set; } = TabSummary;
         public string? Content { get; set; }
         public string? Thinking { get; set; }
         public string? Sql { get; set; }
