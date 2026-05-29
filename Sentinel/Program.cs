@@ -13,6 +13,7 @@ using Sentinel.Admin.Auth;
 using Sentinel.Admin.Data;
 using Sentinel.Admin.Stores;
 using Sentinel.Agent;
+using ApexCharts;
 using Sentinel.Infrastructure;
 using Sentinel.Jobs;
 using Sentinel.Memory;
@@ -129,6 +130,7 @@ try
     builder.Services.AddSingleton<AnalyticsQueryWorker>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<AnalyticsQueryWorker>());
     builder.Services.AddHostedService<FraudSchedulerService>();
+    builder.Services.AddApexCharts();
 
     // ── Authentication & Authorization ──
     builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)

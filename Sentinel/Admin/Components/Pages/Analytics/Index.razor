@@ -16,10 +16,15 @@
 
 <div class="flex flex-col md:flex-row h-[calc(100vh-6rem)]">
     <!-- Conversation Sidebar -->
-    <div class="@(showHistoryMobile ? "flex" : "hidden") md:flex w-full md:w-56 border-b md:border-b-0 md:border-r border-gray-800 flex-col shrink-0 max-h-64 md:max-h-none">
+    <div class="@(showHistoryPanel ? "flex" : "hidden") w-full md:w-56 border-b md:border-b-0 md:border-r border-gray-800 flex-col shrink-0 max-h-64 md:max-h-none transition-all">
         <div class="flex items-center justify-between px-3 py-2 border-b border-gray-800">
             <span class="text-xs font-medium text-gray-400">History</span>
-            <button @onclick="NewConversation" class="px-2 py-1 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white rounded transition-colors">+ New</button>
+            <div class="flex items-center gap-1.5">
+                <button @onclick="NewConversation" class="px-2 py-1 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white rounded transition-colors">+ New</button>
+                <button @onclick="() => showHistoryPanel = false" class="p-1 text-gray-500 hover:text-gray-300 rounded hover:bg-gray-800 transition-colors" title="Close history">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
         </div>
         <div class="flex-1 overflow-y-auto p-1.5 space-y-0.5">
             @foreach (var conv in conversations)
@@ -44,7 +49,14 @@
     <div class="flex-1 flex flex-col min-w-0">
         <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800">
             <div class="flex items-center gap-2 md:gap-3 flex-wrap">
-                <button @onclick="ToggleHistoryMobile" class="md:hidden px-2 py-1.5 bg-gray-900 border border-gray-800 rounded text-[10px] text-gray-300">History</button>
+                <button @onclick="() => showHistoryPanel = !showHistoryPanel"
+                        class="px-2.5 py-1.5 text-xs border rounded transition-colors whitespace-nowrap @(showHistoryPanel ? "bg-gray-800 border-gray-700 text-gray-200" : "border-gray-800 text-gray-500 hover:text-gray-300 hover:bg-gray-900")"
+                        title="@(showHistoryPanel ? "Hide history" : "Show history")">
+                    <span class="flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        History
+                    </span>
+                </button>
                 <select value="@database" @onchange="OnDatabaseChanged" class="px-2.5 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white">
                     @foreach (var db in databases)
                     {
@@ -71,8 +83,13 @@
                 }
             </div>
             <div class="flex items-center gap-2">
-                <button @onclick="() => showInsightsPanel = !showInsightsPanel" class="px-2.5 py-1.5 text-xs text-gray-400 hover:text-gray-200 border border-gray-800 rounded hover:bg-gray-900 transition-colors whitespace-nowrap">
-                    Insights
+                <button @onclick="() => showInsightsPanel = !showInsightsPanel"
+                        class="px-2.5 py-1.5 text-xs border rounded transition-colors whitespace-nowrap @(showInsightsPanel ? "bg-gray-800 border-gray-700 text-gray-200" : "border-gray-800 text-gray-500 hover:text-gray-300 hover:bg-gray-900")"
+                        title="@(showInsightsPanel ? "Hide insights" : "Show insights")">
+                    <span class="flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                        Insights
+                    </span>
                 </button>
                 <button @onclick="ClearChat" class="px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-300 border border-gray-800 rounded hover:bg-gray-900 transition-colors whitespace-nowrap">
                     Clear
@@ -167,8 +184,37 @@
                                 }
                                 else if (msg.ActiveTab == "chart" && HasChartContent(msg))
                                 {
-                                    <div class="border border-gray-800 rounded-lg p-4 bg-gray-900/30">
-                                        <canvas id="chart-@idx" class="max-h-64 w-full"></canvas>
+                                    <div class="border border-gray-800 rounded-lg p-3 bg-gray-900/30" @key="@($"chart-wrap-{idx}")">
+                                        @if (msg.ChartType is "scatter")
+                                        {
+                                            var scatterSeries = GetScatterSeries(msg);
+                                            <ApexChart TItem="ScatterPoint" Options="GetScatterApexOptions()" Width="@("100%")" Height="280" @key="@($"apex-{idx}")">
+                                                @foreach (var s in scatterSeries)
+                                                {
+                                                    <ApexPointSeries TItem="ScatterPoint"
+                                                                     Items="s.Points"
+                                                                     Name="@s.Name"
+                                                                     XValue="@(e => e.X)"
+                                                                     YValue="@(e => e.Y)"
+                                                                     SeriesType="SeriesType.Scatter" />
+                                                }
+                                            </ApexChart>
+                                        }
+                                        else
+                                        {
+                                            var displaySeries = GetDisplaySeries(msg);
+                                            <ApexChart TItem="ChartDataPoint" Options="GetApexOptions(msg.ChartType)" Width="@("100%")" Height="280" @key="@($"apex-{idx}")">
+                                                @foreach (var s in displaySeries)
+                                                {
+                                                    <ApexPointSeries TItem="ChartDataPoint"
+                                                                     Items="s.Points"
+                                                                     Name="@s.Name"
+                                                                     XValue="@(e => e.Label)"
+                                                                     YValue="@(e => e.Value)"
+                                                                     SeriesType="@MapSeriesType(msg.ChartType)" />
+                                                }
+                                            </ApexChart>
+                                        }
                                     </div>
                                 }
                                 else if (msg.ActiveTab == "table" && HasTableContent(msg))
@@ -190,7 +236,7 @@
                                                         <tr class="hover:bg-gray-900/30">
                                                             @foreach (var col in msg.Columns!)
                                                             {
-                                                                <td class="px-3 py-1.5 text-gray-300 font-mono whitespace-nowrap">@FormatCell(row.GetValueOrDefault(col))</td>
+                                                                <td class="px-3 py-1.5 text-gray-300 font-mono whitespace-nowrap">@FormatCell(row.GetValueOrDefault(col), col)</td>
                                                             }
                                                         </tr>
                                                     }
@@ -347,10 +393,10 @@
     private Dictionary<string, PeriodicTimer> activePolls = [];
     private ElementReference messagesContainer;
     private string userId = "default";
-    private bool _renderChartsAfterUpdate;
     private bool _shouldScrollToBottom;
     private ChatMessage? _pendingMessage;
     private bool showHistoryMobile;
+    private bool showHistoryPanel = true;
     private HashSet<string> databaseTables = new(StringComparer.OrdinalIgnoreCase);
     private List<QuickAskSuggestion> quickAskSuggestions = [];
     private int? selectedAssistantIdx;
@@ -386,11 +432,6 @@
         {
             _shouldScrollToBottom = false;
             try { await JS.InvokeVoidAsync("chartInterop.scrollToBottom", messagesContainer); } catch { }
-        }
-        if (_renderChartsAfterUpdate)
-        {
-            _renderChartsAfterUpdate = false;
-            await RenderCharts();
         }
     }
 
@@ -484,8 +525,7 @@
         }).ToList();
         SelectLatestAssistantMessage();
 
-        // Schedule chart render after next DOM update
-        _renderChartsAfterUpdate = true;
+        // Schedule scroll after next DOM update
         _shouldScrollToBottom = true;
 
         // Persist the active conversation in the URL so browser refresh restores it
@@ -622,7 +662,6 @@
                             SelectLatestAssistantMessage();
                         }
                         loading = false;
-                        _renderChartsAfterUpdate = true;
                         _shouldScrollToBottom = true;
                         await InvokeAsync(StateHasChanged);
                         break;
@@ -834,53 +873,176 @@
     }
 
     private void ToggleHistoryMobile() => showHistoryMobile = !showHistoryMobile;
+    // ── ApexCharts helpers ──────────────────────────────────────────────────
 
-    private async Task RenderCharts()
+    private record ChartDataPoint(string Label, decimal Value);
+    private record ScatterPoint(decimal X, decimal Y);
+
+    private static List<(string Name, List<ChartDataPoint> Points)> GetChartSeries(ChatMessage msg)
     {
-        for (int i = 0; i < messages.Count; i++)
-        {
-            var msg = messages[i];
-            if (!string.IsNullOrEmpty(msg.ChartType) && msg.ChartType != "none" && msg.Rows?.Count > 0 && msg.Columns?.Count >= 2)
-            {
-                var labelCol = msg.Columns[0];
-                var valueCols = msg.Columns.Skip(1)
-                    .Where(col => msg.Rows.Any(row => double.TryParse(row.GetValueOrDefault(col), out _)))
-                    .ToList();
-
-                if (valueCols.Count == 0) continue;
-
-                var labels = msg.Rows.Select(row => row.GetValueOrDefault(labelCol) ?? "").ToArray();
-                var datasets = valueCols.Select(col => new
-                {
-                    label = col,
-                    data = msg.Rows.Select(row => double.TryParse(row.GetValueOrDefault(col), out var v) ? v : 0.0).ToArray()
-                }).ToArray();
-
-                try
-                {
-                    await JS.InvokeVoidAsync("chartInterop.renderChart", $"chart-{i}", msg.ChartType, labels, datasets, null);
-                }
-                catch (JSException)
-                {
-                    // chartInterop not yet available (script still loading) — skip silently
-                }
-            }
-        }
+        if (msg.Rows == null || msg.Columns == null || msg.Columns.Count < 2) return [];
+        var labelCol = msg.Columns[0];
+        var valueCols = msg.Columns.Skip(1)
+            .Where(col => msg.Rows.Any(row => double.TryParse(row.GetValueOrDefault(col), out _)))
+            .ToList();
+        return valueCols.Select(col =>
+            (col, msg.Rows.Select(row =>
+                new ChartDataPoint(
+                    row.GetValueOrDefault(labelCol) ?? "",
+                    decimal.TryParse(row.GetValueOrDefault(col), out var v) ? v : 0m
+                )).ToList())
+        ).ToList();
     }
+
+    private static List<(string Name, List<ChartDataPoint> Points)> GetPieSeries(ChatMessage msg)
+    {
+        if (msg.Rows == null || msg.Columns == null || msg.Columns.Count < 2) return [];
+        var labelCol = msg.Columns[0];
+        var valueCol = msg.Columns.Skip(1)
+            .FirstOrDefault(col => msg.Rows.Any(row => double.TryParse(row.GetValueOrDefault(col), out _)));
+        if (valueCol == null) return [];
+        var points = msg.Rows.Select(row =>
+            new ChartDataPoint(
+                row.GetValueOrDefault(labelCol) ?? "",
+                decimal.TryParse(row.GetValueOrDefault(valueCol), out var v) ? v : 0m
+            )).ToList();
+        return [("Values", points)];
+    }
+
+    private static List<(string Name, List<ChartDataPoint> Points)> GetDisplaySeries(ChatMessage msg) =>
+        msg.ChartType is "pie" or "doughnut" or "donut" ? GetPieSeries(msg) : GetChartSeries(msg);
+
+    private static List<(string Name, List<ScatterPoint> Points)> GetScatterSeries(ChatMessage msg)
+    {
+        if (msg.Rows == null || msg.Columns == null || msg.Columns.Count < 2) return [];
+        var numericCols = msg.Columns
+            .Where(col => msg.Rows.Any(row => double.TryParse(row.GetValueOrDefault(col), out _)))
+            .ToList();
+        if (numericCols.Count < 2) return [];
+        var xCol = numericCols[0];
+        return numericCols.Skip(1).Select(yCol =>
+            (yCol, msg.Rows.Select((row, i) =>
+                new ScatterPoint(
+                    decimal.TryParse(row.GetValueOrDefault(xCol), out var x) ? x : i,
+                    decimal.TryParse(row.GetValueOrDefault(yCol), out var y) ? y : 0m
+                )).ToList())
+        ).ToList();
+    }
+
+    private static SeriesType MapSeriesType(string? chartType) => chartType?.ToLowerInvariant() switch
+    {
+        "line" => SeriesType.Line,
+        "area" => SeriesType.Area,
+        "pie" => SeriesType.Pie,
+        "donut" or "doughnut" => SeriesType.Donut,
+        "scatter" => SeriesType.Scatter,
+        "heatmap" => SeriesType.Heatmap,
+        "radar" => SeriesType.Radar,
+        "radialbar" or "radial" => SeriesType.RadialBar,
+        "treemap" => SeriesType.Treemap,
+        "polararea" or "polar" => SeriesType.PolarArea,
+        "rangearea" => SeriesType.RangeArea,
+        _ => SeriesType.Bar
+    };
+
+    private static readonly List<string> ChartColors =
+    [
+        "#10b981", "#3b82f6", "#f59e0b", "#ef4444",
+        "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"
+    ];
+
+    private const string ApexJsPath = "/_content/Blazor-ApexCharts/js/blazor-apexcharts.js";
+
+    private static ApexChartOptions<ChartDataPoint> GetApexOptions(string? chartType)
+    {
+        var isSmooth = chartType is "line" or "area";
+        return new ApexChartOptions<ChartDataPoint>
+        {
+            Blazor = new ApexChartsBlazorOptions { JavascriptPath = ApexJsPath },
+            Chart = new Chart
+            {
+                Background = "transparent",
+                ForeColor = "#9ca3af",
+                Toolbar = new Toolbar { Show = false }
+            },
+            Theme = new Theme { Mode = Mode.Dark },
+            Colors = ChartColors,
+            Grid = new Grid { BorderColor = "rgba(55,65,81,0.3)" },
+            Xaxis = new XAxis
+            {
+                Labels = new XAxisLabels
+                {
+                    Style = new AxisLabelStyle { Colors = new Color("#6b7280"), FontSize = "10px" }
+                }
+            },
+            Yaxis = [new YAxis
+            {
+                Labels = new YAxisLabels
+                {
+                    Style = new AxisLabelStyle { Colors = new Color("#6b7280"), FontSize = "10px" }
+                }
+            }],
+            Legend = new Legend
+            {
+                Labels = new LegendLabels { Colors = new Color("#9ca3af") }
+            },
+            Tooltip = new Tooltip { Theme = Mode.Dark },
+            Stroke = isSmooth ? new Stroke { Curve = new CurveSelections { Curve.Smooth }, Width = new Size(2) } : null,
+            DataLabels = new DataLabels { Enabled = false }
+        };
+    }
+
+    private static ApexChartOptions<ScatterPoint> GetScatterApexOptions() => new()
+    {
+        Blazor = new ApexChartsBlazorOptions { JavascriptPath = ApexJsPath },
+        Chart = new Chart
+        {
+            Background = "transparent",
+            ForeColor = "#9ca3af",
+            Toolbar = new Toolbar { Show = false }
+        },
+        Theme = new Theme { Mode = Mode.Dark },
+        Colors = ChartColors,
+        Grid = new Grid { BorderColor = "rgba(55,65,81,0.3)" },
+        Xaxis = new XAxis
+        {
+            Labels = new XAxisLabels
+            {
+                Style = new AxisLabelStyle { Colors = new Color("#6b7280"), FontSize = "10px" }
+            }
+        },
+        Yaxis = [new YAxis
+        {
+            Labels = new YAxisLabels
+            {
+                Style = new AxisLabelStyle { Colors = new Color("#6b7280"), FontSize = "10px" }
+            }
+        }],
+        Tooltip = new Tooltip { Theme = Mode.Dark },
+        DataLabels = new DataLabels { Enabled = false }
+    };
 
     private void ClearChat()
     {
-        _ = JS.InvokeVoidAsync("chartInterop.destroyAllCharts");
         messages.Clear();
         _pendingMessage = null;
         selectedAssistantIdx = null;
     }
 
-    private static string FormatCell(string? value)
+    private static readonly HashSet<string> AmountColumnHints =
+        new(StringComparer.OrdinalIgnoreCase) { "amount", "total", "volume", "sum", "value", "balance", "fee", "charge", "revenue" };
+
+    private static string FormatCell(string? value, string? columnName = null)
     {
         if (string.IsNullOrEmpty(value)) return "";
-        if (double.TryParse(value, out var num) && num > 999)
-            return num.ToString("N0");
+        if (double.TryParse(value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num))
+        {
+            var isAmountCol = columnName != null && AmountColumnHints.Any(h => columnName.Contains(h, StringComparison.OrdinalIgnoreCase));
+            if (isAmountCol)
+                return $"K {num:N2}";
+            if (num > 999)
+                return num.ToString("N0");
+        }
         return value;
     }
 

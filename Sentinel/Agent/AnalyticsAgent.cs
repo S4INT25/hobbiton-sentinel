@@ -36,6 +36,10 @@ public class AnalyticsAgent(
                ## Database: {{database}}
                {{schema}}
 
+               ## Currency
+               - All monetary amounts are in Zambian Kwacha (ZMW). Always prefix amounts with "K" (e.g. K 1,250.00) in summaries, findings, and explanations.
+               - Never use "$", "USD", or any other currency symbol.
+
                ## Rules
                - ONLY produce SELECT/WITH queries. Never INSERT/UPDATE/DELETE/DROP.
                - Always qualify tables: `{{database}}.<table>`.
@@ -49,12 +53,12 @@ public class AnalyticsAgent(
                {
                  "thinking": "Brief internal reasoning",
                  "sql": "SELECT ... or null",
-                 "summary": "Analyst-facing summary",
+                 "summary": "Analyst-facing summary (prefix all amounts with K)",
                  "risk_level": "low|medium|high|critical",
-                 "findings": ["Finding 1", "Finding 2"],
+                 "findings": ["Finding 1 (use K prefix for amounts)", "Finding 2"],
                  "recommended_actions": ["Action 1", "Action 2"],
-                 "explanation": "Detailed plain-English explanation",
-                 "chart": "bar" | "line" | "doughnut" | "none"
+                 "explanation": "Detailed plain-English explanation (prefix all amounts with K)",
+                 "chart": "bar" | "line" | "pie" | "none"
                }
                """
             : $$"""
@@ -62,6 +66,11 @@ public class AnalyticsAgent(
 
                              ## Database: {{database}}
                              {{schema}}
+
+                             ## Currency
+                             - All monetary amounts are in Zambian Kwacha (ZMW). Always prefix amounts with "K" (e.g. K 1,250.00) in explanations.
+                             - Never use "$", "USD", or any other currency symbol.
+                             - In SQL, return raw numeric values for amount columns — do NOT add K prefix or string formatting in the query itself. The UI handles display formatting.
 
                              ## Rules
                              - ONLY produce SELECT/WITH queries. Never INSERT/UPDATE/DELETE/DROP.
@@ -79,15 +88,17 @@ public class AnalyticsAgent(
                              {
                                "thinking": "Brief explanation of your approach",
                                "sql": "SELECT ...",
-                               "explanation": "Plain English summary of what the results mean",
-                               "chart": "bar" | "line" | "doughnut" | "none"
+                               "explanation": "Plain English summary — prefix all monetary amounts with K (ZMW)",
+                               "chart": "bar" | "line" | "area" | "pie" | "scatter" | "none"
                              }
 
                              Chart selection guide:
-                             - "bar": comparisons between categories (top merchants, counts by type)
-                             - "line": time series data (hourly/daily trends)
-                             - "doughnut": proportions/percentages (status breakdown, share)
-                             - "none": raw data tables, detailed records, or too many columns
+                             - "bar": comparisons between categories (top merchants, counts by type, rankings)
+                             - "line": time series trends (hourly/daily/weekly over time)
+                             - "area": cumulative or volume trends over time (filled line)
+                             - "pie": proportions/percentages with few categories (≤ 8 slices); first column = label, second = value
+                             - "scatter": correlation between two numeric columns (first col = X, second = Y)
+                             - "none": raw detail records, too many columns, or non-visual data
 
                              If the user asks a follow-up or clarification that doesn't need a query:
                              {
