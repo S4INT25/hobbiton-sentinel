@@ -1027,31 +1027,56 @@
     private static List<(string Name, List<ChartDataPoint> Points)> GetChartSeriesFromData(
         List<string> columns, List<Dictionary<string, string>> rows)
     {
-        var labelCol = columns[0];
+        // Identify label columns (non-numeric, non-identifier) and value columns (numeric, non-identifier)
+        var labelCols = new List<string>();
+        var numericCols = new List<string>();
 
-        // Detect grouped/pivoted pattern: 3 columns where col[1] is a string category
-        // e.g. [time, event_type, count] → multiple series grouped by event_type
-        if (columns.Count >= 3)
+        foreach (var col in columns)
         {
-            var potentialGroupCol = columns[1];
-            var potentialValueCols = columns.Skip(2)
-                .Where(col => rows.Any(row => double.TryParse(row.GetValueOrDefault(col), out _)))
-                .ToList();
+            bool isNumeric = rows.Any(row => double.TryParse(row.GetValueOrDefault(col), out _));
+            if (isNumeric && !IsIdentifierColumn(col))
+                numericCols.Add(col);
+            else if (!isNumeric || IsIdentifierColumn(col))
+                labelCols.Add(col);
+        }
 
-            bool col1IsCategory = !rows.Any(row => double.TryParse(row.GetValueOrDefault(potentialGroupCol), out _));
+        // If no label columns found, use first column
+        if (labelCols.Count == 0) labelCols.Add(columns[0]);
 
-            if (col1IsCategory && potentialValueCols.Count > 0)
+        // Build combined label from all label columns (e.g. "William Mwape")
+        string GetLabel(Dictionary<string, string> row) =>
+            string.Join(" ", labelCols
+                .Select(c => row.GetValueOrDefault(c) ?? "")
+                .Where(v => !string.IsNullOrWhiteSpace(v)));
+
+        // Detect grouped/pivoted pattern: exactly one non-identifier numeric column AND
+        // a category column that repeats with few distinct values relative to rows
+        if (labelCols.Count >= 2 && numericCols.Count >= 1)
+        {
+            // Check if last label col is a category grouping (few distinct values, repeating labels)
+            var lastLabelCol = labelCols.Last();
+            var distinctLabels = rows.Select(r => r.GetValueOrDefault(lastLabelCol)).Distinct().Count();
+            var distinctFirstLabel = rows.Select(r => r.GetValueOrDefault(labelCols[0])).Distinct().Count();
+
+            // It's a grouped series if the last label col has fewer distinct values than the first
+            // (e.g. event_type has 3 values vs event_hour has 8 values)
+            if (distinctLabels < distinctFirstLabel && distinctLabels <= 20)
             {
-                // Group rows by the category column, create one series per group
-                var valueCol = potentialValueCols[0];
+                var valueCol = numericCols[0];
+                var xLabelCols = labelCols.Take(labelCols.Count - 1).ToList();
+                string GetXLabel(Dictionary<string, string> row) =>
+                    string.Join(" ", xLabelCols
+                        .Select(c => row.GetValueOrDefault(c) ?? "")
+                        .Where(v => !string.IsNullOrWhiteSpace(v)));
+
                 var groups = rows
-                    .GroupBy(row => row.GetValueOrDefault(potentialGroupCol) ?? "Unknown")
+                    .GroupBy(row => row.GetValueOrDefault(lastLabelCol) ?? "Unknown")
                     .ToList();
 
                 return groups.Select(g =>
                     (g.Key, g.Select(row =>
                         new ChartDataPoint(
-                            row.GetValueOrDefault(labelCol) ?? "",
+                            GetXLabel(row),
                             decimal.TryParse(row.GetValueOrDefault(valueCol), out var v) ? v : 0m
                         )).ToList())
                 ).ToList();
@@ -1059,16 +1084,35 @@
         }
 
         // Default: each numeric column is a separate series
-        var valueCols = columns.Skip(1)
-            .Where(col => rows.Any(row => double.TryParse(row.GetValueOrDefault(col), out _)))
-            .ToList();
-        return valueCols.Select(col =>
+        if (numericCols.Count == 0)
+        {
+            // Fallback: last column as value even if identifier
+            var lastNumeric = columns
+                .LastOrDefault(col => rows.Any(row => double.TryParse(row.GetValueOrDefault(col), out _)));
+            if (lastNumeric != null) numericCols = [lastNumeric];
+            else return [];
+        }
+
+        return numericCols.Select(col =>
             (HumanizeColumn(col), rows.Select(row =>
                 new ChartDataPoint(
-                    row.GetValueOrDefault(labelCol) ?? "",
+                    GetLabel(row),
                     decimal.TryParse(row.GetValueOrDefault(col), out var v) ? v : 0m
                 )).ToList())
         ).ToList();
+    }
+
+    private static bool IsIdentifierColumn(string columnName)
+    {
+        var lower = columnName.ToLowerInvariant().Replace("_", " ").Replace("-", " ");
+        string[] identifierPatterns = [
+            "phone", "mobile", "msisdn", "cell",
+            "id", "uuid", "guid",
+            "account number", "account no",
+            "code", "reference", "ref no",
+            "national id", "nrc"
+        ];
+        return identifierPatterns.Any(p => lower.Contains(p));
     }
 
     private static List<(string Name, List<ChartDataPoint> Points)> GetPieSeries(ChatMessage msg)
@@ -1086,13 +1130,28 @@
     private static List<(string Name, List<ChartDataPoint> Points)> GetPieSeriesFromData(
         List<string> columns, List<Dictionary<string, string>> rows)
     {
-        var labelCol = columns[0];
-        var valueCol = columns.Skip(1)
-            .FirstOrDefault(col => rows.Any(row => double.TryParse(row.GetValueOrDefault(col), out _)));
+        // Find label columns (non-numeric or identifier) and value column (first non-identifier numeric)
+        var labelCols = columns.Where(col =>
+            IsIdentifierColumn(col) || !rows.Any(row => double.TryParse(row.GetValueOrDefault(col), out _))
+        ).ToList();
+        if (labelCols.Count == 0) labelCols.Add(columns[0]);
+
+        var valueCol = columns
+            .FirstOrDefault(col => !IsIdentifierColumn(col) &&
+                                   !labelCols.Contains(col) &&
+                                   rows.Any(row => double.TryParse(row.GetValueOrDefault(col), out _)));
+        // Fallback to any numeric column
+        valueCol ??= columns.FirstOrDefault(col => rows.Any(row => double.TryParse(row.GetValueOrDefault(col), out _)));
         if (valueCol == null) return [];
+
+        string GetLabel(Dictionary<string, string> row) =>
+            string.Join(" ", labelCols
+                .Select(c => row.GetValueOrDefault(c) ?? "")
+                .Where(v => !string.IsNullOrWhiteSpace(v)));
+
         var points = rows.Select(row =>
             new ChartDataPoint(
-                row.GetValueOrDefault(labelCol) ?? "",
+                GetLabel(row),
                 decimal.TryParse(row.GetValueOrDefault(valueCol), out var v) ? v : 0m
             )).ToList();
         return [("Values", points)];
