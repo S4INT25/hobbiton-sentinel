@@ -15,9 +15,8 @@ public class AnalyticsAgent(
     ILogger<AnalyticsAgent> logger)
 {
     private const int MaxHistoryExchanges = 10;
-    private const int MaxRetries = 5;
+    private const int MaxRetries = 4;
 
-    /// <param name="onEvent">Optional callback invoked for each streaming event (thinking, retrying, etc.).</param>
     public async Task<AnalyticsResponse> AskAsync(
         string prompt,
         string database = "lipila_blaze",
@@ -29,89 +28,7 @@ public class AnalyticsAgent(
         var schema = await schemaLoader.GetSchemaBlockAsync(database);
         var isFraudMode = string.Equals(mode, "fraud", StringComparison.OrdinalIgnoreCase);
 
-        var systemPrompt = isFraudMode
-            ? $$"""
-               You are a fraud-detection analytics assistant for ClickHouse. Analyse data and return findings in a strict JSON format so the UI can render a fraud report.
-
-               ## Database: {{database}}
-               {{schema}}
-
-               ## Currency
-               - All monetary amounts are in Zambian Kwacha (ZMW). Always prefix amounts with "K" (e.g. K 1,250.00) in summaries, findings, and explanations.
-               - Never use "$", "USD", or any other currency symbol.
-
-               ## Rules
-               - ONLY produce SELECT/WITH queries. Never INSERT/UPDATE/DELETE/DROP.
-               - Always qualify tables: `{{database}}.<table>`.
-               - Use native ClickHouse functions: `ifNull()`, `countIf()`, `sumIf()`, `toStartOfHour()`, `formatReadableQuantity()`.
-               - Banned: `COALESCE`, `ISNULL`, `DATEDIFF`, `IIF`, `NVL`, `TOP`.
-               - Add `LIMIT 50` unless the user specifies otherwise.
-               - CRITICAL: Use the EXACT column values shown in "Sample values" above. Do NOT guess or change the casing of status/type/category values. If the schema shows status values like 'completed', use 'completed' not 'COMPLETED'.
-               - If a query returns 0 rows, first check sample values in the schema above to confirm you're using correct filter values, then iterate with a corrected query.
-
-               ## Fraud Response Format (strict JSON, no markdown)
-               {
-                 "thinking": "Brief internal reasoning",
-                 "sql": "SELECT ... or null",
-                 "summary": "Analyst-facing summary (prefix all amounts with K)",
-                 "risk_level": "low|medium|high|critical",
-                 "findings": ["Finding 1 (use K prefix for amounts)", "Finding 2"],
-                 "recommended_actions": ["Action 1", "Action 2"],
-                 "explanation": "Detailed plain-English explanation (prefix all amounts with K)",
-                 "chart": "bar" | "line" | "pie" | "none"
-               }
-               """
-            : $$"""
-                             You are a SQL analytics assistant for ClickHouse. The user asks questions in natural language and you translate them into ClickHouse SQL queries, execute them, and explain the results clearly.
-
-                             ## Database: {{database}}
-                             {{schema}}
-
-                             ## Currency
-                             - All monetary amounts are in Zambian Kwacha (ZMW). Always prefix amounts with "K" (e.g. K 1,250.00) in explanations.
-                             - Never use "$", "USD", or any other currency symbol.
-                             - In SQL, return raw numeric values for amount columns — do NOT add K prefix or string formatting in the query itself. The UI handles display formatting.
-
-                             ## Rules
-                             - ONLY produce SELECT/WITH queries. Never INSERT/UPDATE/DELETE/DROP.
-                             - Always qualify tables: `{{database}}.<table>`.
-                             - Use native ClickHouse functions: `ifNull()`, `countIf()`, `sumIf()`, `toStartOfHour()`, `formatReadableQuantity()`.
-                             - Banned: `COALESCE`, `ISNULL`, `DATEDIFF`, `IIF`, `NVL`, `TOP`.
-                             - Add `LIMIT 50` unless the user specifies otherwise.
-                             - Use single quotes for string literals.
-                             - Name the first column as the label/category and numeric columns as values for clear chart rendering.
-                             - CRITICAL: Use the EXACT column values shown in "Sample values" above. Do NOT guess or invent status/type/category values. The schema provides the real values — use them as-is with exact casing.
-                             - If a query returns 0 rows, refer back to the sample values in the schema, verify your filter values match exactly, then iterate with a corrected query.
-
-                             ## Response Format
-                             Respond with a JSON object (no markdown fences):
-                             {
-                               "thinking": "Brief explanation of your approach",
-                               "sql": "SELECT ...",
-                               "explanation": "Plain English summary — prefix all monetary amounts with K (ZMW)",
-                               "chart": "bar" | "line" | "area" | "pie" | "scatter" | "none"
-                             }
-
-                             Chart selection guide:
-                             - "bar": comparisons between categories (top merchants, counts by type, rankings)
-                             - "line": time series trends (hourly/daily/weekly over time)
-                             - "area": cumulative or volume trends over time (filled line)
-                             - "pie": proportions/percentages with few categories (≤ 8 slices); first column = label, second = value
-                             - "scatter": correlation between two numeric columns (first col = X, second = Y)
-                             - "none": raw detail records, too many columns, or non-visual data
-
-                             If the user asks a follow-up or clarification that doesn't need a query:
-                             {
-                               "thinking": "...",
-                               "sql": null,
-                               "explanation": "Your text answer here",
-                               "chart": "none"
-                             }
-
-                             If you previously produced SQL that caused an error, the user will send back the error.
-                             Carefully analyse the error, fix the SQL, and try again.
-                             """;
-
+        var systemPrompt = BuildSystemPrompt(database, schema, isFraudMode);
         var messages = new List<ChatMessage> { new SystemChatMessage(systemPrompt) };
 
         if (history is { Count: > 0 })
@@ -131,33 +48,21 @@ public class AnalyticsAgent(
 
         var chatClient = ai.GetChatClient(modelName);
         var options = new ChatCompletionOptions { MaxOutputTokenCount = 2048, Temperature = 0.1f };
-
         int totalInput = 0, totalOutput = 0;
         string? lastError = null;
 
         for (int attempt = 1; attempt <= MaxRetries; attempt++)
         {
-            // If this is a retry, tell the LLM about the previous error
             if (attempt > 1 && lastError != null)
             {
-                await Emit(onEvent, new AnalyticsStreamEvent
-                {
-                    Type = "fixing",
-                    Message = $"Fixing SQL (attempt {attempt}/{MaxRetries})…",
-                    Attempt = attempt
-                });
+                await Emit(onEvent, "fixing", $"Correcting SQL (attempt {attempt}/{MaxRetries})…", attempt);
                 messages.Add(new UserChatMessage(
-                    $"The previous SQL produced this execution feedback:\n\n{lastError}\n\nPlease analyse this carefully and produce corrected SQL."));
+                    $"CORRECTION NEEDED:\n\n{lastError}\n\nFix the SQL using only the schema and values provided. Do not guess."));
             }
 
-            await Emit(onEvent, new AnalyticsStreamEvent
-            {
-                Type = "thinking",
-                Message = attempt == 1 ? "Analysing your question…" : $"Rethinking query (attempt {attempt}/{MaxRetries})…",
-                Attempt = attempt
-            });
+            await Emit(onEvent, "thinking",
+                attempt == 1 ? "Analysing your question…" : $"Rethinking (attempt {attempt})…", attempt);
 
-            // Call the LLM
             ChatCompletion response;
             try
             {
@@ -166,7 +71,13 @@ public class AnalyticsAgent(
             catch (Exception ex)
             {
                 logger.LogError(ex, "[Analytics] LLM call failed on attempt {Attempt}", attempt);
-                return new AnalyticsResponse { Success = false, Error = $"LLM error: {ex.Message}", InputTokens = totalInput, OutputTokens = totalOutput };
+                return new AnalyticsResponse
+                {
+                    Success = false,
+                    Error = $"LLM error: {ex.Message}",
+                    InputTokens = totalInput,
+                    OutputTokens = totalOutput
+                };
             }
 
             var text = string.Concat(response.Content
@@ -175,247 +86,121 @@ public class AnalyticsAgent(
 
             totalInput += response.Usage?.InputTokenCount ?? 0;
             totalOutput += response.Usage?.OutputTokenCount ?? 0;
-            logger.LogInformation("[Analytics] attempt={Attempt} tokens in={In} out={Out}", attempt, totalInput, totalOutput);
+            logger.LogInformation("[Analytics] attempt={Attempt} tokens in={In} out={Out}",
+                attempt, totalInput, totalOutput);
 
-            // Strip markdown fences
-            text = text.Trim();
-            if (text.StartsWith("```")) text = text[text.IndexOf('\n')..];
-            if (text.EndsWith("```")) text = text[..text.LastIndexOf("```")];
-            text = text.Trim();
+            text = StripMarkdownFences(text);
 
-            // Parse LLM response
-            string? thinking, sql, explanation, chartType, summary, riskLevel;
-            List<string> findings = [];
-            List<string> recommendedActions = [];
-            try
+            var parsed = ParseLlmResponse(text, isFraudMode);
+            if (parsed == null)
             {
-                using var doc = JsonDocument.Parse(text);
-                var root = doc.RootElement;
-                thinking = root.TryGetProperty("thinking", out var t) ? t.GetString() : null;
-                sql = root.TryGetProperty("sql", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() : null;
-                explanation = root.TryGetProperty("explanation", out var e) ? e.GetString() : null;
-                chartType = root.TryGetProperty("chart", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : "none";
-                summary = root.TryGetProperty("summary", out var sm) && sm.ValueKind == JsonValueKind.String ? sm.GetString() : null;
-                riskLevel = root.TryGetProperty("risk_level", out var rl) && rl.ValueKind == JsonValueKind.String ? rl.GetString() : null;
-                if (root.TryGetProperty("findings", out var f) && f.ValueKind == JsonValueKind.Array)
+                return new AnalyticsResponse
                 {
-                    findings = f.EnumerateArray()
-                        .Where(x => x.ValueKind == JsonValueKind.String)
-                        .Select(x => x.GetString()!)
-                        .Where(x => !string.IsNullOrWhiteSpace(x))
-                        .ToList();
-                }
-                if (root.TryGetProperty("recommended_actions", out var ra) && ra.ValueKind == JsonValueKind.Array)
-                {
-                    recommendedActions = ra.EnumerateArray()
-                        .Where(x => x.ValueKind == JsonValueKind.String)
-                        .Select(x => x.GetString()!)
-                        .Where(x => !string.IsNullOrWhiteSpace(x))
-                        .ToList();
-                }
-            }
-            catch (JsonException)
-            {
-                // Plain text — no SQL to execute
-                return new AnalyticsResponse { Success = true, Explanation = text, InputTokens = totalInput, OutputTokens = totalOutput };
+                    Success = true, Explanation = text,
+                    InputTokens = totalInput, OutputTokens = totalOutput
+                };
             }
 
-            if (!string.IsNullOrEmpty(thinking))
-            {
-                await Emit(onEvent, new AnalyticsStreamEvent
-                {
-                    Type = "thinking",
-                    Message = thinking,
-                    Attempt = attempt
-                });
-            }
+            if (!string.IsNullOrEmpty(parsed.Thinking))
+                await Emit(onEvent, "thinking", parsed.Thinking, attempt);
 
-            // No SQL — conversational answer
-            if (sql == null)
+            if (parsed.Sql == null)
             {
                 return new AnalyticsResponse
                 {
                     Success = true,
-                    Explanation = explanation ?? text,
-                    Thinking = thinking,
-                    Summary = summary,
-                    RiskLevel = riskLevel,
-                    Findings = findings,
-                    RecommendedActions = recommendedActions,
-                    ChartType = chartType ?? "none",
+                    Explanation = parsed.Explanation ?? text,
+                    Thinking = parsed.Thinking,
+                    Summary = parsed.Summary,
+                    RiskLevel = parsed.RiskLevel,
+                    Findings = parsed.Findings,
+                    RecommendedActions = parsed.RecommendedActions,
+                    ChartType = parsed.ChartType ?? "none",
                     InputTokens = totalInput,
                     OutputTokens = totalOutput
                 };
             }
 
-            var normalizedSql = TryBuildCaseInsensitiveFilterSql(sql);
-            if (!string.Equals(normalizedSql, sql, StringComparison.Ordinal))
+            var validation = await ValidateCategoricalFiltersAsync(parsed.Sql, database);
+            if (validation != null)
             {
-                await Emit(onEvent, new AnalyticsStreamEvent
-                {
-                    Type = "fixing",
-                    Message = "Normalizing status-like filters to case-insensitive matching…",
-                    Sql = normalizedSql,
-                    Attempt = attempt
-                });
-            }
-
-            await Emit(onEvent, new AnalyticsStreamEvent
-            {
-                Type = "sql",
-                Message = "Executing SQL…",
-                Sql = normalizedSql,
-                Attempt = attempt
-            });
-
-            // Execute the query
-            var result = await ch.QueryAsync(normalizedSql);
-
-            if (result.StartsWith("ClickHouse error") || result.StartsWith("Error:") || result.StartsWith("Query failed:"))
-            {
-                lastError = result;
-                await Emit(onEvent, new AnalyticsStreamEvent
-                {
-                    Type = "error",
-                    Message = result,
-                    Sql = normalizedSql,
-                    Attempt = attempt
-                });
-
-                // Add the failed SQL + error to message history so the LLM can self-correct
-                messages.Add(new AssistantChatMessage(text));
-                // next loop iteration adds the error message
-
-                if (attempt == MaxRetries)
-                {
-                    logger.LogWarning("[Analytics] All {MaxRetries} attempts failed. Last error: {Error}", MaxRetries, result);
-                    return new AnalyticsResponse
-                    {
-                        Success = false,
-                        Sql = normalizedSql,
-                        Error = $"Failed after {MaxRetries} attempts. Last error: {result}",
-                        Thinking = thinking,
-                        InputTokens = totalInput,
-                        OutputTokens = totalOutput
-                    };
-                }
-
-                continue; // retry
-            }
-
-            // Success
-            var tableData = ParseQueryResult(result);
-            if (tableData.Rows.Count == 0 && HasStatusLikeFilter(normalizedSql))
-            {
-                var fallbackSql = TryBuildStatusFilterRelaxedSql(normalizedSql);
-                if (!string.IsNullOrWhiteSpace(fallbackSql) &&
-                    !string.Equals(fallbackSql, normalizedSql, StringComparison.Ordinal))
-                {
-                    await Emit(onEvent, new AnalyticsStreamEvent
-                    {
-                        Type = "fixing",
-                        Message = "No rows with selected status filters. Retrying with status filters relaxed…",
-                        Sql = fallbackSql,
-                        Attempt = attempt
-                    });
-
-                    var fallbackResult = await ch.QueryAsync(fallbackSql);
-                    if (!(fallbackResult.StartsWith("ClickHouse error") || fallbackResult.StartsWith("Error:") || fallbackResult.StartsWith("Query failed:")))
-                    {
-                        var fallbackData = ParseQueryResult(fallbackResult);
-                        if (fallbackData.Rows.Count > 0)
-                        {
-                            await Emit(onEvent, new AnalyticsStreamEvent
-                            {
-                                Type = "done",
-                                Message = $"Recovered with case-insensitive filters: {fallbackData.Rows.Count} rows",
-                                Attempt = attempt
-                            });
-
-                            return new AnalyticsResponse
-                            {
-                                Success = true,
-                                Sql = fallbackSql,
-                                Explanation = string.IsNullOrWhiteSpace(explanation)
-                                    ? "No rows matched the exact status filter. Showing results with relaxed status filters."
-                                    : $"{explanation}\n\n(Status filters were relaxed automatically because the original values returned no rows.)",
-                                Thinking = thinking,
-                                Summary = summary,
-                                RiskLevel = riskLevel,
-                                Findings = findings,
-                                RecommendedActions = recommendedActions,
-                                ChartType = chartType ?? "none",
-                                RawResult = fallbackResult,
-                                Columns = fallbackData.Columns,
-                                Rows = fallbackData.Rows,
-                                RowCount = fallbackData.Rows.Count,
-                                InputTokens = totalInput,
-                                OutputTokens = totalOutput
-                            };
-                        }
-                    }
-                }
-            }
-
-            if (tableData.Rows.Count == 0)
-            {
-                await Emit(onEvent, new AnalyticsStreamEvent
-                {
-                    Type = "fixing",
-                    Message = $"No rows returned (iteration {attempt}/{MaxRetries}). Re-checking assumptions and retrying…",
-                    Sql = normalizedSql,
-                    Attempt = attempt
-                });
+                await Emit(onEvent, "fixing",
+                    "Invalid filter values detected — requesting correction with known values…", attempt,
+                    parsed.Sql);
 
                 messages.Add(new AssistantChatMessage(text));
-                lastError =
-                    $"The query below returned 0 rows. Re-check categorical filter values (status/type/state), case sensitivity, join keys, and time window. Return corrected SQL.\n\nSQL:\n{normalizedSql}";
-
-                if (attempt == MaxRetries)
-                {
-                    return new AnalyticsResponse
-                    {
-                        Success = true,
-                        Sql = normalizedSql,
-                        Explanation = string.IsNullOrWhiteSpace(explanation)
-                            ? "No rows found after iterative self-corrections. Try broadening the date range or removing strict filters."
-                            : $"{explanation}\n\nNo rows found after iterative self-corrections. Consider broadening date range or relaxing strict filters.",
-                        Thinking = thinking,
-                        Summary = summary,
-                        RiskLevel = riskLevel,
-                        Findings = findings,
-                        RecommendedActions = recommendedActions,
-                        ChartType = chartType ?? "none",
-                        RawResult = result,
-                        Columns = tableData.Columns,
-                        Rows = tableData.Rows,
-                        RowCount = tableData.Rows.Count,
-                        InputTokens = totalInput,
-                        OutputTokens = totalOutput
-                    };
-                }
-
+                lastError = validation;
                 continue;
             }
 
-            await Emit(onEvent, new AnalyticsStreamEvent
+            await Emit(onEvent, "sql", "Executing SQL…", attempt, parsed.Sql);
+            var result = await ch.QueryAsync(parsed.Sql);
+
+            if (IsClickHouseError(result))
             {
-                Type = "done",
-                Message = $"Got {tableData.Rows.Count} rows",
-                Attempt = attempt
-            });
+                lastError = BuildErrorFeedback(result, parsed.Sql);
+                await Emit(onEvent, "error", result, attempt, parsed.Sql);
+                messages.Add(new AssistantChatMessage(text));
+
+                if (attempt == MaxRetries)
+                {
+                    return new AnalyticsResponse
+                    {
+                        Success = false,
+                        Sql = parsed.Sql,
+                        Error = $"Failed after {MaxRetries} attempts. Last error: {result}",
+                        Thinking = parsed.Thinking,
+                        InputTokens = totalInput,
+                        OutputTokens = totalOutput
+                    };
+                }
+                continue;
+            }
+
+            var tableData = ParseQueryResult(result);
+
+            if (tableData.Rows.Count == 0)
+            {
+                if (attempt < MaxRetries)
+                {
+                    await Emit(onEvent, "fixing",
+                        $"Query returned 0 rows (attempt {attempt}). Retrying with adjusted filters…",
+                        attempt, parsed.Sql);
+
+                    messages.Add(new AssistantChatMessage(text));
+                    lastError = BuildZeroRowsFeedback(parsed.Sql, database);
+                    continue;
+                }
+
+                return new AnalyticsResponse
+                {
+                    Success = true,
+                    Sql = parsed.Sql,
+                    Explanation = parsed.Explanation ??
+                        "Query returned no results. Try broadening the date range or removing strict filters.",
+                    Thinking = parsed.Thinking,
+                    ChartType = "none",
+                    Columns = tableData.Columns,
+                    Rows = tableData.Rows,
+                    RowCount = 0,
+                    InputTokens = totalInput,
+                    OutputTokens = totalOutput
+                };
+            }
+
+            await Emit(onEvent, "done", $"Got {tableData.Rows.Count} rows", attempt);
 
             return new AnalyticsResponse
             {
                 Success = true,
-                Sql = normalizedSql,
-                Explanation = explanation,
-                Thinking = thinking,
-                Summary = summary,
-                RiskLevel = riskLevel,
-                Findings = findings,
-                RecommendedActions = recommendedActions,
-                ChartType = chartType ?? "none",
+                Sql = parsed.Sql,
+                Explanation = parsed.Explanation,
+                Thinking = parsed.Thinking,
+                Summary = parsed.Summary,
+                RiskLevel = parsed.RiskLevel,
+                Findings = parsed.Findings,
+                RecommendedActions = parsed.RecommendedActions,
+                ChartType = parsed.ChartType ?? "none",
                 RawResult = result,
                 Columns = tableData.Columns,
                 Rows = tableData.Rows,
@@ -425,75 +210,319 @@ public class AnalyticsAgent(
             };
         }
 
-        // Should never reach here
-        return new AnalyticsResponse { Success = false, Error = "Unexpected agent exit", InputTokens = totalInput, OutputTokens = totalOutput };
-    }
-
-    private static async Task Emit(Func<AnalyticsStreamEvent, Task>? onEvent, AnalyticsStreamEvent evt)
-    {
-        if (onEvent != null)
-            await onEvent(evt);
-    }
-
-    private static readonly Regex StatusEqualsRegex = new(
-        @"(?ix)
-        (?<!lower\()
-        \b(?<col>[a-z_][a-z0-9_\.]*(?:status|state|type|result|outcome))\b
-        \s*=\s*
-        '(?<val>[^']+)'",
-        RegexOptions.Compiled);
-
-    private static readonly Regex StatusInRegex = new(
-        @"(?ix)
-        (?<!lower\()
-        \b(?<col>[a-z_][a-z0-9_\.]*(?:status|state|type|result|outcome))\b
-        \s+IN\s*\((?<vals>\s*'[^']+'\s*(?:,\s*'[^']+'\s*)*)\)",
-        RegexOptions.Compiled);
-
-    private static readonly Regex SqlStringLiteralRegex = new(@"'([^']+)'", RegexOptions.Compiled);
-    private static readonly Regex AnyStatusFilterRegex = new(
-        @"(?ix)\b(?:lower\()?[a-z_][a-z0-9_\.]*(?:status|state|type|result|outcome)\)?\b\s*(?:=|\s+IN\s*\()",
-        RegexOptions.Compiled);
-    private static readonly Regex StatusPredicateRegex = new(
-        @"(?ix)
-        (?:(?:AND|OR)\s+)?
-        (?:
-            lower\(\s*[a-z_][a-z0-9_\.]*(?:status|state|type|result|outcome)\s*\)\s*=\s*lower\('[^']+'\)
-            |
-            lower\(\s*[a-z_][a-z0-9_\.]*(?:status|state|type|result|outcome)\s*\)\s+IN\s*\((?:[^)]*)\)
-            |
-            [a-z_][a-z0-9_\.]*(?:status|state|type|result|outcome)\s*=\s*'[^']+'
-            |
-            [a-z_][a-z0-9_\.]*(?:status|state|type|result|outcome)\s+IN\s*\((?:[^)]*)\)
-        )",
-        RegexOptions.Compiled);
-
-    private static string TryBuildCaseInsensitiveFilterSql(string sql)
-    {
-        var rewritten = StatusEqualsRegex.Replace(sql, m =>
-            $"lower({m.Groups["col"].Value}) = lower('{m.Groups["val"].Value}')");
-
-        rewritten = StatusInRegex.Replace(rewritten, m =>
+        return new AnalyticsResponse
         {
-            var col = m.Groups["col"].Value;
-            var vals = SqlStringLiteralRegex.Matches(m.Groups["vals"].Value)
-                .Select(v => $"lower('{v.Groups[1].Value}')");
-            return $"lower({col}) IN ({string.Join(", ", vals)})";
-        });
-
-        return rewritten;
+            Success = false, Error = "Unexpected agent exit",
+            InputTokens = totalInput, OutputTokens = totalOutput
+        };
     }
 
-    private static bool HasStatusLikeFilter(string sql) => AnyStatusFilterRegex.IsMatch(sql);
-
-    private static string TryBuildStatusFilterRelaxedSql(string sql)
+    private static string BuildSystemPrompt(string database, string schema, bool isFraudMode)
     {
-        var rewritten = StatusPredicateRegex.Replace(sql, " 1=1 ");
-        rewritten = Regex.Replace(rewritten, @"(?ix)\bWHERE\s+(?:1=1\s*(?:AND\s*)?)+", "WHERE ");
-        rewritten = Regex.Replace(rewritten, @"(?ix)\s+(AND|OR)\s+1=1(\s+|$)", " ");
-        rewritten = Regex.Replace(rewritten, @"(?ix)\s+1=1\s+(AND|OR)\s+", " ");
-        rewritten = Regex.Replace(rewritten, @"\s{2,}", " ").Trim();
-        return rewritten;
+        var rules = $$"""
+            ## ClickHouse SQL Rules
+            - ONLY produce SELECT/WITH queries. Never INSERT/UPDATE/DELETE/DROP.
+            - Always qualify tables: `{{database}}.<table>`.
+            - Use native ClickHouse functions: ifNull(), countIf(), sumIf(), toStartOfDay(), toStartOfHour(), formatReadableQuantity(), dateDiff('unit', start, end).
+            - BANNED functions (do NOT use): COALESCE, ISNULL, DATEDIFF (use dateDiff), IIF, NVL, TOP, DATEADD.
+            - Use single quotes for string literals.
+            - Add LIMIT 50 unless the user specifies otherwise.
+            - For time filtering use: created_at >= now() - INTERVAL 7 DAY (not DATE_SUB or similar).
+
+            ## CRITICAL: Filter Values
+            - The schema above lists **every allowed value** for each LowCardinality column.
+            - You MUST use these exact values (case-sensitive, lowercase unless shown otherwise).
+            - NEVER invent, guess, or capitalize filter values. If 'successful' is listed, do NOT use 'Successful' or 'SUCCESS'.
+            - If you are unsure which value to use, pick from the listed values that best matches the user's intent.
+
+            ## Currency
+            - All monetary amounts are in Zambian Kwacha (ZMW). Prefix amounts with "K" (e.g. K 1,250.00) in explanations.
+            - Never use "$", "USD", or any other currency symbol.
+            - In SQL, return raw numeric values — the UI handles display formatting.
+            """;
+
+        if (isFraudMode)
+        {
+            return $$"""
+                You are a fraud-detection analytics assistant for ClickHouse. Analyse data and return findings in strict JSON format.
+
+                {{schema}}
+
+                {{rules}}
+
+                ## Response Format (strict JSON, no markdown fences)
+                {
+                  "thinking": "Brief internal reasoning about your approach",
+                  "sql": "SELECT ... or null if no query needed",
+                  "summary": "Analyst-facing summary (use K prefix for amounts)",
+                  "risk_level": "low|medium|high|critical",
+                  "findings": ["Finding 1", "Finding 2"],
+                  "recommended_actions": ["Action 1", "Action 2"],
+                  "explanation": "Detailed explanation (use K prefix for amounts)",
+                  "chart": "bar|line|pie|none"
+                }
+                """;
+        }
+
+        return $$"""
+            You are a SQL analytics assistant for ClickHouse. Translate natural-language questions into ClickHouse SQL, execute them, and explain results clearly.
+
+            {{schema}}
+
+            {{rules}}
+
+            ## Response Format (strict JSON, no markdown fences)
+            {
+              "thinking": "Brief explanation of your approach and which tables/columns you'll use",
+              "sql": "SELECT ...",
+              "explanation": "Plain English summary of results (use K prefix for amounts)",
+              "chart": "bar|line|area|pie|scatter|none"
+            }
+
+            Chart guide:
+            - "bar": comparisons between categories (top merchants, counts by type)
+            - "line": time series trends (daily/hourly over time)
+            - "area": cumulative or volume trends over time
+            - "pie": proportions with few categories (≤ 8 slices)
+            - "scatter": correlation between two numeric columns
+            - "none": raw records, too many columns, or non-visual data
+
+            If no query is needed:
+            {
+              "thinking": "...",
+              "sql": null,
+              "explanation": "Your text answer",
+              "chart": "none"
+            }
+            """;
+    }
+
+    private async Task<string?> ValidateCategoricalFiltersAsync(string sql, string database)
+    {
+        var tables = ExtractReferencedTables(sql, database);
+        if (tables.Count == 0) return null;
+
+        var allInvalid = new List<string>();
+
+        foreach (var table in tables)
+        {
+            var knownValues = await schemaLoader.GetCategoricalValuesAsync(database, table);
+            if (knownValues.Count == 0) continue;
+
+            var filters = ExtractStringLiteralFilters(sql);
+
+            foreach (var (column, requestedValues) in filters)
+            {
+                // Check if this column is a known categorical column in this table
+                var matchingCol = knownValues.Keys
+                    .FirstOrDefault(k => k.Equals(column, StringComparison.OrdinalIgnoreCase));
+
+                if (matchingCol == null) continue;
+
+                var allowed = knownValues[matchingCol].ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var invalid = requestedValues
+                    .Where(v => !allowed.Contains(v))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (invalid.Count > 0)
+                {
+                    allInvalid.Add(
+                        $"- Column `{matchingCol}` in table `{table}`: " +
+                        $"you used [{string.Join(", ", invalid.Select(v => $"'{v}'"))}] " +
+                        $"but allowed values are: [{string.Join(", ", knownValues[matchingCol].Select(v => $"'{v}'"))}]");
+                }
+            }
+        }
+
+        if (allInvalid.Count == 0) return null;
+
+        return
+            "INVALID FILTER VALUES DETECTED — the following values do not exist in the data:\n\n" +
+            string.Join("\n", allInvalid) + "\n\n" +
+            "Rewrite your SQL using ONLY the allowed values listed above. " +
+            "Do not guess or invent values. Pick the closest match from the allowed set.\n\n" +
+            $"Original SQL:\n{sql}";
+    }
+
+    private static string BuildErrorFeedback(string error, string sql)
+    {
+        var feedback = $"ClickHouse execution error:\n{error}\n\nFailed SQL:\n{sql}\n\n";
+
+        if (error.Contains("Unknown table", StringComparison.OrdinalIgnoreCase) ||
+            error.Contains("doesn't exist", StringComparison.OrdinalIgnoreCase))
+        {
+            feedback += "The table name is wrong. Use only tables listed in the schema above.";
+        }
+        else if (error.Contains("Unknown column", StringComparison.OrdinalIgnoreCase) ||
+                 error.Contains("Missing columns", StringComparison.OrdinalIgnoreCase) ||
+                 error.Contains("Unknown expression identifier", StringComparison.OrdinalIgnoreCase))
+        {
+            feedback += "A column name is wrong. Use only column names listed in the schema above — they are case-sensitive.";
+        }
+        else if (error.Contains("COALESCE", StringComparison.OrdinalIgnoreCase) ||
+                 error.Contains("ISNULL", StringComparison.OrdinalIgnoreCase))
+        {
+            feedback += "You used a banned function. Use ifNull() instead of COALESCE/ISNULL.";
+        }
+        else
+        {
+            feedback += "Review the error message and fix the SQL syntax for ClickHouse.";
+        }
+
+        return feedback;
+    }
+
+    private static string BuildZeroRowsFeedback(string sql, string database)
+    {
+        return
+            $"The query returned 0 rows. This usually means:\n" +
+            $"1. Filter values don't match actual data (check the allowed values in schema)\n" +
+            $"2. Time window is too narrow (try removing date filters or using a wider range)\n" +
+            $"3. JOIN conditions are too restrictive\n\n" +
+            $"Refer back to the schema's allowed filter values and try again.\n\n" +
+            $"Failed SQL:\n{sql}";
+    }
+
+    private static readonly Regex FromTableRegex = new(
+        @"(?i)\bFROM\s+`?(\w+)`?\.`?(\w+)`?", RegexOptions.Compiled);
+
+    private static readonly Regex JoinTableRegex = new(
+        @"(?i)\bJOIN\s+`?(\w+)`?\.`?(\w+)`?", RegexOptions.Compiled);
+
+    private static readonly Regex EqualsFilterRegex = new(
+        @"(?i)\b`?(\w+)`?\s*=\s*'([^']+)'", RegexOptions.Compiled);
+
+    private static readonly Regex InFilterRegex = new(
+        @"(?i)\b`?(\w+)`?\s+IN\s*\(([^)]+)\)", RegexOptions.Compiled);
+
+    private static readonly Regex StringLiteralInList = new(
+        @"'([^']+)'", RegexOptions.Compiled);
+
+    private static List<string> ExtractReferencedTables(string sql, string database)
+    {
+        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (Match m in FromTableRegex.Matches(sql))
+        {
+            if (m.Groups[1].Value.Equals(database, StringComparison.OrdinalIgnoreCase))
+                tables.Add(m.Groups[2].Value);
+        }
+
+        foreach (Match m in JoinTableRegex.Matches(sql))
+        {
+            if (m.Groups[1].Value.Equals(database, StringComparison.OrdinalIgnoreCase))
+                tables.Add(m.Groups[2].Value);
+        }
+
+        return tables.ToList();
+    }
+
+    private static List<(string Column, List<string> Values)> ExtractStringLiteralFilters(string sql)
+    {
+        var map = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (Match m in EqualsFilterRegex.Matches(sql))
+        {
+            var col = m.Groups[1].Value;
+            var val = m.Groups[2].Value;
+            if (IsReservedKeyword(col)) continue;
+
+            if (!map.TryGetValue(col, out var set))
+            {
+                set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                map[col] = set;
+            }
+            set.Add(val);
+        }
+
+        foreach (Match m in InFilterRegex.Matches(sql))
+        {
+            var col = m.Groups[1].Value;
+            if (IsReservedKeyword(col)) continue;
+
+            if (!map.TryGetValue(col, out var set))
+            {
+                set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                map[col] = set;
+            }
+
+            foreach (Match lit in StringLiteralInList.Matches(m.Groups[2].Value))
+                set.Add(lit.Groups[1].Value);
+        }
+
+        return map
+            .Where(kv => kv.Value.Count > 0)
+            .Select(kv => (kv.Key, kv.Value.ToList()))
+            .ToList();
+    }
+
+    private static readonly HashSet<string> SqlKeywords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "SELECT", "FROM", "WHERE", "AND", "OR", "NOT", "IN", "LIKE", "BETWEEN",
+        "ORDER", "GROUP", "BY", "HAVING", "LIMIT", "OFFSET", "JOIN", "ON",
+        "LEFT", "RIGHT", "INNER", "OUTER", "AS", "WITH", "UNION", "ALL",
+        "DISTINCT", "CASE", "WHEN", "THEN", "ELSE", "END", "NULL", "IS",
+        "FORMAT", "INTERVAL", "DAY", "HOUR", "WEEK", "MONTH", "YEAR"
+    };
+
+    private static bool IsReservedKeyword(string word) => SqlKeywords.Contains(word);
+
+    private static string StripMarkdownFences(string text)
+    {
+        text = text.Trim();
+        if (text.StartsWith("```"))
+            text = text[text.IndexOf('\n')..];
+        if (text.EndsWith("```"))
+            text = text[..text.LastIndexOf("```")];
+        return text.Trim();
+    }
+
+    private static ParsedLlmResponse? ParseLlmResponse(string text, bool isFraudMode)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(text);
+            var root = doc.RootElement;
+
+            var result = new ParsedLlmResponse
+            {
+                Thinking = root.TryGetProperty("thinking", out var t) ? t.GetString() : null,
+                Sql = root.TryGetProperty("sql", out var s) && s.ValueKind == JsonValueKind.String
+                    ? s.GetString() : null,
+                Explanation = root.TryGetProperty("explanation", out var e) ? e.GetString() : null,
+                ChartType = root.TryGetProperty("chart", out var c) && c.ValueKind == JsonValueKind.String
+                    ? c.GetString() : "none",
+                Summary = root.TryGetProperty("summary", out var sm) && sm.ValueKind == JsonValueKind.String
+                    ? sm.GetString() : null,
+                RiskLevel = root.TryGetProperty("risk_level", out var rl) && rl.ValueKind == JsonValueKind.String
+                    ? rl.GetString() : null,
+            };
+
+            if (root.TryGetProperty("findings", out var f) && f.ValueKind == JsonValueKind.Array)
+            {
+                result.Findings = f.EnumerateArray()
+                    .Where(x => x.ValueKind == JsonValueKind.String)
+                    .Select(x => x.GetString()!)
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .ToList();
+            }
+
+            if (root.TryGetProperty("recommended_actions", out var ra) && ra.ValueKind == JsonValueKind.Array)
+            {
+                result.RecommendedActions = ra.EnumerateArray()
+                    .Where(x => x.ValueKind == JsonValueKind.String)
+                    .Select(x => x.GetString()!)
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .ToList();
+            }
+
+            return result;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static TableData ParseQueryResult(string json)
@@ -536,6 +565,36 @@ public class AnalyticsAgent(
         }
         catch { /* return empty table */ }
         return data;
+    }
+
+    private static bool IsClickHouseError(string result) =>
+        result.StartsWith("ClickHouse error") ||
+        result.StartsWith("Error:") ||
+        result.StartsWith("Query failed:");
+
+    private static async Task Emit(Func<AnalyticsStreamEvent, Task>? onEvent,
+        string type, string message, int attempt, string? sql = null)
+    {
+        if (onEvent != null)
+            await onEvent(new AnalyticsStreamEvent
+            {
+                Type = type,
+                Message = message,
+                Sql = sql,
+                Attempt = attempt
+            });
+    }
+
+    private sealed class ParsedLlmResponse
+    {
+        public string? Thinking { get; set; }
+        public string? Sql { get; set; }
+        public string? Explanation { get; set; }
+        public string? ChartType { get; set; }
+        public string? Summary { get; set; }
+        public string? RiskLevel { get; set; }
+        public List<string> Findings { get; set; } = [];
+        public List<string> RecommendedActions { get; set; } = [];
     }
 }
 
