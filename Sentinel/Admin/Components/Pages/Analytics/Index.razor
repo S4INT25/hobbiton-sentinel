@@ -184,11 +184,22 @@
                                 }
                                 else if (msg.ActiveTab == "chart" && HasChartContent(msg))
                                 {
-                                    <div class="border border-gray-800 rounded-lg p-3 bg-gray-900/30" @key="@($"chart-wrap-{idx}")">
+                                    <div class="border border-gray-800 rounded-lg p-3 bg-gray-900/30">
+                                        <div class="flex items-center gap-1.5 mb-2 flex-wrap">
+                                            @foreach (var ct in GetApplicableChartTypes(msg))
+                                            {
+                                                var chartType = ct;
+                                                var message = msg;
+                                                <button @onclick="() => ChangeChartType(message, chartType)"
+                                                        class="px-2 py-0.5 text-[10px] rounded border transition-colors @(msg.ChartType == ct ? "bg-emerald-600/20 border-emerald-500/40 text-emerald-300" : "border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600")">
+                                                    @ct
+                                                </button>
+                                            }
+                                        </div>
                                         @if (msg.ChartType is "scatter")
                                         {
                                             var scatterSeries = GetScatterSeries(msg);
-                                            <ApexChart TItem="ScatterPoint" Options="GetScatterApexOptions()" Width="@("100%")" Height="280" @key="@($"apex-{idx}")">
+                                            <ApexChart TItem="ScatterPoint" Options="GetScatterApexOptions()" Width="@("100%")" Height="280" @key="@($"apex-{idx}-{msg.ChartType}")">
                                                 @foreach (var s in scatterSeries)
                                                 {
                                                     <ApexPointSeries TItem="ScatterPoint"
@@ -200,10 +211,86 @@
                                                 }
                                             </ApexChart>
                                         }
+                                        else if (msg.ChartType is "pie" or "donut" or "doughnut")
+                                        {
+                                            var pieSeries = GetPieSeries(msg);
+                                            @if (pieSeries.Count > 0)
+                                            {
+                                                var seriesType = msg.ChartType is "donut" or "doughnut" ? SeriesType.Donut : SeriesType.Pie;
+                                                <ApexChart TItem="ChartDataPoint" Options="GetPieApexOptions()" Width="@("100%")" Height="280" @key="@($"apex-{idx}-{msg.ChartType}")">
+                                                    <ApexPointSeries TItem="ChartDataPoint"
+                                                                     Items="pieSeries[0].Points"
+                                                                     Name="@pieSeries[0].Name"
+                                                                     XValue="@(e => e.Label)"
+                                                                     YValue="@(e => e.Value)"
+                                                                     SeriesType="@seriesType" />
+                                                </ApexChart>
+                                            }
+                                        }
+                                        else if (msg.ChartType is "radialbar" or "radial")
+                                        {
+                                            var radialSeries = GetPieSeries(msg);
+                                            @if (radialSeries.Count > 0)
+                                            {
+                                                <ApexChart TItem="ChartDataPoint" Options="GetRadialApexOptions()" Width="@("100%")" Height="280" @key="@($"apex-{idx}-{msg.ChartType}")">
+                                                    <ApexPointSeries TItem="ChartDataPoint"
+                                                                     Items="radialSeries[0].Points"
+                                                                     Name="@radialSeries[0].Name"
+                                                                     XValue="@(e => e.Label)"
+                                                                     YValue="@(e => e.Value)"
+                                                                     SeriesType="SeriesType.RadialBar" />
+                                                </ApexChart>
+                                            }
+                                        }
+                                        else if (msg.ChartType is "radar")
+                                        {
+                                            var radarSeries = GetChartSeries(msg);
+                                            <ApexChart TItem="ChartDataPoint" Options="GetRadarApexOptions()" Width="@("100%")" Height="280" @key="@($"apex-{idx}-{msg.ChartType}")">
+                                                @foreach (var s in radarSeries)
+                                                {
+                                                    <ApexPointSeries TItem="ChartDataPoint"
+                                                                     Items="s.Points"
+                                                                     Name="@s.Name"
+                                                                     XValue="@(e => e.Label)"
+                                                                     YValue="@(e => e.Value)"
+                                                                     SeriesType="SeriesType.Radar" />
+                                                }
+                                            </ApexChart>
+                                        }
+                                        else if (msg.ChartType is "heatmap")
+                                        {
+                                            var heatSeries = GetChartSeries(msg);
+                                            <ApexChart TItem="ChartDataPoint" Options="GetApexOptions(msg.ChartType)" Width="@("100%")" Height="280" @key="@($"apex-{idx}-{msg.ChartType}")">
+                                                @foreach (var s in heatSeries)
+                                                {
+                                                    <ApexPointSeries TItem="ChartDataPoint"
+                                                                     Items="s.Points"
+                                                                     Name="@s.Name"
+                                                                     XValue="@(e => e.Label)"
+                                                                     YValue="@(e => e.Value)"
+                                                                     SeriesType="SeriesType.Heatmap" />
+                                                }
+                                            </ApexChart>
+                                        }
+                                        else if (msg.ChartType is "treemap")
+                                        {
+                                            var treeSeries = GetPieSeries(msg);
+                                            @if (treeSeries.Count > 0)
+                                            {
+                                                <ApexChart TItem="ChartDataPoint" Options="GetApexOptions(msg.ChartType)" Width="@("100%")" Height="280" @key="@($"apex-{idx}-{msg.ChartType}")">
+                                                    <ApexPointSeries TItem="ChartDataPoint"
+                                                                     Items="treeSeries[0].Points"
+                                                                     Name="@treeSeries[0].Name"
+                                                                     XValue="@(e => e.Label)"
+                                                                     YValue="@(e => e.Value)"
+                                                                     SeriesType="SeriesType.Treemap" />
+                                                </ApexChart>
+                                            }
+                                        }
                                         else
                                         {
-                                            var displaySeries = GetDisplaySeries(msg);
-                                            <ApexChart TItem="ChartDataPoint" Options="GetApexOptions(msg.ChartType)" Width="@("100%")" Height="280" @key="@($"apex-{idx}")">
+                                            var displaySeries = GetChartSeries(msg);
+                                            <ApexChart TItem="ChartDataPoint" Options="GetApexOptions(msg.ChartType)" Width="@("100%")" Height="280" @key="@($"apex-{idx}-{msg.ChartType}")">
                                                 @foreach (var s in displaySeries)
                                                 {
                                                     <ApexPointSeries TItem="ChartDataPoint"
@@ -226,7 +313,7 @@
                                                     <tr>
                                                         @foreach (var col in msg.Columns!)
                                                         {
-                                                            <th class="text-left px-3 py-2 font-medium text-gray-500 border-b border-gray-800 whitespace-nowrap">@col</th>
+                                                            <th class="text-left px-3 py-2 font-medium text-gray-500 border-b border-gray-800 whitespace-nowrap">@HumanizeColumn(col)</th>
                                                         }
                                                     </tr>
                                                 </thead>
@@ -257,6 +344,22 @@
                                 else if (msg.ActiveTab == "reasoning" && HasReasoningContent(msg))
                                 {
                                     <div class="p-3 bg-gray-900/50 border border-gray-800/50 rounded text-xs text-gray-400 italic whitespace-pre-wrap">@msg.Thinking</div>
+                                }
+
+                                @if (msg.StreamEvents?.Count > 0)
+                                {
+                                    <details class="mt-2">
+                                        <summary class="text-[10px] text-gray-600 cursor-pointer hover:text-gray-400 select-none">Agent timeline (@msg.StreamEvents.Count steps)</summary>
+                                        <div class="mt-1.5 p-2 space-y-1 border border-gray-800/50 rounded bg-gray-950/40">
+                                            @foreach (var evt in msg.StreamEvents)
+                                            {
+                                                <div class="flex items-start gap-2 text-xs">
+                                                    <span class="shrink-0 @StreamEventDotClass(evt.Type) w-1.5 h-1.5 rounded-full"></span>
+                                                    <span class="@StreamEventTextClass(evt.Type)">@evt.Message</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    </details>
                                 }
                             </div>
                         }
@@ -610,10 +713,13 @@
     {
         if (activePolls.ContainsKey(jobId)) return;
 
-        // Create a pending message placeholder that we'll populate with stream events
-        _pendingMessage ??= new ChatMessage { Role = "progress", StreamEvents = [] };
+        _pendingMessage ??= new ChatMessage
+        {
+            Role = "progress",
+            StreamEvents = [new AnalyticsStreamEvent { Type = "thinking", Message = "Analysing your question…", Attempt = 1 }]
+        };
 
-        var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
         activePolls[jobId] = timer;
 
         _ = Task.Run(async () =>
@@ -625,7 +731,6 @@
                     var job = await JobStore.GetAsync(jobId);
                     if (job == null) { StopPolling(jobId); break; }
 
-                    // Always refresh stream events for live display
                     if (_pendingMessage != null && job.StreamEvents.Count > (_pendingMessage.StreamEvents?.Count ?? 0))
                     {
                         _pendingMessage.StreamEvents = job.StreamEvents;
@@ -636,7 +741,7 @@
                     if (job.Status == "completed")
                     {
                         StopPolling(jobId);
-                        _pendingMessage = null;
+
                         if (job.Result != null)
                         {
                             var assistant = new ChatMessage
@@ -655,12 +760,15 @@
                                 Rows = job.Result.Rows ?? [],
                                 RowCount = job.Result.RowCount,
                                 InputTokens = job.Result.InputTokens,
-                                OutputTokens = job.Result.OutputTokens
+                                OutputTokens = job.Result.OutputTokens,
+                                StreamEvents = job.StreamEvents
                             };
                             NormalizeAssistantMessage(assistant);
                             messages.Add(assistant);
                             SelectLatestAssistantMessage();
                         }
+
+                        _pendingMessage = null;
                         loading = false;
                         _shouldScrollToBottom = true;
                         await InvokeAsync(StateHasChanged);
@@ -670,7 +778,7 @@
                     {
                         StopPolling(jobId);
                         _pendingMessage = null;
-                        var assistant = new ChatMessage { Role = "assistant", Error = job.Error ?? "Query failed" };
+                        var assistant = new ChatMessage { Role = "assistant", Error = job.Error ?? "Query failed", StreamEvents = job.StreamEvents };
                         NormalizeAssistantMessage(assistant);
                         messages.Add(assistant);
                         SelectLatestAssistantMessage();
@@ -763,59 +871,45 @@
             return;
         }
 
-        var hasTransactions = HasTableLike("transaction");
-        var hasMerchants = HasTableLike("merchant");
-        var hasWallets = HasTableLike("wallet");
-        var hasBatchPayments = HasTableLike("batch_payment");
-
-        var suggestions = new List<QuickAskSuggestion>();
-
-        if (hasTransactions || hasBatchPayments)
+        quickAskSuggestions = (database?.ToLowerInvariant() switch
         {
-            suggestions.Add(new QuickAskSuggestion(
-                "Hourly volume (24h)",
-                $"Hourly transaction count for the last 24 hours in database '{database}'"));
-
-            suggestions.Add(new QuickAskSuggestion(
-                "Status breakdown",
-                $"Transaction status breakdown today in database '{database}'. Use case-insensitive status filters."));
-        }
-
-        if (hasMerchants && (hasTransactions || hasBatchPayments))
-        {
-            suggestions.Add(new QuickAskSuggestion(
-                "Top merchants today",
-                $"Top 10 merchants by disbursement volume today in database '{database}'. If status filtering is used, compare status case-insensitively."));
-        }
-
-        if (hasWallets && (hasTransactions || hasBatchPayments))
-        {
-            suggestions.Add(new QuickAskSuggestion(
-                "Top recipients this week",
-                $"Which wallets received the most disbursements this week in database '{database}'?"));
-        }
-
-        if (suggestions.Count == 0)
-        {
-            suggestions.Add(new QuickAskSuggestion(
-                "Explore recent activity",
-                $"Show key activity trends for the last 24 hours in database '{database}' based on available tables."));
-            suggestions.Add(new QuickAskSuggestion(
-                "Top entities",
-                $"Show top entities by volume in database '{database}' using the most relevant transactional tables."));
-            suggestions.Add(new QuickAskSuggestion(
-                "Status mix",
-                $"Show status distribution for recent records in database '{database}' and use case-insensitive matching for status-like fields."));
-            suggestions.Add(new QuickAskSuggestion(
-                "Anomalies",
-                $"Find unusual spikes or drops in the last 7 days in database '{database}' using available metrics."));
-        }
-
-        quickAskSuggestions = suggestions.Take(4).ToList();
+            "lipila_blaze" => new List<QuickAskSuggestion>
+            {
+                new("Hourly volume (24h)", $"Hourly transaction count for the last 24 hours in '{database}'"),
+                new("Status breakdown", $"Transaction status breakdown today in '{database}' as a pie chart"),
+                new("Top merchants today", $"Top 10 merchants by disbursement volume today in '{database}'"),
+                new("Payment channels", $"Transaction volume by payment channel this week in '{database}'"),
+            },
+            "inshuwa" => new List<QuickAskSuggestion>
+            {
+                new("Active policies", $"Count of active policies by insurance class in '{database}'"),
+                new("Claims this month", $"Claims submitted this month grouped by status in '{database}'"),
+                new("Premium revenue", $"Total premium revenue this week by policy type in '{database}'"),
+                new("Motor vs Life", $"Compare motor and life policy counts over the last 30 days in '{database}'"),
+            },
+            "bnpl" => new List<QuickAskSuggestion>
+            {
+                new("Active loans", $"Count of active loans by status in '{database}'"),
+                new("Disbursements today", $"Total loan disbursements today in '{database}'"),
+                new("Repayment rate", $"Repayment success rate this week in '{database}'"),
+                new("Overdue loans", $"How many loans are overdue and their total value in '{database}'?"),
+            },
+            var db when db != null && db.StartsWith("patumba") => new List<QuickAskSuggestion>
+            {
+                new("Savings overview", $"Total savings contributions this week in '{database}'"),
+                new("Active goals", $"Count of active savings goals by status in '{database}'"),
+                new("Top savers", $"Top 10 users by total contributions this month in '{database}'"),
+                new("Withdrawals trend", $"Daily withdrawal volume over the last 7 days in '{database}'"),
+            },
+            _ => new List<QuickAskSuggestion>
+            {
+                new("Recent activity", $"Show key activity trends for the last 24 hours in '{database}'"),
+                new("Status distribution", $"Show status distribution for recent records in '{database}' as a pie chart"),
+                new("Top entities", $"Show top entities by volume in '{database}'"),
+                new("Daily trend (7d)", $"Show daily record counts over the last 7 days in '{database}' as a line chart"),
+            }
+        }).Take(4).ToList();
     }
-
-    private bool HasTableLike(string token) =>
-        databaseTables.Any(t => t.Contains(token, StringComparison.OrdinalIgnoreCase));
 
     private static bool HasSummaryContent(ChatMessage msg) =>
         !string.IsNullOrWhiteSpace(msg.Explanation) ||
@@ -886,7 +980,7 @@
             .Where(col => msg.Rows.Any(row => double.TryParse(row.GetValueOrDefault(col), out _)))
             .ToList();
         return valueCols.Select(col =>
-            (col, msg.Rows.Select(row =>
+            (HumanizeColumn(col), msg.Rows.Select(row =>
                 new ChartDataPoint(
                     row.GetValueOrDefault(labelCol) ?? "",
                     decimal.TryParse(row.GetValueOrDefault(col), out var v) ? v : 0m
@@ -909,9 +1003,6 @@
         return [("Values", points)];
     }
 
-    private static List<(string Name, List<ChartDataPoint> Points)> GetDisplaySeries(ChatMessage msg) =>
-        msg.ChartType is "pie" or "doughnut" or "donut" ? GetPieSeries(msg) : GetChartSeries(msg);
-
     private static List<(string Name, List<ScatterPoint> Points)> GetScatterSeries(ChatMessage msg)
     {
         if (msg.Rows == null || msg.Columns == null || msg.Columns.Count < 2) return [];
@@ -921,7 +1012,7 @@
         if (numericCols.Count < 2) return [];
         var xCol = numericCols[0];
         return numericCols.Skip(1).Select(yCol =>
-            (yCol, msg.Rows.Select((row, i) =>
+            (HumanizeColumn(yCol), msg.Rows.Select((row, i) =>
                 new ScatterPoint(
                     decimal.TryParse(row.GetValueOrDefault(xCol), out var x) ? x : i,
                     decimal.TryParse(row.GetValueOrDefault(yCol), out var y) ? y : 0m
@@ -1022,6 +1113,120 @@
         DataLabels = new DataLabels { Enabled = false }
     };
 
+    private static ApexChartOptions<ChartDataPoint> GetPieApexOptions() => new()
+    {
+        Blazor = new ApexChartsBlazorOptions { JavascriptPath = ApexJsPath },
+        Chart = new Chart
+        {
+            Background = "transparent",
+            ForeColor = "#9ca3af",
+            Toolbar = new Toolbar { Show = false }
+        },
+        Theme = new Theme { Mode = Mode.Dark },
+        Colors = ChartColors,
+        Legend = new Legend
+        {
+            Position = LegendPosition.Bottom,
+            Labels = new LegendLabels { Colors = new Color("#9ca3af") }
+        },
+        Tooltip = new Tooltip { Theme = Mode.Dark },
+        DataLabels = new DataLabels
+        {
+            Enabled = true,
+            Style = new DataLabelsStyle { Colors = ["#ffffff"] }
+        }
+    };
+
+    private static ApexChartOptions<ChartDataPoint> GetRadialApexOptions() => new()
+    {
+        Blazor = new ApexChartsBlazorOptions { JavascriptPath = ApexJsPath },
+        Chart = new Chart
+        {
+            Background = "transparent",
+            ForeColor = "#9ca3af",
+            Toolbar = new Toolbar { Show = false }
+        },
+        Theme = new Theme { Mode = Mode.Dark },
+        Colors = ChartColors,
+        Legend = new Legend
+        {
+            Position = LegendPosition.Bottom,
+            Labels = new LegendLabels { Colors = new Color("#9ca3af") }
+        },
+        Tooltip = new Tooltip { Theme = Mode.Dark },
+        DataLabels = new DataLabels { Enabled = true }
+    };
+
+    private static ApexChartOptions<ChartDataPoint> GetRadarApexOptions() => new()
+    {
+        Blazor = new ApexChartsBlazorOptions { JavascriptPath = ApexJsPath },
+        Chart = new Chart
+        {
+            Background = "transparent",
+            ForeColor = "#9ca3af",
+            Toolbar = new Toolbar { Show = false }
+        },
+        Theme = new Theme { Mode = Mode.Dark },
+        Colors = ChartColors,
+        Legend = new Legend
+        {
+            Labels = new LegendLabels { Colors = new Color("#9ca3af") }
+        },
+        Tooltip = new Tooltip { Theme = Mode.Dark },
+        Stroke = new Stroke { Width = new Size(2) },
+        DataLabels = new DataLabels { Enabled = false }
+    };
+
+    private static List<string> GetApplicableChartTypes(ChatMessage msg)
+    {
+        var types = new List<string>();
+        if (msg.Rows == null || msg.Columns == null || msg.Columns.Count < 2) return types;
+
+        var numericCols = msg.Columns.Skip(1)
+            .Where(col => msg.Rows.Any(row => double.TryParse(row.GetValueOrDefault(col), out _)))
+            .ToList();
+
+        var rowCount = msg.Rows.Count;
+        var hasLabels = msg.Rows.Any(row => !double.TryParse(row.GetValueOrDefault(msg.Columns[0]), out _));
+
+        // Bar/Line/Area always applicable with label + numeric columns
+        if (hasLabels && numericCols.Count > 0)
+        {
+            types.Add("bar");
+            types.Add("line");
+            types.Add("area");
+        }
+
+        // Pie/Donut: label + single numeric, ≤ 12 rows
+        if (hasLabels && numericCols.Count >= 1 && rowCount <= 12)
+        {
+            types.Add("pie");
+            types.Add("donut");
+        }
+
+        // Scatter: need at least 2 numeric columns
+        if (numericCols.Count >= 2)
+            types.Add("scatter");
+
+        // Radar: label + numeric, few rows
+        if (hasLabels && numericCols.Count > 0 && rowCount <= 10)
+            types.Add("radar");
+
+        // Radialbar: label + single numeric, few rows (percentages/progress)
+        if (hasLabels && numericCols.Count >= 1 && rowCount <= 8)
+            types.Add("radialbar");
+
+        // Treemap: label + single numeric
+        if (hasLabels && numericCols.Count >= 1)
+            types.Add("treemap");
+
+        // Heatmap: multiple numeric columns, multiple rows
+        if (hasLabels && numericCols.Count > 1 && rowCount > 2)
+            types.Add("heatmap");
+
+        return types;
+    }
+
     private void ClearChat()
     {
         messages.Clear();
@@ -1103,4 +1308,19 @@
     }
 
     private sealed record QuickAskSuggestion(string Label, string Prompt);
+
+    private static string HumanizeColumn(string col)
+    {
+        if (string.IsNullOrWhiteSpace(col)) return col;
+        if (col.Contains('_'))
+            return string.Join(" ", col.Split('_', StringSplitOptions.RemoveEmptyEntries)
+                .Select(w => char.ToUpper(w[0]) + w[1..]));
+        return System.Text.RegularExpressions.Regex.Replace(col, "([a-z])([A-Z])", "$1 $2");
+    }
+
+    private void ChangeChartType(ChatMessage message, string chartType)
+    {
+        message.ChartType = chartType;
+        StateHasChanged();
+    }
 }

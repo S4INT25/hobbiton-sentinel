@@ -223,11 +223,18 @@ public class AnalyticsAgent(
             ## ClickHouse SQL Rules
             - ONLY produce SELECT/WITH queries. Never INSERT/UPDATE/DELETE/DROP.
             - Always qualify tables: `{{database}}.<table>`.
+            - Table names have a `public_` prefix (e.g. `public_transactions`, NOT `transactions`). Use the EXACT table names from the schema above.
             - Use native ClickHouse functions: ifNull(), countIf(), sumIf(), toStartOfDay(), toStartOfHour(), formatReadableQuantity(), dateDiff('unit', start, end).
             - BANNED functions (do NOT use): COALESCE, ISNULL, DATEDIFF (use dateDiff), IIF, NVL, TOP, DATEADD.
             - Use single quotes for string literals.
             - Add LIMIT 50 unless the user specifies otherwise.
             - For time filtering use: created_at >= now() - INTERVAL 7 DAY (not DATE_SUB or similar).
+
+            ## CRITICAL: Table and Column Names
+            - Use ONLY the exact table and column names listed in the schema above.
+            - Tables are prefixed with `public_` (replicated from PostgreSQL via PeerDB).
+            - Example: to query transactions, use `{{database}}.public_transactions` — NOT `{{database}}.transactions`.
+            - Column names are case-sensitive — use them exactly as shown in the schema.
 
             ## CRITICAL: Filter Values
             - The schema above lists **every allowed value** for each LowCardinality column.
@@ -239,6 +246,15 @@ public class AnalyticsAgent(
             - All monetary amounts are in Zambian Kwacha (ZMW). Prefix amounts with "K" (e.g. K 1,250.00) in explanations.
             - Never use "$", "USD", or any other currency symbol.
             - In SQL, return raw numeric values — the UI handles display formatting.
+
+            ## Query Best Practices
+            - When displaying results for charts or tables, SELECT human-readable names (e.g. merchant name, user name, policy holder) instead of UUIDs/IDs. JOIN to the relevant table to get the name.
+            - Always alias aggregation columns with clear names: `sum(amount) AS total_amount`, `count(*) AS transaction_count`.
+            - When a table has a `status` column, consider filtering by the most meaningful status unless the user asks for all:
+              - For transaction/payment queries: filter `status = 'successful'` unless the user asks about failed/pending.
+              - For entity listings (merchants, users, policies): include all statuses unless the user specifies.
+            - For "top N" queries, ORDER BY the metric DESC and add LIMIT.
+            - For time-series charts, ensure the first column is the time bucket (toStartOfDay, toStartOfHour) and alias it clearly.
             """;
 
         if (isFraudMode)
@@ -276,7 +292,7 @@ public class AnalyticsAgent(
               "thinking": "Brief explanation of your approach and which tables/columns you'll use",
               "sql": "SELECT ...",
               "explanation": "Plain English summary of results (use K prefix for amounts)",
-              "chart": "bar|line|area|pie|scatter|none"
+              "chart": "bar|line|area|pie|donut|scatter|radar|heatmap|treemap|radialbar|none"
             }
 
             Chart guide:
@@ -284,7 +300,12 @@ public class AnalyticsAgent(
             - "line": time series trends (daily/hourly over time)
             - "area": cumulative or volume trends over time
             - "pie": proportions with few categories (≤ 8 slices)
+            - "donut": same as pie but with a hole in the center
             - "scatter": correlation between two numeric columns
+            - "radar": multi-dimensional comparison (e.g. metrics across categories)
+            - "heatmap": matrix of values across two dimensions (e.g. hour vs day)
+            - "treemap": hierarchical proportions (size-encoded blocks)
+            - "radialbar": progress/percentage gauges per category
             - "none": raw records, too many columns, or non-visual data
 
             If no query is needed:
@@ -302,36 +323,44 @@ public class AnalyticsAgent(
         var tables = ExtractReferencedTables(sql, database);
         if (tables.Count == 0) return null;
 
-        var allInvalid = new List<string>();
+        var filters = ExtractStringLiteralFilters(sql);
+        if (filters.Count == 0) return null;
+
+        // Build a union of allowed values per column across all referenced tables.
+        // A filter is only invalid if the value doesn't exist in ANY table that has that column.
+        var allAllowed = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var table in tables)
         {
             var knownValues = await schemaLoader.GetCategoricalValuesAsync(database, table);
-            if (knownValues.Count == 0) continue;
-
-            var filters = ExtractStringLiteralFilters(sql);
-
-            foreach (var (column, requestedValues) in filters)
+            foreach (var (col, values) in knownValues)
             {
-                // Check if this column is a known categorical column in this table
-                var matchingCol = knownValues.Keys
-                    .FirstOrDefault(k => k.Equals(column, StringComparison.OrdinalIgnoreCase));
-
-                if (matchingCol == null) continue;
-
-                var allowed = knownValues[matchingCol].ToHashSet(StringComparer.OrdinalIgnoreCase);
-                var invalid = requestedValues
-                    .Where(v => !allowed.Contains(v))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-
-                if (invalid.Count > 0)
+                if (!allAllowed.TryGetValue(col, out var set))
                 {
-                    allInvalid.Add(
-                        $"- Column `{matchingCol}` in table `{table}`: " +
-                        $"you used [{string.Join(", ", invalid.Select(v => $"'{v}'"))}] " +
-                        $"but allowed values are: [{string.Join(", ", knownValues[matchingCol].Select(v => $"'{v}'"))}]");
+                    set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    allAllowed[col] = set;
                 }
+                foreach (var v in values) set.Add(v);
+            }
+        }
+
+        var allInvalid = new List<string>();
+
+        foreach (var (column, requestedValues) in filters)
+        {
+            if (!allAllowed.TryGetValue(column, out var allowed)) continue;
+
+            var invalid = requestedValues
+                .Where(v => !allowed.Contains(v))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (invalid.Count > 0)
+            {
+                allInvalid.Add(
+                    $"- Column `{column}`: " +
+                    $"you used [{string.Join(", ", invalid.Select(v => $"'{v}'"))}] " +
+                    $"but allowed values are: [{string.Join(", ", allowed.Order().Select(v => $"'{v}'"))}]");
             }
         }
 
@@ -352,7 +381,7 @@ public class AnalyticsAgent(
         if (error.Contains("Unknown table", StringComparison.OrdinalIgnoreCase) ||
             error.Contains("doesn't exist", StringComparison.OrdinalIgnoreCase))
         {
-            feedback += "The table name is wrong. Use only tables listed in the schema above.";
+            feedback += "The table name is wrong. Tables are prefixed with `public_` (e.g. `public_transactions`, NOT `transactions`). Use only tables listed in the schema above.";
         }
         else if (error.Contains("Unknown column", StringComparison.OrdinalIgnoreCase) ||
                  error.Contains("Missing columns", StringComparison.OrdinalIgnoreCase) ||
