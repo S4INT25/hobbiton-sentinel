@@ -154,7 +154,11 @@ try
     });
 
     builder.Services.AddRazorComponents()
-        .AddInteractiveServerComponents();
+        .AddInteractiveServerComponents(options =>
+        {
+            options.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(30);
+            options.JSInteropDefaultCallTimeout = TimeSpan.FromSeconds(60);
+        });
     builder.Services.AddCascadingAuthenticationState();
 
     var app = builder.Build();
