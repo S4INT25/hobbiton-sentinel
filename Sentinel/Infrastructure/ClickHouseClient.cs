@@ -12,6 +12,15 @@ public class ClickHouseClient(HttpClient http, IConfiguration config, ILogger<Cl
     public async Task<string> QueryAsync(string sql)
     {
         var trimmed = sql.TrimStart();
+
+        // Strip leading SQL line comments (-- ...) before checking the first keyword
+        while (trimmed.StartsWith("--"))
+        {
+            var newlineIdx = trimmed.IndexOfAny(['\n', '\r']);
+            if (newlineIdx < 0) break;
+            trimmed = trimmed[(newlineIdx + 1)..].TrimStart();
+        }
+
         var firstWord = trimmed.Split(' ', '\n', '\r')[0].ToUpperInvariant();
 
         if (!AllowedPrefixes.Contains(firstWord))
