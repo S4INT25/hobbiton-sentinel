@@ -10,6 +10,7 @@ public class SentinelClickHouseContext(DbContextOptions<SentinelClickHouseContex
     public DbSet<RunSummary> RunSummaries => Set<RunSummary>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<FraudPatternEntity> FraudPatterns => Set<FraudPatternEntity>();
+    public DbSet<EvidenceSource> EvidenceSources => Set<EvidenceSource>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -43,6 +44,25 @@ public class SentinelClickHouseContext(DbContextOptions<SentinelClickHouseContex
             e.Property(p => p.CreatedAt).HasColumnName("created_at");
             e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
             e.Property(p => p.CreatedBy).HasColumnName("created_by");
+        });
+
+        modelBuilder.Entity<EvidenceSource>(e =>
+        {
+            e.HasKey(s => s.Id);
+            e.ToTable("evidence_sources");
+            e.Property(s => s.Id).HasColumnName("id");
+            e.Property(s => s.Name).HasColumnName("name");
+            e.Property(s => s.EvidenceDatabase).HasColumnName("evidence_database");
+            e.Property(s => s.LipilaMerchantIds).HasColumnName("lipila_merchant_ids");
+            e.Property(s => s.LipilaPartnerId).HasColumnName("lipila_partner_id");
+            e.Property(s => s.JoinMappings).HasColumnName("join_mappings");
+            e.Property(s => s.TableDescriptions).HasColumnName("table_descriptions");
+            e.Property(s => s.EvidenceChecks).HasColumnName("evidence_checks");
+            e.Property(s => s.Notes).HasColumnName("notes");
+            e.Property(s => s.Enabled).HasColumnName("enabled");
+            e.Property(s => s.CreatedAt).HasColumnName("created_at");
+            e.Property(s => s.UpdatedAt).HasColumnName("updated_at");
+            e.Property(s => s.CreatedBy).HasColumnName("created_by");
         });
     }
 }

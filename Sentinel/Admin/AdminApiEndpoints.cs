@@ -375,6 +375,46 @@ public static class AdminApiEndpoints
             await AuditAction(audit, ctx, "delete", "fraud_pattern", id.ToString());
             return Results.NoContent();
         });
+
+        // ── Evidence Sources CRUD ──
+        var evidence = api.MapGroup("/evidence-sources").RequireAuthorization(AuthConstants.AdminOnlyPolicy);
+
+        evidence.MapGet("/", async (IEvidenceSourceStore store) =>
+            Results.Ok(await store.GetAllAsync()));
+
+        evidence.MapGet("/{id:int}", async (int id, IEvidenceSourceStore store) =>
+        {
+            var source = await store.GetByIdAsync(id);
+            return source is null ? Results.NotFound() : Results.Ok(source);
+        });
+
+        evidence.MapPost("/", async (EvidenceSource source, IEvidenceSourceStore store,
+            IAuditLogStore audit, HttpContext ctx) =>
+        {
+            source.CreatedAt = DateTime.UtcNow;
+            source.UpdatedAt = DateTime.UtcNow;
+            await store.UpsertAsync(source);
+            await AuditAction(audit, ctx, "create", "evidence_source", source.Id.ToString(), source.Name);
+            return Results.Created($"/api/evidence-sources/{source.Id}", source);
+        });
+
+        evidence.MapPut("/{id:int}", async (int id, EvidenceSource source, IEvidenceSourceStore store,
+            IAuditLogStore audit, HttpContext ctx) =>
+        {
+            source.Id = id;
+            source.UpdatedAt = DateTime.UtcNow;
+            await store.UpsertAsync(source);
+            await AuditAction(audit, ctx, "update", "evidence_source", id.ToString(), source.Name);
+            return Results.Ok(source);
+        });
+
+        evidence.MapDelete("/{id:int}", async (int id, IEvidenceSourceStore store,
+            IAuditLogStore audit, HttpContext ctx) =>
+        {
+            await store.DeleteAsync(id);
+            await AuditAction(audit, ctx, "delete", "evidence_source", id.ToString());
+            return Results.NoContent();
+        });
     }
 
     private static string GenerateTitle(string message)

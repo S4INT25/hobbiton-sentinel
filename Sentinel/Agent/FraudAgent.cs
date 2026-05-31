@@ -19,11 +19,13 @@ public class FraudAgent(
     IFeedbackRuleStore feedbackRuleStore,
     IRunLogStore runLogStore,
     IFraudPatternStore fraudPatternStore,
+    IEvidenceSourceStore evidenceSourceStore,
     IConfiguration config,
     ILogger<FraudAgent> logger)
 {
     private string BuildSystemPrompt(string openCasesSummary, int lookbackMinutes,
-        string schemaBlock, string suppressionBlock, string database, string patternsBlock)
+        string schemaBlock, string suppressionBlock, string database, string patternsBlock,
+        string crossDbBlock)
     {
         var casesContext = openCasesSummary == "No open cases."
             ? "no open cases."
@@ -38,6 +40,8 @@ public class FraudAgent(
                 If unsure a function exists — don't use it. Always qualify: `{database}.<table>`.
 
                 {schemaBlock}
+
+                {crossDbBlock}
 
                 ## Betting Merchants
                 Betting/gaming merchants legitimately disburse 50–200+/hr. Before flagging any velocity pattern, query the merchant's 30-day hourly disbursement history (`toStartOfHour`, `count()`, `INTERVAL 30 DAY`) and use their own avg/max as the baseline. Only flag if the current rate is a meaningful outlier.
@@ -99,6 +103,86 @@ public class FraudAgent(
         return sb.ToString();
     }
 
+    private static string BuildCrossDbBlock(List<EvidenceSource> sources)
+    {
+        if (sources.Count == 0) return "";
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("## Cross-Database Evidence Sources");
+        sb.AppendLine();
+        sb.AppendLine("Some Lipila merchants are part of the Hobbiton organisation and share the same ClickHouse cluster.");
+        sb.AppendLine("When investigating these merchants, you MUST cross-reference the linked database for corroboration.");
+        sb.AppendLine("This gives you a wider view of user behaviour beyond what Lipila alone can show.");
+        sb.AppendLine();
+
+        foreach (var source in sources)
+        {
+            sb.AppendLine($"---");
+            sb.AppendLine();
+            sb.AppendLine($"### {source.Name}");
+            sb.AppendLine($"- **Evidence database:** `{source.EvidenceDatabase}`");
+
+            if (!string.IsNullOrWhiteSpace(source.LipilaMerchantIds))
+                sb.AppendLine($"- **Lipila merchant IDs:** {source.LipilaMerchantIds}");
+            if (source.LipilaPartnerId > 0)
+                sb.AppendLine($"- **Lipila partner_id:** {source.LipilaPartnerId}");
+
+            sb.AppendLine();
+            sb.AppendLine("**Join mappings:**");
+            sb.AppendLine($"```json");
+            sb.AppendLine(source.JoinMappings.Trim());
+            sb.AppendLine($"```");
+            sb.AppendLine();
+
+            if (!string.IsNullOrWhiteSpace(source.TableDescriptions))
+            {
+                sb.AppendLine("**Available tables:**");
+                sb.AppendLine();
+                sb.AppendLine(source.TableDescriptions.Trim());
+                sb.AppendLine();
+            }
+
+            if (!string.IsNullOrWhiteSpace(source.EvidenceChecks) && source.EvidenceChecks.Trim() != "[]")
+            {
+                sb.AppendLine("**Evidence checks to run when these merchants are flagged:**");
+                // Parse the JSON array into a numbered list
+                try
+                {
+                    var checks = System.Text.Json.JsonSerializer.Deserialize<List<string>>(source.EvidenceChecks);
+                    if (checks is not null)
+                    {
+                        for (var i = 0; i < checks.Count; i++)
+                            sb.AppendLine($"{i + 1}. {checks[i]}");
+                    }
+                }
+                catch
+                {
+                    sb.AppendLine(source.EvidenceChecks.Trim());
+                }
+                sb.AppendLine();
+            }
+
+            if (!string.IsNullOrWhiteSpace(source.Notes))
+            {
+                sb.AppendLine("**Notes:**");
+                sb.AppendLine(source.Notes.Trim());
+                sb.AppendLine();
+            }
+        }
+
+        sb.AppendLine("---");
+        sb.AppendLine();
+        sb.AppendLine("## Rules for ALL cross-DB evidence");
+        sb.AppendLine("- Use ONLY for corroboration — never as a primary detection source");
+        sb.AppendLine("- Always fully qualify tables: `<database>.<table>`");
+        sb.AppendLine("- If evidence supports a Lipila finding, note \"Corroborated by <db> data\" and increase confidence");
+        sb.AppendLine("- If evidence contradicts (e.g. account has legitimate history), note it as reducing suspicion");
+        sb.AppendLine("- Timing tolerance: ±5 minutes when matching transactions across databases");
+        sb.AppendLine("- Do NOT run cross-DB checks on every account — only on accounts already flagged by Lipila detection");
+
+        return sb.ToString();
+    }
+
     public async Task RunAsync(string triggeredBy = "scheduler", string? runId = null, string? database = null,
         string? customPrompt = null, CancellationToken cancellationToken = default)
     {
@@ -119,17 +203,19 @@ public class FraudAgent(
         var schemaBlockTask = schemaLoader.GetSchemaBlockAsync(effectiveDatabase);
         var rulesTask = feedbackRuleStore.GetActiveRulesAsync();
         var patternsTask = fraudPatternStore.GetEnabledAsync();
+        var evidenceSourcesTask = evidenceSourceStore.GetEnabledAsync();
 
-        await Task.WhenAll(openCasesSummaryTask, openCasesTask, schemaBlockTask, rulesTask, patternsTask);
+        await Task.WhenAll(openCasesSummaryTask, openCasesTask, schemaBlockTask, rulesTask, patternsTask, evidenceSourcesTask);
 
         var openCasesSummary = await openCasesSummaryTask;
         var openCases = await openCasesTask;
         var schemaBlock = await schemaBlockTask;
         var activeRules = await rulesTask;
         var enabledPatterns = await patternsTask;
+        var evidenceSources = await evidenceSourcesTask;
 
-        logger.LogInformation("Loaded {Count} open cases, {RuleCount} suppression rules",
-            openCases.Count, activeRules.Count);
+        logger.LogInformation("Loaded {Count} open cases, {RuleCount} suppression rules, {EvidenceCount} evidence sources",
+            openCases.Count, activeRules.Count, evidenceSources.Count);
 
         // Build suppression block from active rules
         var suppressionBlock = activeRules.Count > 0
@@ -143,7 +229,10 @@ public class FraudAgent(
         // Build patterns prompt block from store
         var patternsBlock = BuildPatternsBlock(enabledPatterns);
 
-        var systemPrompt = BuildSystemPrompt(openCasesSummary, lookback, schemaBlock, suppressionBlock, effectiveDatabase, patternsBlock);
+        // Build cross-database evidence block from store
+        var crossDbBlock = BuildCrossDbBlock(evidenceSources);
+
+        var systemPrompt = BuildSystemPrompt(openCasesSummary, lookback, schemaBlock, suppressionBlock, effectiveDatabase, patternsBlock, crossDbBlock);
 
         // Inject follow-up queries from open cases into the first user message
         var followUpContext = openCases.Count > 0 && openCases.Any(c => c.FollowUpQueries.Count > 0)

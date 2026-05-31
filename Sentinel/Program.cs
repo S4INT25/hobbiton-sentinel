@@ -85,6 +85,7 @@ try
         builder.Services.AddSingleton<IRunLogStore, InMemoryRunLogStore>();
         builder.Services.AddSingleton<IAuditLogStore, InMemoryAuditLogStore>();
         builder.Services.AddSingleton<IFraudPatternStore, InMemoryFraudPatternStore>();
+        builder.Services.AddSingleton<IEvidenceSourceStore, InMemoryEvidenceSourceStore>();
         builder.Services.AddFusionCache();
         builder.Services.AddHangfire(config => config.UseInMemoryStorage());
     }
@@ -103,6 +104,7 @@ try
         builder.Services.AddScoped<IRunLogStore, RunLogStore>();
         builder.Services.AddScoped<IAuditLogStore, AuditLogStore>();
         builder.Services.AddScoped<IFraudPatternStore, ClickHouseFraudPatternStore>();
+        builder.Services.AddScoped<IEvidenceSourceStore, ClickHouseEvidenceSourceStore>();
 
         // L2 distributed cache — Redis as persistent cache storage
         builder.Services.AddStackExchangeRedisCache(o => o.Configuration = redisConnectionString!);
@@ -172,11 +174,16 @@ try
         var patternStore = scope.ServiceProvider.GetRequiredService<IFraudPatternStore>();
         await patternStore.EnsureTableAsync();
         await patternStore.SeedDefaultsAsync();
+        var evidenceStore = scope.ServiceProvider.GetRequiredService<IEvidenceSourceStore>();
+        await evidenceStore.EnsureTableAsync();
+        await evidenceStore.SeedDefaultsAsync();
     }
     else
     {
         var patternStore = app.Services.GetRequiredService<IFraudPatternStore>();
         await patternStore.SeedDefaultsAsync();
+        var evidenceStore = app.Services.GetRequiredService<IEvidenceSourceStore>();
+        await evidenceStore.SeedDefaultsAsync();
     }
 
     await SeedAdminUser(app);
