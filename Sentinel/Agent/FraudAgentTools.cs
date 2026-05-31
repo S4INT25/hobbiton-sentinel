@@ -294,6 +294,31 @@ public static class FraudAgentTools
                     "required": ["ips"]
                 }
                 """)
+        ),
+
+        ChatTool.CreateFunctionTool(
+            functionName: "describe_table",
+            functionDescription: """
+                Get the full schema (columns, types, categorical values, row count) for a table
+                not included in the system prompt. Use this when you need to explore tables beyond
+                the core set, especially in cross-database evidence sources.
+                """,
+            functionParameters: BinaryData.FromString("""
+                {
+                    "type": "object",
+                    "properties": {
+                        "database": {
+                            "type": "string",
+                            "description": "The ClickHouse database name e.g. 'lipila_blaze', 'inshuwa', 'patumba_app'"
+                        },
+                        "table": {
+                            "type": "string",
+                            "description": "The table name e.g. 'public_transactions'"
+                        }
+                    },
+                    "required": ["database", "table"]
+                }
+                """)
         )
     ];
 }

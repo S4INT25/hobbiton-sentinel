@@ -446,6 +446,9 @@ public class FraudAgent(
                     root.TryGetProperty("severity", out var sev) ? sev.GetString()! : "watching"),
                 "lookup_ip" => await ipLookup.LookupAsync(
                     JsonHelpers.ToIpList(root.GetProperty("ips"))),
+                "describe_table" => await schemaLoader.DescribeTableAsync(
+                    root.GetProperty("database").GetString()!,
+                    root.GetProperty("table").GetString()!),
                 _ => $"Unknown tool: {toolCall.FunctionName}"
             };
         }

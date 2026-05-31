@@ -10,6 +10,8 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
     private const string SchemaCacheKeyPrefix = "sentinel:schema:block:";
     private const string DatabaseListCacheKey = "sentinel:schema:databases";
     private const string ValuesCacheKeyPrefix = "sentinel:schema:values:";
+    private const string ColumnsCacheKeyPrefix = "sentinel:schema:columns:";
+    private const string TableDescCacheKeyPrefix = "sentinel:schema:table:";
 
     private static readonly HashSet<string> SystemDatabases = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -19,14 +21,44 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
     // Internal tables replicated by PeerDB — hide from LLM
     private static readonly string[] ExcludedTablePrefixes = ["_peerdb", "mv_"];
 
+    // Core tables to include in the system prompt per database.
+    // Only these are loaded upfront; the agent can use describe_table for others.
+    private static readonly Dictionary<string, HashSet<string>> CoreTables = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["lipila_blaze"] = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "public_transactions", "public_merchants", "public_merchant_wallets",
+            "public_wallets", "public_wallet_holders", "public_disbursements",
+            "public_collections", "public_settlements", "public_settlement_items",
+            "public_partners", "public_partner_float_accounts",
+            "public_users", "public_user_activity_logs"
+        },
+        ["inshuwa"] = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "public_PolicyTransactions", "public_Payments", "public_Commissions",
+            "public_CommissionSettlements", "public_Insurers",
+            "public_InsurerLipilaMerchants"
+        },
+        ["patumba_app"] = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "public_wallet_transactions", "public_wallets",
+            "public_lipila_wallet_transfers"
+        }
+    };
+
+    private const int MaxCategoricalValues = 20;
+    private const int SkipCategoricalIfOver = 50;
+
     private static readonly Dictionary<string, string> DatabaseDescriptions = new(StringComparer.OrdinalIgnoreCase)
     {
         ["lipila_blaze"] = "Payment gateway — collections, disbursements, merchant payments, wallets, settlements",
-        ["inshuwa"] = "Insurance platform — all classes: motor, life, travel, health, general; policies, claims, premiums",
+        ["inshuwa"] =
+            "Insurance platform — all classes: motor, life, travel, health, general; policies, claims, premiums",
         ["bnpl"] = "Lipila Later — buy-now-pay-later loans, repayments, credit scoring",
         ["patumba_mtn"] = "Patumba investments (MTN) — savings goals, contributions, withdrawals",
         ["patumba_airtel"] = "Patumba investments (Airtel) — savings goals, contributions, withdrawals",
         ["patumba_zamtel"] = "Patumba investments (Zamtel) — savings goals, contributions, withdrawals",
+        ["patumba_app"] = "Patumba App — user wallets, transactions, internal transfers",
     };
 
     public async Task<List<string>> GetDatabasesAsync()
@@ -48,16 +80,90 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
             },
             options => options.SetDuration(TimeSpan.FromHours(12)));
     }
-    
+
 
     public async Task<Dictionary<string, List<string>>> GetCategoricalValuesAsync(string database, string table)
     {
         var resolvedDatabase = ResolveDatabaseName(database);
         var cacheKey = $"{ValuesCacheKeyPrefix}{resolvedDatabase}:{table}";
         return await cache.GetOrSetAsync(cacheKey,
-            _ => FetchCategoricalValuesAsync(resolvedDatabase, table),
-            options => options.SetDuration(TimeSpan.FromHours(6)))
-            ?? new Dictionary<string, List<string>>();
+                   _ => FetchCategoricalValuesAsync(resolvedDatabase, table),
+                   options => options.SetDuration(TimeSpan.FromHours(6)))
+               ?? new Dictionary<string, List<string>>();
+    }
+
+    /// <summary>
+    /// On-demand table description for the describe_table tool.
+    /// Returns columns + categorical values for a single table. Cached 12h.
+    /// </summary>
+    public async Task<string> DescribeTableAsync(string database, string table)
+    {
+        var resolvedDatabase = ResolveDatabaseName(database);
+        var cacheKey = $"{TableDescCacheKeyPrefix}{resolvedDatabase}:{table}";
+        return await cache.GetOrSetAsync(cacheKey,
+            _ => BuildTableDescriptionAsync(resolvedDatabase, table),
+            options => options.SetDuration(TimeSpan.FromHours(12)));
+    }
+
+    private async Task<string> BuildTableDescriptionAsync(string database, string table)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"### {database}.{table}");
+
+        var allColumns = await GetDatabaseColumnsAsync(database);
+        if (!allColumns.TryGetValue(table, out var columns) || columns.Count == 0)
+        {
+            sb.AppendLine("(table not found or has no columns)");
+            return sb.ToString();
+        }
+
+        foreach (var col in columns)
+            sb.AppendLine($"  - {col.Name} ({col.Type})");
+
+        var values = await FetchCategoricalValuesAsync(database, table);
+        if (values.Count > 0)
+        {
+            sb.AppendLine("  **Categorical values:**");
+            foreach (var (col, vals) in values)
+            {
+                if (vals.Count == 0) continue;
+                var displayed = vals.Take(MaxCategoricalValues).ToList();
+                var suffix = vals.Count > MaxCategoricalValues ? $" … +{vals.Count - MaxCategoricalValues} more" : "";
+                sb.AppendLine($"    {col}: {string.Join(" | ", displayed.Select(v => $"'{v}'"))}{suffix}");
+            }
+        }
+
+        try
+        {
+            var countJson = await ch.QueryAsync(
+                $"SELECT count() as cnt FROM {database}.`{table}` WHERE _peerdb_is_deleted = 0");
+            var count = ParseStringColumn(countJson, "cnt").FirstOrDefault() ?? "?";
+            sb.AppendLine($"  **Row count (active):** {count}");
+        }
+        catch
+        {
+            /* best effort */
+        }
+
+        return sb.ToString();
+    }
+
+    private async Task<Dictionary<string, List<ColumnInfo>>> GetDatabaseColumnsAsync(string database)
+    {
+        var cacheKey = $"{ColumnsCacheKeyPrefix}{database}";
+        return await cache.GetOrSetAsync(cacheKey,
+                   _ => FetchDatabaseColumnsAsync(database),
+                   options => options.SetDuration(TimeSpan.FromHours(12)))
+               ?? new Dictionary<string, List<ColumnInfo>>();
+    }
+
+    private async Task<Dictionary<string, List<ColumnInfo>>> FetchDatabaseColumnsAsync(string database)
+    {
+        var columnsJson = await ch.QueryAsync(
+            $"SELECT table, name, type FROM system.columns WHERE database = '{database}' " +
+            $"AND table NOT LIKE '_peerdb%' AND table NOT LIKE 'mv_%' " +
+            $"ORDER BY table, position");
+        return ParseTableColumns(columnsJson);
     }
 
     public async Task WarmAllAsync()
@@ -76,6 +182,7 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
                 logger.LogWarning(ex, "Failed to cache schema for database: {Database}", db);
             }
         }
+
         logger.LogInformation("Schema warm-up complete — {Count} databases cached", databases.Count);
     }
 
@@ -125,20 +232,31 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
             .Where(t => !ExcludedTablePrefixes.Any(p => t.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
             .ToList();
 
-        if (tables.Count == 0)
+        // If we have a core tables list for this database, only include those
+        var hasCoreList = CoreTables.TryGetValue(database, out var coreSet);
+        var includedTables = hasCoreList
+            ? tables.Where(t => coreSet!.Contains(t)).ToList()
+            : tables;
+
+        if (includedTables.Count == 0)
         {
             sb.AppendLine("(no tables found)");
             return sb.ToString();
         }
 
-        var columnsJson = await ch.QueryAsync(
-            $"SELECT table, name, type FROM system.columns WHERE database = '{database}' " +
-            $"AND table NOT LIKE '_peerdb%' AND table NOT LIKE 'mv_%' " +
-            $"ORDER BY table, position");
+        // List excluded tables so agent knows they exist
+        if (hasCoreList)
+        {
+            var excludedCount = tables.Count - includedTables.Count;
+            if (excludedCount > 0)
+                sb.AppendLine(
+                    $"*({excludedCount} additional tables available — use `describe_table` tool to explore)*");
+            sb.AppendLine();
+        }
 
-        var tableColumns = ParseTableColumns(columnsJson);
+        var tableColumns = await GetDatabaseColumnsAsync(database);
 
-        foreach (var table in tables)
+        foreach (var table in includedTables)
         {
             if (!tableColumns.TryGetValue(table, out var columns) || columns.Count == 0)
                 continue;
@@ -170,8 +288,20 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
                     sb.AppendLine("  **Allowed filter values (use exactly as shown):**");
                     foreach (var (col, vals) in values)
                     {
-                        if (vals.Count > 0)
-                            sb.AppendLine($"    {col}: {string.Join(" | ", vals.Select(v => $"'{v}'"))}");
+                        if (vals.Count == 0) continue;
+                        // Skip very high-cardinality columns — agent should query DISTINCT
+                        if (vals.Count > SkipCategoricalIfOver)
+                        {
+                            sb.AppendLine($"    {col}: ({vals.Count} values — use `SELECT DISTINCT` to explore)");
+                            continue;
+                        }
+
+                        // Cap at MaxCategoricalValues
+                        var displayed = vals.Take(MaxCategoricalValues).ToList();
+                        var suffix = vals.Count > MaxCategoricalValues
+                            ? $" … +{vals.Count - MaxCategoricalValues} more"
+                            : "";
+                        sb.AppendLine($"    {col}: {string.Join(" | ", displayed.Select(v => $"'{v}'"))}{suffix}");
                     }
                 }
             }
@@ -181,10 +311,12 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
 
         sb.AppendLine("---");
         sb.AppendLine("RULES FOR FILTER VALUES:");
-        sb.AppendLine("- Every LowCardinality column above has its complete set of allowed values listed.");
+        sb.AppendLine("- LowCardinality columns above have allowed values listed (truncated if >20).");
         sb.AppendLine("- You MUST use these exact values (case-sensitive). Do NOT invent, guess, or transform them.");
-        sb.AppendLine("- If a value is not listed above, it does not exist in the data.");
+        sb.AppendLine(
+            "- If a value is not listed above, query `SELECT DISTINCT col FROM table LIMIT 50` to discover it.");
         sb.AppendLine("- Column names and table names are case-sensitive — use them exactly as shown.");
+        sb.AppendLine("- For tables not listed here, use the `describe_table` tool to get their schema on demand.");
 
         return sb.ToString();
     }
@@ -223,8 +355,12 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
                         if (values.Count > 0) result[col] = values;
                     }
                 }
-                catch { /* best effort */ }
+                catch
+                {
+                    /* best effort */
+                }
             }
+
             return result;
         }
 
@@ -236,7 +372,8 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
             foreach (var row in data.EnumerateArray())
             {
                 var colName = row.TryGetProperty("col", out var c) && c.ValueKind == JsonValueKind.String
-                    ? c.GetString() : null;
+                    ? c.GetString()
+                    : null;
                 if (string.IsNullOrWhiteSpace(colName)) continue;
 
                 if (row.TryGetProperty("vals", out var vals) && vals.ValueKind == JsonValueKind.Array)
@@ -253,7 +390,10 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
                 }
             }
         }
-        catch { /* return what we have */ }
+        catch
+        {
+            /* return what we have */
+        }
 
         return result;
     }
@@ -283,7 +423,10 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
                 .Where(s => !string.IsNullOrWhiteSpace(s))
                 .ToList();
         }
-        catch { return []; }
+        catch
+        {
+            return [];
+        }
     }
 
     private static List<string> ParseColumnList(string json)
@@ -299,7 +442,10 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
                 .Where(s => !string.IsNullOrWhiteSpace(s))
                 .ToList();
         }
-        catch { return []; }
+        catch
+        {
+            return [];
+        }
     }
 
     private static Dictionary<string, List<ColumnInfo>> ParseTableColumns(string json)
@@ -313,13 +459,17 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
             foreach (var row in data.EnumerateArray())
             {
                 var table = row.TryGetProperty("table", out var t) && t.ValueKind == JsonValueKind.String
-                    ? t.GetString() : null;
+                    ? t.GetString()
+                    : null;
                 var name = row.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String
-                    ? n.GetString() : null;
+                    ? n.GetString()
+                    : null;
                 var type = row.TryGetProperty("type", out var tp) && tp.ValueKind == JsonValueKind.String
-                    ? tp.GetString() : null;
+                    ? tp.GetString()
+                    : null;
 
-                if (string.IsNullOrWhiteSpace(table) || string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(type))
+                if (string.IsNullOrWhiteSpace(table) || string.IsNullOrWhiteSpace(name) ||
+                    string.IsNullOrWhiteSpace(type))
                     continue;
 
                 if (!result.TryGetValue(table, out var list))
@@ -327,10 +477,15 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
                     list = [];
                     result[table] = list;
                 }
+
                 list.Add(new ColumnInfo(name, type));
             }
         }
-        catch { /* return what we have */ }
+        catch
+        {
+            /* return what we have */
+        }
+
         return result;
     }
 
