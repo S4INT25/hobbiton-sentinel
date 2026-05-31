@@ -198,21 +198,20 @@ public class FraudAgent(
             currentRunId, triggeredBy, effectiveDatabase, !string.IsNullOrWhiteSpace(customPrompt));
 
         // Load open cases, schema, and feedback rules concurrently
+        // Note: patternsTask and evidenceSourcesTask share a DbContext so must not overlap
         var openCasesSummaryTask = caseStore.GetOpenCasesSummaryAsync();
         var openCasesTask = caseStore.GetOpenCasesAsync();
         var schemaBlockTask = schemaLoader.GetSchemaBlockAsync(effectiveDatabase);
         var rulesTask = feedbackRuleStore.GetActiveRulesAsync();
-        var patternsTask = fraudPatternStore.GetEnabledAsync();
-        var evidenceSourcesTask = evidenceSourceStore.GetEnabledAsync();
 
-        await Task.WhenAll(openCasesSummaryTask, openCasesTask, schemaBlockTask, rulesTask, patternsTask, evidenceSourcesTask);
+        await Task.WhenAll(openCasesSummaryTask, openCasesTask, schemaBlockTask, rulesTask);
 
         var openCasesSummary = await openCasesSummaryTask;
         var openCases = await openCasesTask;
         var schemaBlock = await schemaBlockTask;
         var activeRules = await rulesTask;
-        var enabledPatterns = await patternsTask;
-        var evidenceSources = await evidenceSourcesTask;
+        var enabledPatterns = await fraudPatternStore.GetEnabledAsync();
+        var evidenceSources = await evidenceSourceStore.GetEnabledAsync();
 
         logger.LogInformation("Loaded {Count} open cases, {RuleCount} suppression rules, {EvidenceCount} evidence sources",
             openCases.Count, activeRules.Count, evidenceSources.Count);
