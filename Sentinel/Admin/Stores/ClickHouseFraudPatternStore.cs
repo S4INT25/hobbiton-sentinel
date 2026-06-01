@@ -11,44 +11,45 @@ namespace Sentinel.Admin.Stores;
 public class ClickHouseFraudPatternStore(SentinelClickHouseContext db, ILogger<ClickHouseFraudPatternStore> logger)
     : IFraudPatternStore
 {
+    // ReplacingMergeTree deduplicates on merge; FINAL forces deduplication on read.
     public async Task<List<FraudPatternEntity>> GetAllAsync() =>
-        await db.FraudPatterns.OrderBy(p => p.Id).ToListAsync();
+        await db.FraudPatterns
+            .FromSqlRaw("SELECT * FROM sentinel.fraud_patterns FINAL ORDER BY id")
+            .ToListAsync();
 
     public async Task<List<FraudPatternEntity>> GetEnabledAsync() =>
-        await db.FraudPatterns.Where(p => p.Enabled).OrderBy(p => p.Id).ToListAsync();
+        await db.FraudPatterns
+            .FromSqlRaw("SELECT * FROM sentinel.fraud_patterns FINAL WHERE enabled = 1 ORDER BY id")
+            .ToListAsync();
 
     public async Task<FraudPatternEntity?> GetByIdAsync(int id) =>
-        await db.FraudPatterns.FirstOrDefaultAsync(p => p.Id == id);
+        await db.FraudPatterns
+            .FromSqlRaw($"SELECT * FROM sentinel.fraud_patterns FINAL WHERE id = {id}")
+            .FirstOrDefaultAsync();
 
     public async Task UpsertAsync(FraudPatternEntity pattern)
     {
         pattern.UpdatedAt = DateTime.UtcNow;
-        var existing = await db.FraudPatterns.FirstOrDefaultAsync(p => p.Id == pattern.Id);
-        if (existing is not null)
-        {
-            existing.Name = pattern.Name;
-            existing.Description = pattern.Description;
-            existing.Category = pattern.Category;
-            existing.Enabled = pattern.Enabled;
-            existing.UpdatedAt = pattern.UpdatedAt;
-            existing.CreatedBy = pattern.CreatedBy;
-        }
-        else
-        {
-            db.FraudPatterns.Add(pattern);
-        }
-        await db.SaveChangesAsync();
+        if (pattern.CreatedAt == default) pattern.CreatedAt = DateTime.UtcNow;
+        // ClickHouse ReplacingMergeTree: INSERT a new row; the engine retains the latest version by updated_at.
+        await db.Database.ExecuteSqlRawAsync($"""
+            INSERT INTO sentinel.fraud_patterns
+                (id, name, description, category, enabled, created_at, updated_at, created_by)
+            VALUES
+                ({pattern.Id}, '{Esc(pattern.Name)}', '{Esc(pattern.Description)}',
+                 '{Esc(pattern.Category)}', {(pattern.Enabled ? 1 : 0)},
+                 '{pattern.CreatedAt:yyyy-MM-dd HH:mm:ss}', '{pattern.UpdatedAt:yyyy-MM-dd HH:mm:ss}',
+                 '{Esc(pattern.CreatedBy)}')
+            """);
     }
 
     public async Task DeleteAsync(int id)
     {
-        var entity = await db.FraudPatterns.FirstOrDefaultAsync(p => p.Id == id);
-        if (entity is not null)
-        {
-            db.FraudPatterns.Remove(entity);
-            await db.SaveChangesAsync();
-        }
+        await db.Database.ExecuteSqlRawAsync(
+            $"ALTER TABLE sentinel.fraud_patterns DELETE WHERE id = {id}");
     }
+
+    private static string Esc(string? s) => (s ?? "").Replace("'", "\\'").Replace("\\", "\\\\");
 
     public async Task EnsureTableAsync()
     {

@@ -9,48 +9,47 @@ public class ClickHouseEvidenceSourceStore(SentinelClickHouseContext db, ILogger
     : IEvidenceSourceStore
 {
     public async Task<List<EvidenceSource>> GetAllAsync() =>
-        await db.EvidenceSources.OrderBy(e => e.Id).ToListAsync();
+        await db.EvidenceSources
+            .FromSqlRaw("SELECT * FROM sentinel.evidence_sources FINAL ORDER BY id")
+            .ToListAsync();
 
     public async Task<List<EvidenceSource>> GetEnabledAsync() =>
-        await db.EvidenceSources.Where(e => e.Enabled).OrderBy(e => e.Id).ToListAsync();
+        await db.EvidenceSources
+            .FromSqlRaw("SELECT * FROM sentinel.evidence_sources FINAL WHERE enabled = 1 ORDER BY id")
+            .ToListAsync();
 
     public async Task<EvidenceSource?> GetByIdAsync(int id) =>
-        await db.EvidenceSources.FirstOrDefaultAsync(e => e.Id == id);
+        await db.EvidenceSources
+            .FromSqlRaw($"SELECT * FROM sentinel.evidence_sources FINAL WHERE id = {id}")
+            .FirstOrDefaultAsync();
 
     public async Task UpsertAsync(EvidenceSource source)
     {
         source.UpdatedAt = DateTime.UtcNow;
-        var existing = await db.EvidenceSources.FirstOrDefaultAsync(e => e.Id == source.Id);
-        if (existing is not null)
-        {
-            existing.Name = source.Name;
-            existing.EvidenceDatabase = source.EvidenceDatabase;
-            existing.LipilaMerchantIds = source.LipilaMerchantIds;
-            existing.LipilaPartnerId = source.LipilaPartnerId;
-            existing.JoinMappings = source.JoinMappings;
-            existing.TableDescriptions = source.TableDescriptions;
-            existing.EvidenceChecks = source.EvidenceChecks;
-            existing.Notes = source.Notes;
-            existing.Enabled = source.Enabled;
-            existing.UpdatedAt = source.UpdatedAt;
-            existing.CreatedBy = source.CreatedBy;
-        }
-        else
-        {
-            db.EvidenceSources.Add(source);
-        }
-        await db.SaveChangesAsync();
+        if (source.CreatedAt == default) source.CreatedAt = DateTime.UtcNow;
+        await db.Database.ExecuteSqlRawAsync($"""
+            INSERT INTO sentinel.evidence_sources
+                (id, name, evidence_database, lipila_merchant_ids, lipila_partner_id,
+                 join_mappings, table_descriptions, evidence_checks, notes,
+                 enabled, created_at, updated_at, created_by)
+            VALUES
+                ({source.Id}, '{Esc(source.Name)}', '{Esc(source.EvidenceDatabase)}',
+                 '{Esc(source.LipilaMerchantIds)}', {source.LipilaPartnerId},
+                 '{Esc(source.JoinMappings)}', '{Esc(source.TableDescriptions)}',
+                 '{Esc(source.EvidenceChecks)}', '{Esc(source.Notes)}',
+                 {(source.Enabled ? 1 : 0)},
+                 '{source.CreatedAt:yyyy-MM-dd HH:mm:ss}', '{source.UpdatedAt:yyyy-MM-dd HH:mm:ss}',
+                 '{Esc(source.CreatedBy)}')
+            """);
     }
 
     public async Task DeleteAsync(int id)
     {
-        var entity = await db.EvidenceSources.FirstOrDefaultAsync(e => e.Id == id);
-        if (entity is not null)
-        {
-            db.EvidenceSources.Remove(entity);
-            await db.SaveChangesAsync();
-        }
+        await db.Database.ExecuteSqlRawAsync(
+            $"ALTER TABLE sentinel.evidence_sources DELETE WHERE id = {id}");
     }
+
+    private static string Esc(string? s) => (s ?? "").Replace("'", "\\'").Replace("\\", "\\\\");
 
     public async Task EnsureTableAsync()
     {
