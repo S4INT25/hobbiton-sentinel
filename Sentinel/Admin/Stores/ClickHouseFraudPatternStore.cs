@@ -22,6 +22,20 @@ public class ClickHouseFraudPatternStore(SentinelClickHouseContext db, ILogger<C
             .FromSqlRaw("SELECT * FROM sentinel.fraud_patterns FINAL WHERE enabled = 1 ORDER BY id")
             .ToListAsync();
 
+    public async Task<List<FraudPatternEntity>> GetEnabledForWorkflowAsync(string workflowId) =>
+        await db.FraudPatterns
+            .FromSqlRaw(
+                "SELECT * FROM sentinel.fraud_patterns FINAL WHERE enabled = 1 AND (workflow_id = '' OR workflow_id = {0}) ORDER BY id",
+                workflowId ?? "")
+            .ToListAsync();
+
+    public async Task<List<FraudPatternEntity>> GetByWorkflowAsync(string workflowId) =>
+        await db.FraudPatterns
+            .FromSqlRaw(
+                "SELECT * FROM sentinel.fraud_patterns FINAL WHERE workflow_id = {0} ORDER BY id",
+                workflowId ?? "")
+            .ToListAsync();
+
     public async Task<FraudPatternEntity?> GetByIdAsync(int id) =>
         await db.FraudPatterns
             .FromSqlRaw($"SELECT * FROM sentinel.fraud_patterns FINAL WHERE id = {id}")
@@ -34,10 +48,11 @@ public class ClickHouseFraudPatternStore(SentinelClickHouseContext db, ILogger<C
         // ClickHouse ReplacingMergeTree: INSERT a new row; the engine retains the latest version by updated_at.
         await db.Database.ExecuteSqlRawAsync($"""
             INSERT INTO sentinel.fraud_patterns
-                (id, name, description, category, enabled, created_at, updated_at, created_by)
+                (id, name, description, category, enabled, workflow_id, created_at, updated_at, created_by)
             VALUES
                 ({pattern.Id}, '{Esc(pattern.Name)}', '{Esc(pattern.Description)}',
                  '{Esc(pattern.Category)}', {(pattern.Enabled ? 1 : 0)},
+                 '{Esc(pattern.WorkflowId ?? "")}',
                  '{pattern.CreatedAt:yyyy-MM-dd HH:mm:ss}', '{pattern.UpdatedAt:yyyy-MM-dd HH:mm:ss}',
                  '{Esc(pattern.CreatedBy)}')
             """);
@@ -62,6 +77,7 @@ public class ClickHouseFraudPatternStore(SentinelClickHouseContext db, ILogger<C
                     description String,
                     category String DEFAULT 'TransactionAnomaly',
                     enabled UInt8 DEFAULT 1,
+                    workflow_id String DEFAULT '',
                     created_at DateTime DEFAULT now(),
                     updated_at DateTime DEFAULT now(),
                     created_by String DEFAULT 'system'
@@ -90,7 +106,8 @@ public class ClickHouseFraudPatternStore(SentinelClickHouseContext db, ILogger<C
                 Description = p.Description,
                 Category = p.Category.ToString(),
                 Enabled = p.EnabledByDefault,
-                CreatedBy = "system"
+                CreatedBy = "system",
+                WorkflowId = WorkflowDefaults.FraudRunWorkflowId
             });
             await db.SaveChangesAsync();
             db.ChangeTracker.Clear();

@@ -18,6 +18,20 @@ public class ClickHouseEvidenceSourceStore(SentinelClickHouseContext db, ILogger
             .FromSqlRaw("SELECT * FROM sentinel.evidence_sources FINAL WHERE enabled = 1 ORDER BY id")
             .ToListAsync();
 
+    public async Task<List<EvidenceSource>> GetEnabledForWorkflowAsync(string workflowId) =>
+        await db.EvidenceSources
+            .FromSqlRaw(
+                "SELECT * FROM sentinel.evidence_sources FINAL WHERE enabled = 1 AND (workflow_id = '' OR workflow_id = {0}) ORDER BY id",
+                workflowId ?? "")
+            .ToListAsync();
+
+    public async Task<List<EvidenceSource>> GetByWorkflowAsync(string workflowId) =>
+        await db.EvidenceSources
+            .FromSqlRaw(
+                "SELECT * FROM sentinel.evidence_sources FINAL WHERE workflow_id = {0} ORDER BY id",
+                workflowId ?? "")
+            .ToListAsync();
+
     public async Task<EvidenceSource?> GetByIdAsync(int id) =>
         await db.EvidenceSources
             .FromSqlRaw($"SELECT * FROM sentinel.evidence_sources FINAL WHERE id = {id}")
@@ -31,12 +45,13 @@ public class ClickHouseEvidenceSourceStore(SentinelClickHouseContext db, ILogger
             INSERT INTO sentinel.evidence_sources
                 (id, name, evidence_database, lipila_merchant_ids, lipila_partner_id,
                  join_mappings, table_descriptions, evidence_checks, notes,
-                 enabled, created_at, updated_at, created_by)
+                 workflow_id, enabled, created_at, updated_at, created_by)
             VALUES
                 ({source.Id}, '{Esc(source.Name)}', '{Esc(source.EvidenceDatabase)}',
                  '{Esc(source.LipilaMerchantIds)}', {source.LipilaPartnerId},
                  '{Esc(source.JoinMappings)}', '{Esc(source.TableDescriptions)}',
                  '{Esc(source.EvidenceChecks)}', '{Esc(source.Notes)}',
+                 '{Esc(source.WorkflowId ?? "")}',
                  {(source.Enabled ? 1 : 0)},
                  '{source.CreatedAt:yyyy-MM-dd HH:mm:ss}', '{source.UpdatedAt:yyyy-MM-dd HH:mm:ss}',
                  '{Esc(source.CreatedBy)}')
@@ -66,6 +81,7 @@ public class ClickHouseEvidenceSourceStore(SentinelClickHouseContext db, ILogger
                     table_descriptions String DEFAULT '',
                     evidence_checks String DEFAULT '[]',
                     notes String DEFAULT '',
+                    workflow_id String DEFAULT '',
                     enabled UInt8 DEFAULT 1,
                     created_at DateTime DEFAULT now(),
                     updated_at DateTime DEFAULT now(),
@@ -87,6 +103,7 @@ public class ClickHouseEvidenceSourceStore(SentinelClickHouseContext db, ILogger
 
         foreach (var source in EvidenceSourceDefaults.GetDefaults())
         {
+            source.WorkflowId = WorkflowDefaults.FraudRunWorkflowId;
             db.EvidenceSources.Add(source);
             await db.SaveChangesAsync();
             db.ChangeTracker.Clear();

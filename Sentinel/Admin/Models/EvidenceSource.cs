@@ -26,6 +26,9 @@ public class EvidenceSource
     /// <summary>Free text notes/context injected into the agent prompt.</summary>
     public string Notes { get; set; } = "";
 
+    /// <summary>Optional workflow scope. Null/empty = global (available to all workflows).</summary>
+    public string? WorkflowId { get; set; }
+
     public bool Enabled { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

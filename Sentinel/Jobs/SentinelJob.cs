@@ -7,23 +7,22 @@ namespace Sentinel.Jobs;
 [Queue("fraud")]
 public class SentinelJob(FraudAgent agent, IActiveRunTracker runTracker, RunCancellationRegistry cancellation, ILogger<SentinelJob> logger)
 {
-    public async Task RunAsync(string triggeredBy = "scheduler", string? runId = null, string? database = null,
-        string? customPrompt = null)
+    public async Task RunAsync(FraudAgentRunRequest request)
     {
-        var effectiveRunId = string.IsNullOrWhiteSpace(runId)
+        var effectiveRunId = string.IsNullOrWhiteSpace(request.RunId)
             ? DateTime.UtcNow.ToString("yyyyMMddHHmmssfff")
-            : runId;
+            : request.RunId;
 
         var ct = cancellation.Register(effectiveRunId);
-        await runTracker.MarkRunningAsync(effectiveRunId, triggeredBy, DateTime.UtcNow);
+        await runTracker.MarkRunningAsync(effectiveRunId, request.TriggeredBy, DateTime.UtcNow);
 
         logger.LogInformation("Fraud detector job started at {Time} (triggered by: {TriggeredBy})",
-            DateTime.UtcNow, triggeredBy);
+            DateTime.UtcNow, request.TriggeredBy);
 
         try
         {
             ct.ThrowIfCancellationRequested();
-            await agent.RunAsync(triggeredBy, effectiveRunId, database, customPrompt, ct);
+            await agent.RunAsync(request with { RunId = effectiveRunId }, ct);
             await runTracker.MarkCompletedAsync(effectiveRunId);
             logger.LogInformation("Fraud detector job completed at {Time}", DateTime.UtcNow);
         }

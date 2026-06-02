@@ -1,21 +1,21 @@
-using System.Diagnostics.CodeAnalysis;
 using Hangfire;
+using Sentinel.Agent;
 
 namespace Sentinel.Jobs;
 
 public class FraudSchedulerService(
     IRecurringJobManager jobs,
     IConfiguration config,
+    WorkflowSchedulerService workflowScheduler,
     ILogger<FraudSchedulerService> logger) : IHostedService
 {
-    [Experimental("SCME0001")]
-    public Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
         var cron = config["Sentinel:CronSchedule"] ?? Cron.Hourly();
 
         jobs.AddOrUpdate<SentinelJob>(
             recurringJobId: "fraud-detector-hourly",
-            methodCall: job => job.RunAsync("scheduler"),
+            methodCall: job => job.RunAsync(new FraudAgentRunRequest { TriggeredBy = "scheduler" }),
             cronExpression: cron,
             queue:"fraud",
             options: new RecurringJobOptions
@@ -34,7 +34,7 @@ public class FraudSchedulerService(
             });
 
         logger.LogInformation("Fraud detector scheduled: {Cron}", cron);
-        return Task.CompletedTask;
+        await workflowScheduler.RefreshSchedulesAsync(cancellationToken);
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

@@ -10,25 +10,31 @@
     <div class="flex items-center justify-between">
         <div>
             <h1 class="text-lg font-semibold text-white">Settings</h1>
-            <p class="text-xs text-gray-500 mt-0.5">Manage fraud detection patterns and system configuration</p>
+            <p class="text-xs text-gray-500 mt-0.5">Manage shared evidence source configuration</p>
         </div>
     </div>
 
     <div class="flex items-center gap-2 border-b border-gray-800 pb-3">
-        <button @onclick="() => activeTab = SettingsTab.FraudPatterns"
-                class="@TabClass(SettingsTab.FraudPatterns)">
-            Fraud Patterns
-        </button>
         <button @onclick="() => activeTab = SettingsTab.EvidenceSources"
                 class="@TabClass(SettingsTab.EvidenceSources)">
             Evidence Sources
         </button>
     </div>
 
-    @if (activeTab == SettingsTab.FraudPatterns)
+    @if (feedbackMessage is not null)
+    {
+        <div class="@FeedbackClass()" role="status">
+            <div class="flex items-center justify-between gap-3">
+                <span>@feedbackMessage</span>
+                <button @onclick="ClearFeedback" class="text-[11px] text-gray-300 hover:text-white transition-colors">Dismiss</button>
+            </div>
+        </div>
+    }
+
+    @if (showPatternSection)
     {
     <!-- Fraud Patterns Section -->
-    <div class="space-y-3">
+    <div class="space-y-3 transition-all duration-200 ease-out">
         <div class="flex items-center justify-between">
             <h2 class="text-sm font-medium text-gray-300">Fraud Patterns</h2>
             <button @onclick="ShowAddForm" class="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-all duration-200">
@@ -109,10 +115,10 @@
                             <p class="text-xs text-gray-500 mt-1 line-clamp-2 whitespace-pre-wrap">@pattern.Description.Trim()</p>
                         </div>
                         <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                            <button @onclick="() => EditPattern(pattern)" class="p-1.5 text-gray-500 hover:text-emerald-400 transition-colors" title="Edit">
+                            <button @onclick="() => EditPattern(pattern)" disabled="@IsBusy($"pattern-{pattern.Id}")" class="p-1.5 text-gray-500 hover:text-emerald-400 transition-colors disabled:opacity-40" title="Edit">
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                             </button>
-                            <button @onclick="() => TogglePattern(pattern)" class="p-1.5 text-gray-500 hover:text-amber-400 transition-colors" title="@(pattern.Enabled ? "Disable" : "Enable")">
+                            <button @onclick="() => TogglePattern(pattern)" disabled="@IsBusy($"pattern-{pattern.Id}")" class="p-1.5 text-gray-500 hover:text-amber-400 transition-colors disabled:opacity-40" title="@(pattern.Enabled ? "Disable" : "Enable")">
                                 @if (pattern.Enabled)
                                 {
                                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>
@@ -122,8 +128,18 @@
                                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
                                 }
                             </button>
-                            <button @onclick="() => DeletePattern(pattern)" class="p-1.5 text-gray-500 hover:text-rose-400 transition-colors" title="Delete">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                            <button @onclick="() => RequestDeletePattern(pattern)" disabled="@IsBusy($"pattern-{pattern.Id}")" class="p-1.5 text-gray-500 hover:text-rose-400 transition-colors disabled:opacity-40" title="Delete">
+                                @if (IsBusy($"pattern-{pattern.Id}"))
+                                {
+                                    <svg class="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
+                                        <path class="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z"></path>
+                                    </svg>
+                                }
+                                else
+                                {
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                }
                             </button>
                         </div>
                     </div>
@@ -141,7 +157,7 @@
     @if (activeTab == SettingsTab.EvidenceSources)
     {
     <!-- Evidence Sources Section -->
-    <div class="space-y-3">
+    <div class="space-y-3 transition-all duration-200 ease-out">
         <div class="flex items-center justify-between">
             <div>
                 <h2 class="text-sm font-medium text-gray-300">Evidence Sources</h2>
@@ -242,10 +258,10 @@
                             </div>
                         </div>
                         <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                            <button @onclick="() => EditSource(source)" class="p-1.5 text-gray-500 hover:text-emerald-400 transition-colors" title="Edit">
+                            <button @onclick="() => EditSource(source)" disabled="@IsBusy($"source-{source.Id}")" class="p-1.5 text-gray-500 hover:text-emerald-400 transition-colors disabled:opacity-40" title="Edit">
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                             </button>
-                            <button @onclick="() => ToggleSource(source)" class="p-1.5 text-gray-500 hover:text-amber-400 transition-colors" title="@(source.Enabled ? "Disable" : "Enable")">
+                            <button @onclick="() => ToggleSource(source)" disabled="@IsBusy($"source-{source.Id}")" class="p-1.5 text-gray-500 hover:text-amber-400 transition-colors disabled:opacity-40" title="@(source.Enabled ? "Disable" : "Enable")">
                                 @if (source.Enabled)
                                 {
                                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>
@@ -255,8 +271,18 @@
                                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
                                 }
                             </button>
-                            <button @onclick="() => DeleteSource(source)" class="p-1.5 text-gray-500 hover:text-rose-400 transition-colors" title="Delete">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                            <button @onclick="() => RequestDeleteSource(source)" disabled="@IsBusy($"source-{source.Id}")" class="p-1.5 text-gray-500 hover:text-rose-400 transition-colors disabled:opacity-40" title="Delete">
+                                @if (IsBusy($"source-{source.Id}"))
+                                {
+                                    <svg class="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
+                                        <path class="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z"></path>
+                                    </svg>
+                                }
+                                else
+                                {
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                }
                             </button>
                         </div>
                     </div>
@@ -271,6 +297,22 @@
     }
 </div>
 
+@if (showDeleteDialog)
+{
+    <div class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="w-full max-w-md border border-gray-800 bg-gray-900 rounded-xl p-4 space-y-3 shadow-2xl transition-all duration-200">
+            <h3 class="text-sm font-semibold text-white">Confirm delete</h3>
+            <p class="text-xs text-gray-400">Delete <span class="text-gray-200">@deleteTargetName</span>? This action cannot be undone.</p>
+            <div class="flex items-center justify-end gap-2 pt-1">
+                <button @onclick="CloseDeleteDialog" class="px-3 py-1.5 text-xs text-gray-400 hover:text-white transition-colors">Cancel</button>
+                <button @onclick="ConfirmDeleteAsync" disabled="@deleteInProgress" class="px-3 py-1.5 text-xs font-medium bg-rose-600 hover:bg-rose-500 text-white rounded-md transition-all duration-200 disabled:opacity-50">
+                    @(deleteInProgress ? "Deleting…" : "Delete")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private enum SettingsTab
     {
@@ -278,7 +320,8 @@
         EvidenceSources
     }
 
-    private SettingsTab activeTab = SettingsTab.FraudPatterns;
+    private SettingsTab activeTab = SettingsTab.EvidenceSources;
+    private bool showPatternSection;
 
     // --- Fraud Patterns ---
     private List<FraudPatternEntity> patterns = [];
@@ -294,6 +337,14 @@
     private bool showSourceForm;
     private bool isEditingSource;
     private bool savingSource;
+    private string? feedbackMessage;
+    private string feedbackKind = "success";
+    private readonly HashSet<string> busyActionKeys = [];
+    private bool showDeleteDialog;
+    private bool deleteInProgress;
+    private string deleteTargetType = "";
+    private int deleteTargetId;
+    private string deleteTargetName = "";
 
     private static readonly string[] Categories =
     [
@@ -308,7 +359,6 @@
 
     protected override async Task OnInitializedAsync()
     {
-        patterns = await PatternStore.GetAllAsync();
         sources = await SourceStore.GetAllAsync();
     }
 
@@ -354,22 +404,39 @@
             await PatternStore.UpsertAsync(editPattern);
             patterns = await PatternStore.GetAllAsync();
             showForm = false;
+            SetFeedback(isEditing ? "Fraud pattern updated." : "Fraud pattern created.");
+        }
+        catch (Exception ex)
+        {
+            SetFeedback($"Failed to save fraud pattern: {ex.Message}", "error");
         }
         finally { saving = false; }
     }
 
     private async Task TogglePattern(FraudPatternEntity pattern)
     {
-        pattern.Enabled = !pattern.Enabled;
-        await PatternStore.UpsertAsync(pattern);
-        patterns = await PatternStore.GetAllAsync();
+        var key = $"pattern-{pattern.Id}";
+        if (!busyActionKeys.Add(key)) return;
+        try
+        {
+            pattern.Enabled = !pattern.Enabled;
+            await PatternStore.UpsertAsync(pattern);
+            patterns = await PatternStore.GetAllAsync();
+            SetFeedback($"Fraud pattern {(pattern.Enabled ? "enabled" : "disabled")}.");
+        }
+        catch (Exception ex)
+        {
+            pattern.Enabled = !pattern.Enabled;
+            SetFeedback($"Failed to update fraud pattern: {ex.Message}", "error");
+        }
+        finally
+        {
+            busyActionKeys.Remove(key);
+        }
     }
 
-    private async Task DeletePattern(FraudPatternEntity pattern)
-    {
-        await PatternStore.DeleteAsync(pattern.Id);
-        patterns = await PatternStore.GetAllAsync();
-    }
+    private void RequestDeletePattern(FraudPatternEntity pattern) =>
+        OpenDeleteDialog("pattern", pattern.Id, pattern.Name);
 
     private void ShowAddSourceForm()
     {
@@ -417,27 +484,115 @@
             await SourceStore.UpsertAsync(editSource);
             sources = await SourceStore.GetAllAsync();
             showSourceForm = false;
+            SetFeedback(isEditingSource ? "Evidence source updated." : "Evidence source created.");
+        }
+        catch (Exception ex)
+        {
+            SetFeedback($"Failed to save evidence source: {ex.Message}", "error");
         }
         finally { savingSource = false; }
     }
 
     private async Task ToggleSource(EvidenceSource source)
     {
-        source.Enabled = !source.Enabled;
-        await SourceStore.UpsertAsync(source);
-        sources = await SourceStore.GetAllAsync();
+        var key = $"source-{source.Id}";
+        if (!busyActionKeys.Add(key)) return;
+        try
+        {
+            source.Enabled = !source.Enabled;
+            await SourceStore.UpsertAsync(source);
+            sources = await SourceStore.GetAllAsync();
+            SetFeedback($"Evidence source {(source.Enabled ? "enabled" : "disabled")}.");
+        }
+        catch (Exception ex)
+        {
+            source.Enabled = !source.Enabled;
+            SetFeedback($"Failed to update evidence source: {ex.Message}", "error");
+        }
+        finally
+        {
+            busyActionKeys.Remove(key);
+        }
     }
 
-    private async Task DeleteSource(EvidenceSource source)
+    private void RequestDeleteSource(EvidenceSource source) =>
+        OpenDeleteDialog("source", source.Id, source.Name);
+
+    private async Task ConfirmDeleteAsync()
     {
-        await SourceStore.DeleteAsync(source.Id);
-        sources = await SourceStore.GetAllAsync();
+        deleteInProgress = true;
+        var keyPrefix = deleteTargetType == "pattern" ? "pattern" : "source";
+        var key = $"{keyPrefix}-{deleteTargetId}";
+        busyActionKeys.Add(key);
+        try
+        {
+            if (deleteTargetType == "pattern")
+            {
+                await PatternStore.DeleteAsync(deleteTargetId);
+                patterns = await PatternStore.GetAllAsync();
+                SetFeedback("Fraud pattern deleted.");
+            }
+            else
+            {
+                await SourceStore.DeleteAsync(deleteTargetId);
+                sources = await SourceStore.GetAllAsync();
+                SetFeedback("Evidence source deleted.");
+            }
+
+            showDeleteDialog = false;
+            deleteTargetType = "";
+            deleteTargetId = 0;
+            deleteTargetName = "";
+        }
+        catch (Exception ex)
+        {
+            SetFeedback($"Delete failed: {ex.Message}", "error");
+        }
+        finally
+        {
+            deleteInProgress = false;
+            busyActionKeys.Remove(key);
+        }
     }
 
     private string TabClass(SettingsTab tab) =>
         tab == activeTab
             ? "px-3 py-1.5 text-xs font-medium rounded-md bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 transition-all duration-200"
             : "px-3 py-1.5 text-xs font-medium rounded-md bg-gray-800 text-gray-400 border border-gray-700 hover:border-gray-600 hover:text-white transition-all duration-200";
+
+    private bool IsBusy(string key) => busyActionKeys.Contains(key);
+
+    private void OpenDeleteDialog(string type, int id, string name)
+    {
+        deleteTargetType = type;
+        deleteTargetId = id;
+        deleteTargetName = name;
+        showDeleteDialog = true;
+    }
+
+    private void CloseDeleteDialog()
+    {
+        if (deleteInProgress) return;
+        showDeleteDialog = false;
+        deleteTargetType = "";
+        deleteTargetId = 0;
+        deleteTargetName = "";
+    }
+
+    private void SetFeedback(string message, string kind = "success")
+    {
+        feedbackMessage = message;
+        feedbackKind = kind;
+    }
+
+    private void ClearFeedback() => feedbackMessage = null;
+
+    private string FeedbackClass() => feedbackKind switch
+    {
+        "error" => "rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-300",
+        "info" => "rounded-lg border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-300",
+        _ => "rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300"
+    };
 
     private string CategoryFilterClass(string? cat) =>
         cat == selectedCategory

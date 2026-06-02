@@ -86,6 +86,7 @@ try
         builder.Services.AddSingleton<IAuditLogStore, InMemoryAuditLogStore>();
         builder.Services.AddSingleton<IFraudPatternStore, InMemoryFraudPatternStore>();
         builder.Services.AddSingleton<IEvidenceSourceStore, InMemoryEvidenceSourceStore>();
+        builder.Services.AddSingleton<IWorkflowStore, InMemoryWorkflowStore>();
         builder.Services.AddFusionCache();
         builder.Services.AddHangfire(config => config.UseInMemoryStorage());
     }
@@ -105,6 +106,7 @@ try
         builder.Services.AddScoped<IAuditLogStore, AuditLogStore>();
         builder.Services.AddScoped<IFraudPatternStore, ClickHouseFraudPatternStore>();
         builder.Services.AddScoped<IEvidenceSourceStore, ClickHouseEvidenceSourceStore>();
+        builder.Services.AddScoped<IWorkflowStore, ClickHouseWorkflowStore>();
 
         // L2 distributed cache — Redis as persistent cache storage
         builder.Services.AddStackExchangeRedisCache(o => o.Configuration = redisConnectionString!);
@@ -128,7 +130,9 @@ try
 
     builder.Services.AddScoped<FraudAgent>();
     builder.Services.AddScoped<SentinelJob>();
+    builder.Services.AddScoped<WorkflowExecutionJob>();
     builder.Services.AddScoped<AnalyticsAgent>();
+    builder.Services.AddSingleton<WorkflowSchedulerService>();
     builder.Services.AddSingleton<AnalyticsQueryWorker>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<AnalyticsQueryWorker>());
     builder.Services.AddHostedService<FraudSchedulerService>();
@@ -177,6 +181,9 @@ try
         var evidenceStore = scope.ServiceProvider.GetRequiredService<IEvidenceSourceStore>();
         await evidenceStore.EnsureTableAsync();
         await evidenceStore.SeedDefaultsAsync();
+        var workflowStore = scope.ServiceProvider.GetRequiredService<IWorkflowStore>();
+        await workflowStore.EnsureTableAsync();
+        await workflowStore.SeedDefaultsAsync();
     }
     else
     {
@@ -184,6 +191,8 @@ try
         await patternStore.SeedDefaultsAsync();
         var evidenceStore = app.Services.GetRequiredService<IEvidenceSourceStore>();
         await evidenceStore.SeedDefaultsAsync();
+        var workflowStore = app.Services.GetRequiredService<IWorkflowStore>();
+        await workflowStore.SeedDefaultsAsync();
     }
 
     await SeedAdminUser(app);

@@ -18,6 +18,16 @@
         </div>
     </div>
 
+    @if (feedbackMessage is not null)
+    {
+        <div class="@FeedbackClass()" role="status">
+            <div class="flex items-center justify-between gap-3">
+                <span>@feedbackMessage</span>
+                <button @onclick="ClearFeedback" class="text-[11px] text-gray-300 hover:text-white transition-colors">Dismiss</button>
+            </div>
+        </div>
+    }
+
     <div class="border border-gray-800 rounded-lg overflow-hidden">
         <div class="overflow-x-auto">
         <table class="w-full text-sm min-w-[640px]">
@@ -45,7 +55,9 @@
                         <td class="px-4 py-2.5">
                             <div class="flex items-center gap-2">
                                 <a href="/admin/cases/@c.Id" class="text-xs text-emerald-400 hover:text-emerald-300 transition-colors">View</a>
-                                <button @onclick="() => DeleteCase(c.Id)" class="text-xs text-gray-600 hover:text-rose-400 transition-colors">Delete</button>
+                                <button @onclick="() => RequestDeleteCase(c)" disabled="@IsBusy($"case-{c.Id}")" class="text-xs text-gray-600 hover:text-rose-400 transition-colors disabled:opacity-40">
+                                    @(IsBusy($"case-{c.Id}") ? "Deleting…" : "Delete")
+                                </button>
                             </div>
                         </td>
                     </tr>
@@ -70,6 +82,22 @@
     }
 </div>
 
+@if (showDeleteDialog)
+{
+    <div class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="w-full max-w-md border border-gray-800 bg-gray-900 rounded-xl p-4 space-y-3 shadow-2xl transition-all duration-200">
+            <h3 class="text-sm font-semibold text-white">Confirm delete</h3>
+            <p class="text-xs text-gray-400">Delete case <span class="text-gray-200 font-mono">@deleteTargetName</span>? This action cannot be undone.</p>
+            <div class="flex items-center justify-end gap-2 pt-1">
+                <button @onclick="CloseDeleteDialog" class="px-3 py-1.5 text-xs text-gray-400 hover:text-white transition-colors">Cancel</button>
+                <button @onclick="ConfirmDeleteCaseAsync" disabled="@deleteInProgress" class="px-3 py-1.5 text-xs font-medium bg-rose-600 hover:bg-rose-500 text-white rounded-md transition-all duration-200 disabled:opacity-50">
+                    @(deleteInProgress ? "Deleting…" : "Delete")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<FraudCase> cases = [];
     private int currentPage = 1;
@@ -77,6 +105,13 @@
     private string sortOrder = "newest";
     private int TotalPages => Math.Max(1, (int)Math.Ceiling((double)cases.Count / PageSize));
     private IEnumerable<FraudCase> PagedCases => cases.Skip((currentPage - 1) * PageSize).Take(PageSize);
+    private string? feedbackMessage;
+    private string feedbackKind = "success";
+    private readonly HashSet<string> busyActionKeys = [];
+    private bool showDeleteDialog;
+    private bool deleteInProgress;
+    private string deleteTargetId = "";
+    private string deleteTargetName = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -104,24 +139,58 @@
         currentPage = 1;
     }
 
-    private async Task DeleteCase(string id)
+    private void RequestDeleteCase(FraudCase c)
     {
-        await CaseStore.DeleteCaseAsync(id);
+        deleteTargetId = c.Id;
+        deleteTargetName = c.Id[..Math.Min(8, c.Id.Length)];
+        showDeleteDialog = true;
+    }
 
-        var authState = await AuthState.GetAuthenticationStateAsync();
-        var user = authState.User;
-        await AuditStore.LogAsync(new AuditLog
+    private void CloseDeleteDialog()
+    {
+        if (deleteInProgress) return;
+        showDeleteDialog = false;
+        deleteTargetId = "";
+        deleteTargetName = "";
+    }
+
+    private async Task ConfirmDeleteCaseAsync()
+    {
+        var key = $"case-{deleteTargetId}";
+        if (!busyActionKeys.Add(key)) return;
+        deleteInProgress = true;
+        try
         {
-            UserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
-            Username = user.Identity?.Name ?? "unknown",
-            Action = "delete",
-            ResourceType = "case",
-            ResourceId = id,
-            Details = "Case deleted by admin",
-            IpAddress = ""
-        });
+            await CaseStore.DeleteCaseAsync(deleteTargetId);
 
-        await LoadCases();
+            var authState = await AuthState.GetAuthenticationStateAsync();
+            var user = authState.User;
+            await AuditStore.LogAsync(new AuditLog
+            {
+                UserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+                Username = user.Identity?.Name ?? "unknown",
+                Action = "delete",
+                ResourceType = "case",
+                ResourceId = deleteTargetId,
+                Details = "Case deleted by admin",
+                IpAddress = ""
+            });
+
+            await LoadCases();
+            SetFeedback("Case deleted.");
+            showDeleteDialog = false;
+            deleteTargetId = "";
+            deleteTargetName = "";
+        }
+        catch (Exception ex)
+        {
+            SetFeedback($"Failed to delete case: {ex.Message}", "error");
+        }
+        finally
+        {
+            deleteInProgress = false;
+            busyActionKeys.Remove(key);
+        }
     }
 
     private static string SeverityClasses(string severity) => severity switch
@@ -134,4 +203,21 @@
 
     private void PrevPage() { if (currentPage > 1) currentPage--; }
     private void NextPage() { if (currentPage < TotalPages) currentPage++; }
+
+    private bool IsBusy(string key) => busyActionKeys.Contains(key);
+
+    private void SetFeedback(string message, string kind = "success")
+    {
+        feedbackMessage = message;
+        feedbackKind = kind;
+    }
+
+    private void ClearFeedback() => feedbackMessage = null;
+
+    private string FeedbackClass() => feedbackKind switch
+    {
+        "error" => "rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-300",
+        "info" => "rounded-lg border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-300",
+        _ => "rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300"
+    };
 }

@@ -27,6 +27,18 @@ public class CaseStore(IFusionCache cache, ILogger<CaseStore> logger) : ICaseSto
             }).ToList();
     }
 
+    public async Task<List<FraudCase>> GetOpenCasesForWorkflowAsync(string? workflowId)
+    {
+        var all = await LoadAsync();
+        return all.Values
+            .Where(c => c.Status != "resolved" &&
+                        (string.IsNullOrEmpty(workflowId) || c.WorkflowId == workflowId))
+            .OrderByDescending(c => c.Severity switch
+            {
+                "critical" => 4, "high" => 3, "medium" => 2, _ => 1
+            }).ToList();
+    }
+
     public async Task<FraudCase> SaveCaseAsync(FraudCase fraudCase)
     {
         fraudCase.LastSeen = DateTime.UtcNow;
@@ -83,9 +95,14 @@ public class CaseStore(IFusionCache cache, ILogger<CaseStore> logger) : ICaseSto
     }
 
     /// <summary>Returns a compact summary of all open cases for the LLM system prompt.</summary>
-    public async Task<string> GetOpenCasesSummaryAsync()
+    public async Task<string> GetOpenCasesSummaryAsync() =>
+        await GetOpenCasesSummaryForWorkflowAsync(null);
+
+    public async Task<string> GetOpenCasesSummaryForWorkflowAsync(string? workflowId)
     {
-        var cases = await GetOpenCasesAsync();
+        var cases = string.IsNullOrEmpty(workflowId)
+            ? await GetOpenCasesAsync()
+            : await GetOpenCasesForWorkflowAsync(workflowId);
         if (cases.Count == 0) return "No open cases.";
 
         var sb = new System.Text.StringBuilder();

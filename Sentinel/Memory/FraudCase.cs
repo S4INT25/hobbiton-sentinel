@@ -18,6 +18,9 @@ public class FraudCase
     public List<string> FollowUpQueries { get; set; } = []; // SQL queries to run next time
     public string Notes { get; set; } = string.Empty;       // LLM analyst notes
     public string? Resolution { get; set; }
+
+    /// <summary>The workflow that created this case. Null = legacy/global.</summary>
+    public string? WorkflowId { get; set; }
 }
 
 public class CaseEvidence

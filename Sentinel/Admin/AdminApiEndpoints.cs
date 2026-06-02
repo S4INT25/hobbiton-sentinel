@@ -103,7 +103,7 @@ public static class AdminApiEndpoints
         {
             var username = ctx.User.Identity?.Name ?? "unknown";
             Hangfire.BackgroundJob.Enqueue<Jobs.SentinelJob>(
-                j => j.RunAsync($"manual:{username}"));
+                j => j.RunAsync(new Sentinel.Agent.FraudAgentRunRequest { TriggeredBy = $"manual:{username}" }));
             await AuditAction(audit, ctx, "trigger_run", "run", "", $"Manual trigger by {username}");
             return Results.Accepted();
         });

@@ -167,7 +167,7 @@
         {
             var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
             await RunTracker.MarkQueuedAsync(runId, "manual:runs_page", DateTime.UtcNow);
-            Hangfire.BackgroundJob.Enqueue<Sentinel.Jobs.SentinelJob>(j => j.RunAsync("manual:runs_page", runId));
+            Hangfire.BackgroundJob.Enqueue<Sentinel.Jobs.SentinelJob>(j => j.RunAsync(new Sentinel.Agent.FraudAgentRunRequest { TriggeredBy = "manual:runs_page", RunId = runId }));
             activeRunId = runId;
             activeRunStatus = "queued";
             activeRunTriggeredBy = "manual:runs_page";

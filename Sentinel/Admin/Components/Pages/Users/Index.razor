@@ -14,6 +14,16 @@
         </button>
     </div>
 
+    @if (feedbackMessage is not null)
+    {
+        <div class="@FeedbackClass()" role="status">
+            <div class="flex items-center justify-between gap-3">
+                <span>@feedbackMessage</span>
+                <button @onclick="ClearFeedback" class="text-[11px] text-gray-300 hover:text-white transition-colors">Dismiss</button>
+            </div>
+        </div>
+    }
+
     @if (showAdd)
     {
         <div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
@@ -39,7 +49,9 @@
                 </div>
                 <div class="col-span-2 flex justify-end gap-2">
                     <button type="button" @onclick="() => showAdd = false" class="px-3 py-1.5 text-xs text-gray-400 hover:text-white">Cancel</button>
-                    <button @onclick="CreateUser" class="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-md">Create</button>
+                    <button @onclick="CreateUser" disabled="@creatingUser" class="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-md disabled:opacity-50">
+                        @(creatingUser ? "Creating…" : "Create")
+                    </button>
                 </div>
             </div>
         </div>
@@ -83,7 +95,9 @@
                         <td class="px-4 py-2.5">
                             @if (u.Username != currentUsername)
                             {
-                                <button @onclick="() => DeleteUser(u.Id)" class="text-xs text-gray-600 hover:text-rose-400 transition-colors">Delete</button>
+                                <button @onclick="() => RequestDeleteUser(u)" disabled="@IsBusy($"user-{u.Id}")" class="text-xs text-gray-600 hover:text-rose-400 transition-colors disabled:opacity-40">
+                                    @(IsBusy($"user-{u.Id}") ? "Deleting…" : "Delete")
+                                </button>
                             }
                         </td>
                     </tr>
@@ -103,6 +117,22 @@
     }
 </div>
 
+@if (showDeleteDialog)
+{
+    <div class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="w-full max-w-md border border-gray-800 bg-gray-900 rounded-xl p-4 space-y-3 shadow-2xl transition-all duration-200">
+            <h3 class="text-sm font-semibold text-white">Confirm delete</h3>
+            <p class="text-xs text-gray-400">Delete user <span class="text-gray-200">@deleteTargetName</span>? This action cannot be undone.</p>
+            <div class="flex items-center justify-end gap-2 pt-1">
+                <button @onclick="CloseDeleteDialog" class="px-3 py-1.5 text-xs text-gray-400 hover:text-white transition-colors">Cancel</button>
+                <button @onclick="ConfirmDeleteUserAsync" disabled="@deleteInProgress" class="px-3 py-1.5 text-xs font-medium bg-rose-600 hover:bg-rose-500 text-white rounded-md transition-all duration-200 disabled:opacity-50">
+                    @(deleteInProgress ? "Deleting…" : "Delete")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<AdminUser> users = [];
     private bool showAdd;
@@ -115,6 +145,14 @@
     private const int PageSize = 15;
     private int TotalPages => Math.Max(1, (int)Math.Ceiling((double)users.Count / PageSize));
     private IEnumerable<AdminUser> PagedUsers => users.Skip((currentPage - 1) * PageSize).Take(PageSize);
+    private bool creatingUser;
+    private string? feedbackMessage;
+    private string feedbackKind = "success";
+    private readonly HashSet<string> busyActionKeys = [];
+    private bool showDeleteDialog;
+    private bool deleteInProgress;
+    private string deleteTargetId = "";
+    private string deleteTargetName = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -127,58 +165,108 @@
     private async Task CreateUser()
     {
         if (string.IsNullOrWhiteSpace(newUsername) || string.IsNullOrWhiteSpace(newPassword))
+        {
+            SetFeedback("Username and password are required.", "error");
             return;
+        }
 
-        var authState = await AuthState.GetAuthenticationStateAsync();
-        var user = authState.User;
-
-        var newUser = new AdminUser
+        creatingUser = true;
+        try
         {
-            Username = newUsername,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword),
-            DisplayName = newDisplayName,
-            Role = newRole
-        };
+            var authState = await AuthState.GetAuthenticationStateAsync();
+            var user = authState.User;
 
-        await UserStore.SaveAsync(newUser);
-        await AuditStore.LogAsync(new AuditLog
+            var newUser = new AdminUser
+            {
+                Username = newUsername,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword),
+                DisplayName = newDisplayName,
+                Role = newRole
+            };
+
+            await UserStore.SaveAsync(newUser);
+            await AuditStore.LogAsync(new AuditLog
+            {
+                UserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+                Username = user.Identity?.Name ?? "unknown",
+                Action = "create",
+                ResourceType = "user",
+                ResourceId = newUser.Id,
+                Details = $"Created user: {newUsername} ({newRole})",
+                IpAddress = ""
+            });
+
+            newUsername = "";
+            newPassword = "";
+            newDisplayName = "";
+            newRole = "analyst";
+            showAdd = false;
+            users = await UserStore.GetAllAsync();
+            currentPage = Math.Min(currentPage, TotalPages);
+            SetFeedback("User created.");
+        }
+        catch (Exception ex)
         {
-            UserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
-            Username = user.Identity?.Name ?? "unknown",
-            Action = "create",
-            ResourceType = "user",
-            ResourceId = newUser.Id,
-            Details = $"Created user: {newUsername} ({newRole})",
-            IpAddress = ""
-        });
-
-        newUsername = "";
-        newPassword = "";
-        newDisplayName = "";
-        newRole = "analyst";
-        showAdd = false;
-        users = await UserStore.GetAllAsync();
-        currentPage = Math.Min(currentPage, TotalPages);
+            SetFeedback($"Failed to create user: {ex.Message}", "error");
+        }
+        finally
+        {
+            creatingUser = false;
+        }
     }
 
-    private async Task DeleteUser(string userId)
+    private void RequestDeleteUser(AdminUser user)
     {
-        var authState = await AuthState.GetAuthenticationStateAsync();
-        var user = authState.User;
+        deleteTargetId = user.Id;
+        deleteTargetName = user.Username;
+        showDeleteDialog = true;
+    }
 
-        await UserStore.DeleteAsync(userId);
-        await AuditStore.LogAsync(new AuditLog
+    private void CloseDeleteDialog()
+    {
+        if (deleteInProgress) return;
+        showDeleteDialog = false;
+        deleteTargetId = "";
+        deleteTargetName = "";
+    }
+
+    private async Task ConfirmDeleteUserAsync()
+    {
+        var key = $"user-{deleteTargetId}";
+        if (!busyActionKeys.Add(key)) return;
+        deleteInProgress = true;
+        try
         {
-            UserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
-            Username = user.Identity?.Name ?? "unknown",
-            Action = "delete",
-            ResourceType = "user",
-            ResourceId = userId,
-            IpAddress = ""
-        });
+            var authState = await AuthState.GetAuthenticationStateAsync();
+            var user = authState.User;
 
-        users = await UserStore.GetAllAsync();
-        currentPage = Math.Min(currentPage, TotalPages);
+            await UserStore.DeleteAsync(deleteTargetId);
+            await AuditStore.LogAsync(new AuditLog
+            {
+                UserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+                Username = user.Identity?.Name ?? "unknown",
+                Action = "delete",
+                ResourceType = "user",
+                ResourceId = deleteTargetId,
+                IpAddress = ""
+            });
+
+            users = await UserStore.GetAllAsync();
+            currentPage = Math.Min(currentPage, TotalPages);
+            SetFeedback("User deleted.");
+            showDeleteDialog = false;
+            deleteTargetId = "";
+            deleteTargetName = "";
+        }
+        catch (Exception ex)
+        {
+            SetFeedback($"Failed to delete user: {ex.Message}", "error");
+        }
+        finally
+        {
+            deleteInProgress = false;
+            busyActionKeys.Remove(key);
+        }
     }
 
     private void PrevPage()
@@ -190,4 +278,21 @@
     {
         if (currentPage < TotalPages) currentPage++;
     }
+
+    private bool IsBusy(string key) => busyActionKeys.Contains(key);
+
+    private void SetFeedback(string message, string kind = "success")
+    {
+        feedbackMessage = message;
+        feedbackKind = kind;
+    }
+
+    private void ClearFeedback() => feedbackMessage = null;
+
+    private string FeedbackClass() => feedbackKind switch
+    {
+        "error" => "rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-300",
+        "info" => "rounded-lg border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-300",
+        _ => "rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300"
+    };
 }

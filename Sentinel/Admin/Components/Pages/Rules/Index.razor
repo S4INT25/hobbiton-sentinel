@@ -15,6 +15,16 @@
         </button>
     </div>
 
+    @if (feedbackMessage is not null)
+    {
+        <div class="@FeedbackClass()" role="status">
+            <div class="flex items-center justify-between gap-3">
+                <span>@feedbackMessage</span>
+                <button @onclick="ClearFeedback" class="text-[11px] text-gray-300 hover:text-white transition-colors">Dismiss</button>
+            </div>
+        </div>
+    }
+
     @if (showAdd)
     {
         <div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50 space-y-3">
@@ -56,7 +66,9 @@
                 </div>
                 <div class="col-span-2 flex justify-end gap-2">
                     <button type="button" @onclick="() => showAdd = false" class="px-3 py-1.5 text-xs text-gray-400 hover:text-white">Cancel</button>
-                    <button type="submit" class="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-md">Save</button>
+                    <button type="submit" disabled="@savingRule" class="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-md disabled:opacity-50">
+                        @(savingRule ? "Saving…" : "Save")
+                    </button>
                 </div>
             </EditForm>
         </div>
@@ -102,7 +114,9 @@
                         <td class="px-4 py-2.5 text-xs font-mono text-gray-500">@rule.HitCount</td>
                         <td class="px-4 py-2.5 text-xs text-gray-500">@rule.CreatedAt.ToString("MMM dd")</td>
                         <td class="px-4 py-2.5">
-                            <button @onclick="() => DeleteRule(rule.Id)" class="text-xs text-gray-600 hover:text-rose-400 transition-colors">Delete</button>
+                            <button @onclick="() => RequestDeleteRule(rule)" disabled="@IsBusy($"rule-{rule.Id}")" class="text-xs text-gray-600 hover:text-rose-400 transition-colors disabled:opacity-40">
+                                @(IsBusy($"rule-{rule.Id}") ? "Deleting…" : "Delete")
+                            </button>
                         </td>
                     </tr>
                 }
@@ -125,6 +139,22 @@
     }
 </div>
 
+@if (showDeleteDialog)
+{
+    <div class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="w-full max-w-md border border-gray-800 bg-gray-900 rounded-xl p-4 space-y-3 shadow-2xl transition-all duration-200">
+            <h3 class="text-sm font-semibold text-white">Confirm delete</h3>
+            <p class="text-xs text-gray-400">Delete rule <span class="text-gray-200 font-mono">@deleteTargetSummary</span>? This action cannot be undone.</p>
+            <div class="flex items-center justify-end gap-2 pt-1">
+                <button @onclick="CloseDeleteDialog" class="px-3 py-1.5 text-xs text-gray-400 hover:text-white transition-colors">Cancel</button>
+                <button @onclick="ConfirmDeleteRuleAsync" disabled="@deleteInProgress" class="px-3 py-1.5 text-xs font-medium bg-rose-600 hover:bg-rose-500 text-white rounded-md transition-all duration-200 disabled:opacity-50">
+                    @(deleteInProgress ? "Deleting…" : "Delete")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<FeedbackRule> rules = [];
     private bool showAdd;
@@ -133,6 +163,14 @@
     private const int PageSize = 15;
     private int TotalPages => Math.Max(1, (int)Math.Ceiling((double)rules.Count / PageSize));
     private IEnumerable<FeedbackRule> PagedRules => rules.Skip((currentPage - 1) * PageSize).Take(PageSize);
+    private bool savingRule;
+    private string? feedbackMessage;
+    private string feedbackKind = "success";
+    private readonly HashSet<string> busyActionKeys = [];
+    private bool showDeleteDialog;
+    private bool deleteInProgress;
+    private string deleteTargetId = "";
+    private string deleteTargetSummary = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -142,44 +180,91 @@
 
     private async Task CreateRule()
     {
-        var authState = await AuthState.GetAuthenticationStateAsync();
-        var user = authState.User;
-        newRule.CreatedBy = user.Identity?.Name ?? "unknown";
-        await RuleStore.SaveAsync(newRule);
-        await AuditStore.LogAsync(new AuditLog
+        savingRule = true;
+        try
         {
-            UserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
-            Username = user.Identity?.Name ?? "unknown",
-            Action = "create",
-            ResourceType = "rule",
-            ResourceId = newRule.Id,
-            Details = $"{newRule.RuleType}: {newRule.MatchValue} → {newRule.Action}",
-            IpAddress = HttpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? ""
-        });
+            var authState = await AuthState.GetAuthenticationStateAsync();
+            var user = authState.User;
+            newRule.CreatedBy = user.Identity?.Name ?? "unknown";
+            await RuleStore.SaveAsync(newRule);
+            await AuditStore.LogAsync(new AuditLog
+            {
+                UserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+                Username = user.Identity?.Name ?? "unknown",
+                Action = "create",
+                ResourceType = "rule",
+                ResourceId = newRule.Id,
+                Details = $"{newRule.RuleType}: {newRule.MatchValue} → {newRule.Action}",
+                IpAddress = HttpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? ""
+            });
 
-        newRule = new() { RuleType = "ip", Action = "suppress", Scope = "global" };
-        showAdd = false;
-        rules = await RuleStore.GetAllRulesAsync();
-        currentPage = Math.Min(currentPage, TotalPages);
+            newRule = new() { RuleType = "ip", Action = "suppress", Scope = "global" };
+            showAdd = false;
+            rules = await RuleStore.GetAllRulesAsync();
+            currentPage = Math.Min(currentPage, TotalPages);
+            SetFeedback("Rule created.");
+        }
+        catch (Exception ex)
+        {
+            SetFeedback($"Failed to create rule: {ex.Message}", "error");
+        }
+        finally
+        {
+            savingRule = false;
+        }
     }
 
-    private async Task DeleteRule(string ruleId)
+    private void RequestDeleteRule(FeedbackRule rule)
     {
-        var authState = await AuthState.GetAuthenticationStateAsync();
-        var user = authState.User;
-        await RuleStore.DeleteAsync(ruleId);
-        await AuditStore.LogAsync(new AuditLog
-        {
-            UserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
-            Username = user.Identity?.Name ?? "unknown",
-            Action = "delete",
-            ResourceType = "rule",
-            ResourceId = ruleId,
-            IpAddress = HttpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? ""
-        });
+        deleteTargetId = rule.Id;
+        deleteTargetSummary = $"{rule.RuleType}:{rule.MatchValue}";
+        showDeleteDialog = true;
+    }
 
-        rules = await RuleStore.GetAllRulesAsync();
-        currentPage = Math.Min(currentPage, TotalPages);
+    private void CloseDeleteDialog()
+    {
+        if (deleteInProgress) return;
+        showDeleteDialog = false;
+        deleteTargetId = "";
+        deleteTargetSummary = "";
+    }
+
+    private async Task ConfirmDeleteRuleAsync()
+    {
+        var key = $"rule-{deleteTargetId}";
+        if (!busyActionKeys.Add(key)) return;
+        deleteInProgress = true;
+        try
+        {
+            var authState = await AuthState.GetAuthenticationStateAsync();
+            var user = authState.User;
+            await RuleStore.DeleteAsync(deleteTargetId);
+            await AuditStore.LogAsync(new AuditLog
+            {
+                UserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+                Username = user.Identity?.Name ?? "unknown",
+                Action = "delete",
+                ResourceType = "rule",
+                ResourceId = deleteTargetId,
+                IpAddress = HttpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? ""
+            });
+
+            rules = await RuleStore.GetAllRulesAsync();
+            currentPage = Math.Min(currentPage, TotalPages);
+            SetFeedback("Rule deleted.");
+            showDeleteDialog = false;
+            deleteTargetId = "";
+            deleteTargetSummary = "";
+        }
+        catch (Exception ex)
+        {
+            SetFeedback($"Failed to delete rule: {ex.Message}", "error");
+        }
+        finally
+        {
+            deleteInProgress = false;
+            busyActionKeys.Remove(key);
+        }
     }
 
     private void PrevPage()
@@ -191,4 +276,21 @@
     {
         if (currentPage < TotalPages) currentPage++;
     }
+
+    private bool IsBusy(string key) => busyActionKeys.Contains(key);
+
+    private void SetFeedback(string message, string kind = "success")
+    {
+        feedbackMessage = message;
+        feedbackKind = kind;
+    }
+
+    private void ClearFeedback() => feedbackMessage = null;
+
+    private string FeedbackClass() => feedbackKind switch
+    {
+        "error" => "rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-300",
+        "info" => "rounded-lg border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-300",
+        _ => "rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300"
+    };
 }

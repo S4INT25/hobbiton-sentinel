@@ -15,6 +15,16 @@ public class InMemoryEvidenceSourceStore : IEvidenceSourceStore
     public Task<List<EvidenceSource>> GetEnabledAsync() =>
         Task.FromResult(_sources.Values.Where(e => e.Enabled).OrderBy(e => e.Id).ToList());
 
+    public Task<List<EvidenceSource>> GetEnabledForWorkflowAsync(string workflowId) =>
+        Task.FromResult(_sources.Values
+            .Where(e => e.Enabled && (string.IsNullOrEmpty(e.WorkflowId) || e.WorkflowId == workflowId))
+            .OrderBy(e => e.Id).ToList());
+
+    public Task<List<EvidenceSource>> GetByWorkflowAsync(string workflowId) =>
+        Task.FromResult(_sources.Values
+            .Where(e => e.WorkflowId == workflowId)
+            .OrderBy(e => e.Id).ToList());
+
     public Task<EvidenceSource?> GetByIdAsync(int id) =>
         Task.FromResult(_sources.TryGetValue(id, out var s) ? s : null);
 
@@ -39,7 +49,10 @@ public class InMemoryEvidenceSourceStore : IEvidenceSourceStore
     {
         if (!_sources.IsEmpty) return Task.CompletedTask;
         foreach (var s in EvidenceSourceDefaults.GetDefaults())
+        {
+            s.WorkflowId = WorkflowDefaults.FraudRunWorkflowId;
             _sources[s.Id] = s;
+        }
         return Task.CompletedTask;
     }
 }

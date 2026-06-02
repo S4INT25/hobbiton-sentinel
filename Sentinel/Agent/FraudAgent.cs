@@ -20,19 +20,25 @@ public class FraudAgent(
     IRunLogStore runLogStore,
     IFraudPatternStore fraudPatternStore,
     IEvidenceSourceStore evidenceSourceStore,
+    IWorkflowStore workflowStore,
     IConfiguration config,
     ILogger<FraudAgent> logger)
 {
     private string BuildSystemPrompt(string openCasesSummary, int lookbackMinutes,
         string schemaBlock, string suppressionBlock, string database, string patternsBlock,
-        string crossDbBlock)
+        string crossDbBlock, string? workflowSystemPrompt = null)
     {
         var casesContext = openCasesSummary == "No open cases."
             ? "no open cases."
             : "the following open cases from previous runs:";
 
+        // Use workflow-specific preamble if provided, otherwise default Lipila context
+        var preamble = !string.IsNullOrWhiteSpace(workflowSystemPrompt)
+            ? workflowSystemPrompt
+            : "You are a financial fraud analyst with read-only ClickHouse access to Lipila — a Zambian payment gateway (collections + disbursements via AirtelMoney/MTN). Disbursements are irreversible.";
+
         return $"""
-                You are a financial fraud analyst with read-only ClickHouse access to Lipila — a Zambian payment gateway (collections + disbursements via AirtelMoney/MTN). Disbursements are irreversible.
+                {preamble}
 
                 ## ClickHouse SQL Rules (strict)
                 Native ClickHouse only. Banned: `IIIF`, `IIF`, `NVL`, `ISNULL`, `COALESCE` (use `ifNull()`), `DATEDIFF`, `TOP`, `CHARINDEX`, `PATINDEX`, `COUNT(CASE WHEN ...)`.
@@ -100,6 +106,7 @@ public class FraudAgent(
                 sb.AppendLine($"           {line.Trim()}");
             sb.AppendLine();
         }
+
         return sb.ToString();
     }
 
@@ -110,8 +117,10 @@ public class FraudAgent(
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("## Cross-Database Evidence Sources");
         sb.AppendLine();
-        sb.AppendLine("Some Lipila merchants are part of the Hobbiton organisation and share the same ClickHouse cluster.");
-        sb.AppendLine("When investigating these merchants, you MUST cross-reference the linked database for corroboration.");
+        sb.AppendLine(
+            "Some Lipila merchants are part of the Hobbiton organisation and share the same ClickHouse cluster.");
+        sb.AppendLine(
+            "When investigating these merchants, you MUST cross-reference the linked database for corroboration.");
         sb.AppendLine("This gives you a wider view of user behaviour beyond what Lipila alone can show.");
         sb.AppendLine();
 
@@ -148,7 +157,7 @@ public class FraudAgent(
                 // Parse the JSON array into a numbered list
                 try
                 {
-                    var checks = System.Text.Json.JsonSerializer.Deserialize<List<string>>(source.EvidenceChecks);
+                    var checks = JsonSerializer.Deserialize<List<string>>(source.EvidenceChecks);
                     if (checks is not null)
                     {
                         for (var i = 0; i < checks.Count; i++)
@@ -159,6 +168,7 @@ public class FraudAgent(
                 {
                     sb.AppendLine(source.EvidenceChecks.Trim());
                 }
+
                 sb.AppendLine();
             }
 
@@ -175,32 +185,36 @@ public class FraudAgent(
         sb.AppendLine("## Rules for ALL cross-DB evidence");
         sb.AppendLine("- Use ONLY for corroboration — never as a primary detection source");
         sb.AppendLine("- Always fully qualify tables: `<database>.<table>`");
-        sb.AppendLine("- If evidence supports a Lipila finding, note \"Corroborated by <db> data\" and increase confidence");
+        sb.AppendLine(
+            "- If evidence supports a Lipila finding, note \"Corroborated by <db> data\" and increase confidence");
         sb.AppendLine("- If evidence contradicts (e.g. account has legitimate history), note it as reducing suspicion");
         sb.AppendLine("- Timing tolerance: ±5 minutes when matching transactions across databases");
-        sb.AppendLine("- Do NOT run cross-DB checks on every account — only on accounts already flagged by Lipila detection");
+        sb.AppendLine(
+            "- Do NOT run cross-DB checks on every account — only on accounts already flagged by Lipila detection");
 
         return sb.ToString();
     }
 
-    public async Task RunAsync(string triggeredBy = "scheduler", string? runId = null, string? database = null,
-        string? customPrompt = null, CancellationToken cancellationToken = default)
+    public async Task RunAsync(FraudAgentRunRequest request, CancellationToken cancellationToken = default)
     {
-        var currentRunId = string.IsNullOrWhiteSpace(runId)
+        var currentRunId = string.IsNullOrWhiteSpace(request.RunId)
             ? DateTime.UtcNow.ToString("yyyyMMddHHmmssfff")
-            : runId;
-        var effectiveDatabase = string.IsNullOrWhiteSpace(database) ? "lipila_blaze" : database.Trim();
+            : request.RunId;
+        var effectiveDatabase = string.IsNullOrWhiteSpace(request.Database) ? "lipila_blaze" : request.Database.Trim();
         var runStartedAt = DateTime.UtcNow;
         var lookback = config.GetValue("Sentinel:LookbackMinutes", 70);
         var modelName = config["DigitalOcean:ModelName"]!;
 
-        logger.LogInformation("Fraud agent run {RunId} started (triggered by: {TriggeredBy}, db: {Database}, customPrompt: {HasCustomPrompt})",
-            currentRunId, triggeredBy, effectiveDatabase, !string.IsNullOrWhiteSpace(customPrompt));
+        logger.LogInformation(
+            "Fraud agent run {RunId} started (triggered by: {TriggeredBy}, db: {Database}, customPrompt: {HasCustomPrompt})",
+            currentRunId, request.TriggeredBy, effectiveDatabase, !string.IsNullOrWhiteSpace(request.CustomPrompt));
 
         // Load open cases, schema, and feedback rules concurrently
         // Note: patternsTask and evidenceSourcesTask share a DbContext so must not overlap
-        var openCasesSummaryTask = caseStore.GetOpenCasesSummaryAsync();
-        var openCasesTask = caseStore.GetOpenCasesAsync();
+        var openCasesSummaryTask = caseStore.GetOpenCasesSummaryForWorkflowAsync(request.WorkflowId);
+        var openCasesTask = !string.IsNullOrWhiteSpace(request.WorkflowId)
+            ? caseStore.GetOpenCasesForWorkflowAsync(request.WorkflowId)
+            : caseStore.GetOpenCasesAsync();
         var schemaBlockTask = schemaLoader.GetSchemaBlockAsync(effectiveDatabase);
         var rulesTask = feedbackRuleStore.GetActiveRulesAsync();
 
@@ -210,10 +224,15 @@ public class FraudAgent(
         var openCases = await openCasesTask;
         var schemaBlock = await schemaBlockTask;
         var activeRules = await rulesTask;
-        var enabledPatterns = await fraudPatternStore.GetEnabledAsync();
-        var evidenceSources = await evidenceSourceStore.GetEnabledAsync();
+        var enabledPatterns = !string.IsNullOrWhiteSpace(request.WorkflowId)
+            ? await fraudPatternStore.GetEnabledForWorkflowAsync(request.WorkflowId)
+            : await fraudPatternStore.GetEnabledAsync();
+        var evidenceSources = !string.IsNullOrWhiteSpace(request.WorkflowId)
+            ? await evidenceSourceStore.GetEnabledForWorkflowAsync(request.WorkflowId)
+            : await evidenceSourceStore.GetEnabledAsync();
 
-        logger.LogInformation("Loaded {Count} open cases, {RuleCount} suppression rules, {EvidenceCount} evidence sources",
+        logger.LogInformation(
+            "Loaded {Count} open cases, {RuleCount} suppression rules, {EvidenceCount} evidence sources",
             openCases.Count, activeRules.Count, evidenceSources.Count);
 
         // Build suppression block from active rules
@@ -231,7 +250,17 @@ public class FraudAgent(
         // Build cross-database evidence block from store
         var crossDbBlock = BuildCrossDbBlock(evidenceSources);
 
-        var systemPrompt = BuildSystemPrompt(openCasesSummary, lookback, schemaBlock, suppressionBlock, effectiveDatabase, patternsBlock, crossDbBlock);
+        // Load workflow-specific system prompt if available
+        string? workflowSystemPrompt = null;
+        if (!string.IsNullOrWhiteSpace(request.WorkflowId))
+        {
+            var workflow = await workflowStore.GetByIdAsync(request.WorkflowId);
+            if (workflow != null && !string.IsNullOrWhiteSpace(workflow.SystemPrompt))
+                workflowSystemPrompt = workflow.SystemPrompt;
+        }
+
+        var systemPrompt = BuildSystemPrompt(openCasesSummary, lookback, schemaBlock, suppressionBlock,
+            effectiveDatabase, patternsBlock, crossDbBlock, workflowSystemPrompt);
 
         // Inject follow-up queries from open cases into the first user message
         var followUpContext = openCases.Count > 0 && openCases.Any(c => c.FollowUpQueries.Count > 0)
@@ -241,9 +270,9 @@ public class FraudAgent(
                   .SelectMany(c => c.FollowUpQueries.Select(q => $"-- Case {c.Id}: {c.Title}\n{q}")))
             : "";
 
-        var customPromptBlock = string.IsNullOrWhiteSpace(customPrompt)
+        var customPromptBlock = string.IsNullOrWhiteSpace(request.CustomPrompt)
             ? ""
-            : $"\n\nAdmin custom instructions for this run:\n{customPrompt.Trim()}";
+            : $"\n\nAdmin custom instructions for this run:\n{request.CustomPrompt.Trim()}";
 
         var messages = new List<ChatMessage>
         {
@@ -331,7 +360,7 @@ public class FraudAgent(
                         currentRunId, toolCall.FunctionName, argsPreview);
 
                     var toolStart = Stopwatch.GetTimestamp();
-                    var result = await ExecuteToolAsync(toolCall, currentRunId);
+                    var result = await ExecuteToolAsync(toolCall, currentRunId, request.WorkflowId);
                     var durationMs = (int)Stopwatch.GetElapsedTime(toolStart).TotalMilliseconds;
 
                     // Log to ClickHouse (await to prevent scope disposal issues)
@@ -346,7 +375,8 @@ public class FraudAgent(
                         DurationMs = (uint)durationMs
                     });
 
-                    logger.LogInformation("[Run:{RunId}] Tool result: {Tool} ({Ms}ms)", currentRunId, toolCall.FunctionName,
+                    logger.LogInformation("[Run:{RunId}] Tool result: {Tool} ({Ms}ms)", currentRunId,
+                        toolCall.FunctionName,
                         durationMs);
 
                     messages.Add(new ToolChatMessage(toolCall.Id, result));
@@ -380,7 +410,7 @@ public class FraudAgent(
 
             foreach (var toolCall in summaryCompletion.ToolCalls)
             {
-                var result = await ExecuteToolAsync(toolCall, currentRunId);
+                var result = await ExecuteToolAsync(toolCall, currentRunId, request.WorkflowId);
                 logger.LogInformation("Max-iteration summary tool: {Tool} → {Result}", toolCall.FunctionName, result);
                 if (toolCall.FunctionName == "send_alert")
                 {
@@ -423,11 +453,11 @@ public class FraudAgent(
             CasesResolved = 0,
             AlertsSent = (ushort)(alertSent ? 1 : 0),
             Status = iteration >= maxIterations ? "max_iterations" : "completed",
-            TriggeredBy = triggeredBy
+            TriggeredBy = request.TriggeredBy
         });
     }
 
-    private async Task<string> ExecuteToolAsync(ChatToolCall toolCall, string runId)
+    private async Task<string> ExecuteToolAsync(ChatToolCall toolCall, string runId, string? workflowId = null)
     {
         try
         {
@@ -437,7 +467,7 @@ public class FraudAgent(
             return toolCall.FunctionName switch
             {
                 "run_sql" => await ExecuteSqlAsync(root),
-                "create_case" => await CreateCaseAsync(root, runId),
+                "create_case" => await CreateCaseAsync(root, runId, workflowId),
                 "update_case" => await UpdateCaseAsync(root, runId),
                 "resolve_case" => await ResolveCaseAsync(root),
                 "send_alert" => await email.SendAsync(
@@ -491,7 +521,7 @@ public class FraudAgent(
         return string.Join("\n\n", results);
     }
 
-    private async Task<string> CreateCaseAsync(JsonElement root, string runId)
+    private async Task<string> CreateCaseAsync(JsonElement root, string runId, string? workflowId = null)
     {
         var fraudCase = new FraudCase
         {
@@ -499,7 +529,8 @@ public class FraudAgent(
             Category = root.GetProperty("category").GetString()!,
             Severity = root.GetProperty("severity").GetString()!,
             Notes = root.GetProperty("notes").GetString()!,
-            Status = "open"
+            Status = "open",
+            WorkflowId = workflowId
         };
 
         if (root.TryGetProperty("affected_entities", out var entities))

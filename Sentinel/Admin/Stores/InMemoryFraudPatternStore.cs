@@ -15,6 +15,16 @@ public class InMemoryFraudPatternStore : IFraudPatternStore
     public Task<List<FraudPatternEntity>> GetEnabledAsync() =>
         Task.FromResult(_patterns.Values.Where(p => p.Enabled).OrderBy(p => p.Id).ToList());
 
+    public Task<List<FraudPatternEntity>> GetEnabledForWorkflowAsync(string workflowId) =>
+        Task.FromResult(_patterns.Values
+            .Where(p => p.Enabled && (string.IsNullOrEmpty(p.WorkflowId) || p.WorkflowId == workflowId))
+            .OrderBy(p => p.Id).ToList());
+
+    public Task<List<FraudPatternEntity>> GetByWorkflowAsync(string workflowId) =>
+        Task.FromResult(_patterns.Values
+            .Where(p => p.WorkflowId == workflowId)
+            .OrderBy(p => p.Id).ToList());
+
     public Task<FraudPatternEntity?> GetByIdAsync(int id) =>
         Task.FromResult(_patterns.TryGetValue(id, out var p) ? p : null);
 
@@ -47,7 +57,8 @@ public class InMemoryFraudPatternStore : IFraudPatternStore
                 Description = p.Description,
                 Category = p.Category.ToString(),
                 Enabled = p.EnabledByDefault,
-                CreatedBy = "system"
+                CreatedBy = "system",
+                WorkflowId = WorkflowDefaults.FraudRunWorkflowId
             };
         }
         return Task.CompletedTask;

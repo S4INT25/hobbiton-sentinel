@@ -7,6 +7,10 @@ public class FraudPatternEntity
     public string Description { get; set; } = "";
     public string Category { get; set; } = "TransactionAnomaly";
     public bool Enabled { get; set; } = true;
+
+    /// <summary>Optional workflow scope. Null/empty = global (available to all workflows).</summary>
+    public string? WorkflowId { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public string CreatedBy { get; set; } = "system";

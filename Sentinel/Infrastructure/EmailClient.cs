@@ -15,13 +15,17 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
         TimeZoneInfo.FindSystemTimeZoneById(
             OperatingSystem.IsWindows() ? "South Africa Standard Time" : "Africa/Harare");
 
-    public async Task<string> SendAsync(string subject, string body, string severity = "watching")
+    public async Task<string> SendAsync(
+        string subject,
+        string body,
+        string severity = "watching",
+        IReadOnlyList<string>? recipients = null)
     {
         try
         {
             var from = config["Email:From"]!;
             var fromName = config["Email:FromName"] ?? "Sentinel";
-            var toEmail = config["Email:To"] ?? "security@hobbiton.co.zm";
+            var defaultRecipient = config["Email:To"] ?? "security@hobbiton.co.zm";
             var prefix = config["Email:SubjectPrefix"] ?? "[SENTINEL]";
             var host = config["Email:Smtp:Host"] ?? "smtp.gmail.com";
             var port = config.GetValue("Email:Smtp:Port", 587);
@@ -36,10 +40,17 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
                 Subject = fullSubject,
                 Body = new BodyBuilder { HtmlBody = htmlBody, TextBody = body }.ToMessageBody(),
                 Sender = new MailboxAddress(fromName, from),
-                To = { MailboxAddress.Parse(toEmail) },
                 From = { new MailboxAddress(fromName, from) }
             };
-           
+
+            var toRecipients = recipients is { Count: > 0 }
+                ? recipients
+                : [defaultRecipient];
+
+            foreach (var recipient in toRecipients)
+            {
+                message.To.Add(MailboxAddress.Parse(recipient));
+            }
 
             using var smtp = new SmtpClient();
             await smtp.ConnectAsync(host, port, SecureSocketOptions.StartTls);

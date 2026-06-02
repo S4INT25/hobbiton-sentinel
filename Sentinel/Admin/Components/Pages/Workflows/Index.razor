@@ -1,0 +1,644 @@
+@page "/admin/workflows"
+@using Hangfire
+@using Sentinel.Jobs
+@using Sentinel.Infrastructure
+@inject IWorkflowStore WorkflowStore
+@inject IRunLogStore RunLogStore
+@inject WorkflowSchedulerService WorkflowScheduler
+@inject IBackgroundJobClient BackgroundJobs
+@inject SchemaLoader SchemaLoader
+@attribute [Authorize(Policy = AuthConstants.AdminOnlyPolicy)]
+
+<PageTitle>Workflows — Sentinel</PageTitle>
+
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-lg font-semibold text-white">Workflows</h1>
+            <p class="text-xs text-gray-500 mt-0.5">Schedule automations like SQL email reports and fraud runs</p>
+        </div>
+        <button @onclick="ShowCreateForm" class="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-all duration-200">
+            Add Workflow
+        </button>
+    </div>
+
+    @if (feedbackMessage is not null)
+    {
+        <div class="@FeedbackClass()" role="status">
+            <div class="flex items-center justify-between gap-3">
+                <span>@feedbackMessage</span>
+                <button @onclick="ClearFeedback" class="text-[11px] text-gray-300 hover:text-white transition-colors">Dismiss</button>
+            </div>
+        </div>
+    }
+
+    @if (showForm)
+    {
+        <div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50 space-y-3">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Name</label>
+                    <input @bind="editWorkflow.Name" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-emerald-500 focus:outline-none transition-colors" />
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Action Type</label>
+                    <select @bind="editWorkflow.ActionType" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition-colors">
+                        <option value="@WorkflowActionTypes.SqlEmailReport">SQL Email Report</option>
+                        <option value="@WorkflowActionTypes.FraudRun">Fraud Run</option>
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-xs text-gray-400 mb-1">Description</label>
+                <textarea @bind="editWorkflow.Description" rows="2" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-emerald-500 focus:outline-none transition-colors"></textarea>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Schedule Preset</label>
+                    <select value="@editSchedulePreset" @onchange="OnEditSchedulePresetChanged" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition-colors">
+                        <option value="every-5-minutes">Every 5 minutes</option>
+                        <option value="every-15-minutes">Every 15 minutes</option>
+                        <option value="every-30-minutes">Every 30 minutes</option>
+                        <option value="hourly">Every 1 hour</option>
+                        <option value="every-2-hours">Every 2 hours</option>
+                        <option value="daily">Every day</option>
+                        <option value="weekly">Every week</option>
+                        <option value="custom-date">Custom date/time</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Cron Expression (UTC)</label>
+                    <input @bind="editWorkflow.CronExpression" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-emerald-500 focus:outline-none transition-colors font-mono text-xs" placeholder="0 */2 * * *" />
+                </div>
+            </div>
+            @if (editSchedulePreset == "custom-date")
+            {
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Custom Date/Time (UTC)</label>
+                    <input type="datetime-local" value="@editCustomDateTimeLocal" @onchange="OnEditCustomDateChanged"
+                           class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition-colors" />
+                </div>
+            }
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Target Database</label>
+                    <select @bind="editWorkflow.TargetDatabase" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition-colors">
+                        @foreach (var db in availableDatabases)
+                        {
+                            <option value="@db">@db</option>
+                        }
+                    </select>
+                </div>
+            </div>
+
+            @if (editWorkflow.ActionType == WorkflowActionTypes.SqlEmailReport)
+            {
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Email Subject</label>
+                        <input @bind="editWorkflow.EmailSubject" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-emerald-500 focus:outline-none transition-colors" />
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Recipients (comma-separated, optional)</label>
+                        <input @bind="editWorkflow.EmailRecipients" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-emerald-500 focus:outline-none transition-colors" placeholder="ops@company.com, finance@company.com" />
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Prompt (agent will generate SQL)</label>
+                    <textarea @bind="editWorkflow.CustomPrompt" rows="4"
+                              class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-emerald-500 focus:outline-none transition-colors"
+                              placeholder="Example: Send MNO float balances per partner and highlight any partner below K 20,000."></textarea>
+                </div>
+            }
+            else
+            {
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Custom Prompt (optional)</label>
+                    <textarea @bind="editWorkflow.CustomPrompt" rows="4" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-emerald-500 focus:outline-none transition-colors"></textarea>
+                </div>
+            }
+
+            <div class="flex items-center gap-2">
+                <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                    <input type="checkbox" @bind="editWorkflow.Enabled" class="rounded bg-gray-800 border-gray-700 text-emerald-500 focus:ring-emerald-500" />
+                    Enabled
+                </label>
+            </div>
+
+            <div class="flex items-center gap-2 pt-1">
+                <button @onclick="SaveWorkflowAsync" disabled="@saveInProgress"
+                        class="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-all duration-200 disabled:opacity-50">
+                    @(saveInProgress ? "Saving…" : (isEditing ? "Update" : "Create"))
+                </button>
+                <button @onclick="CancelForm" class="px-3 py-1.5 text-xs text-gray-400 hover:text-white transition-colors">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    }
+
+    <div class="space-y-2">
+        @foreach (var workflow in workflows)
+        {
+            <div class="border border-gray-800 rounded-lg p-3 bg-gray-900/30 hover:bg-gray-900/50 transition-all duration-200 group">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="text-sm font-medium text-white">@workflow.Name</span>
+                            <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">@workflow.ActionType</span>
+                            <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-500/10 text-gray-300 border border-gray-600 font-mono">@workflow.CronExpression</span>
+                            @if (!workflow.Enabled)
+                            {
+                                <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-700/40 text-gray-400 border border-gray-700">Disabled</span>
+                            }
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(workflow.Description))
+                        {
+                            <p class="text-xs text-gray-500 mt-1 whitespace-pre-wrap">@workflow.Description</p>
+                        }
+                    </div>
+                    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                        <button @onclick="() => RunNowAsync(workflow)" disabled="@IsBusy($"run-{workflow.Id}")" class="p-1.5 text-gray-500 hover:text-cyan-400 transition-colors disabled:opacity-40" title="Run now">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-5.197-3.03A1 1 0 008 9.03v6a1 1 0 001.555.832l5.197-3.03a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-6.219-8.56"/></svg>
+                        </button>
+                        @if (workflow.ActionType == WorkflowActionTypes.FraudRun)
+                        {
+                            <a href="/admin/workflows/@workflow.Id" class="p-1.5 text-gray-500 hover:text-purple-400 transition-colors" title="Configure patterns & sources">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                            </a>
+                        }
+                        <button @onclick="() => EditWorkflow(workflow)" disabled="@IsBusy($"workflow-{workflow.Id}")" class="p-1.5 text-gray-500 hover:text-emerald-400 transition-colors disabled:opacity-40" title="Edit">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                        </button>
+                        <button @onclick="() => ToggleWorkflowAsync(workflow)" disabled="@IsBusy($"workflow-{workflow.Id}")" class="p-1.5 text-gray-500 hover:text-amber-400 transition-colors disabled:opacity-40" title="@(workflow.Enabled ? "Disable" : "Enable")">
+                            @if (workflow.Enabled)
+                            {
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>
+                            }
+                            else
+                            {
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                            }
+                        </button>
+                        <button @onclick="() => RequestDelete(workflow)" disabled="@IsBusy($"workflow-{workflow.Id}")" class="p-1.5 text-gray-500 hover:text-rose-400 transition-colors disabled:opacity-40" title="Delete">
+                            @if (IsBusy($"workflow-{workflow.Id}"))
+                            {
+                                <svg class="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
+                                    <path class="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z"></path>
+                                </svg>
+                            }
+                            else
+                            {
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                            }
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+        @if (!workflows.Any())
+        {
+            <div class="text-center py-8 text-gray-600 text-xs">No workflows configured</div>
+        }
+    </div>
+
+    <div>
+        <div class="flex items-center justify-between mb-2">
+            <h2 class="text-sm font-medium text-gray-300">Recent Workflow Runs</h2>
+            <span class="text-[11px] text-gray-500">@workflowRuns.Count in last 100 runs</span>
+        </div>
+        <div class="border border-gray-800/60 rounded-xl overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm min-w-[640px]">
+                    <thead>
+                        <tr class="border-b border-gray-800/60 bg-gray-900/30">
+                            <th class="text-left px-4 py-2.5 text-[11px] font-medium text-gray-500 uppercase tracking-wider">Run</th>
+                            <th class="text-left px-4 py-2.5 text-[11px] font-medium text-gray-500 uppercase tracking-wider">Workflow</th>
+                            <th class="text-left px-4 py-2.5 text-[11px] font-medium text-gray-500 uppercase tracking-wider">Started</th>
+                            <th class="text-left px-4 py-2.5 text-[11px] font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            <th class="text-left px-4 py-2.5 text-[11px] font-medium text-gray-500 uppercase tracking-wider">Tokens</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-800/40">
+                        @foreach (var run in workflowRuns.Take(10))
+                        {
+                            <tr class="hover:bg-gray-900/40">
+                                <td class="px-4 py-2.5">
+                                    <a href="/admin/runs/@run.RunId" class="text-cyan-400 hover:text-cyan-300 font-mono text-xs transition-colors">@run.RunId[..Math.Min(12, run.RunId.Length)]</a>
+                                </td>
+                                <td class="px-4 py-2.5 text-gray-400 text-xs font-mono">@ExtractWorkflowRef(run.TriggeredBy)</td>
+                                <td class="px-4 py-2.5 text-gray-400 text-xs">@run.StartedAt.ToString("MMM dd HH:mm")</td>
+                                <td class="px-4 py-2.5">
+                                    <span class="@RunStatusClasses(run.Status)">@run.Status</span>
+                                </td>
+                                <td class="px-4 py-2.5 text-gray-300 font-mono text-xs tabular-nums">@((run.InputTokens + run.OutputTokens).ToString("N0"))</td>
+                            </tr>
+                        }
+                        @if (!workflowRuns.Any())
+                        {
+                            <tr><td colspan="5" class="px-4 py-8 text-center text-gray-600 text-xs">No workflow-triggered runs yet</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (showDeleteDialog)
+{
+    <div class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="w-full max-w-md border border-gray-800 bg-gray-900 rounded-xl p-4 space-y-3 shadow-2xl transition-all duration-200">
+            <h3 class="text-sm font-semibold text-white">Confirm delete</h3>
+            <p class="text-xs text-gray-400">Delete <span class="text-gray-200">@deleteTargetName</span>? This action cannot be undone.</p>
+            <div class="flex items-center justify-end gap-2 pt-1">
+                <button @onclick="CloseDeleteDialog" class="px-3 py-1.5 text-xs text-gray-400 hover:text-white transition-colors">Cancel</button>
+                <button @onclick="ConfirmDeleteAsync" disabled="@deleteInProgress" class="px-3 py-1.5 text-xs font-medium bg-rose-600 hover:bg-rose-500 text-white rounded-md transition-all duration-200 disabled:opacity-50">
+                    @(deleteInProgress ? "Deleting…" : "Delete")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private readonly HashSet<string> busyActionKeys = [];
+    private List<WorkflowDefinition> workflows = [];
+    private List<RunSummary> workflowRuns = [];
+    private List<string> availableDatabases = ["lipila_blaze"];
+    private WorkflowDefinition editWorkflow = new();
+    private bool showForm;
+    private bool isEditing;
+    private bool saveInProgress;
+    private string? feedbackMessage;
+    private string feedbackKind = "success";
+    private bool showDeleteDialog;
+    private bool deleteInProgress;
+    private string deleteTargetId = "";
+    private string deleteTargetName = "";
+    private string editSchedulePreset = "hourly";
+    private string? editCustomDateTimeLocal;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDatabasesAsync();
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        var workflowTask = WorkflowStore.GetAllAsync();
+        var runsTask = RunLogStore.GetRecentRunsAsync(100);
+        await Task.WhenAll(workflowTask, runsTask);
+        workflows = workflowTask.Result;
+        workflowRuns = runsTask.Result
+            .Where(r => r.TriggeredBy.StartsWith("workflow:", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(r => r.StartedAt)
+            .ToList();
+    }
+
+    private async Task LoadDatabasesAsync()
+    {
+        var dbs = await SchemaLoader.GetDatabasesAsync();
+        availableDatabases = dbs.Count > 0
+            ? dbs.OrderBy(d => d).ToList()
+            : ["lipila_blaze"];
+    }
+
+    private void ShowCreateForm()
+    {
+        editWorkflow = NewWorkflow();
+        if (availableDatabases.Count > 0)
+            editWorkflow.TargetDatabase = availableDatabases[0];
+        editSchedulePreset = DetectSchedulePreset(editWorkflow.CronExpression);
+        editCustomDateTimeLocal = BuildDateTimeLocalFromCron(editWorkflow.CronExpression);
+        isEditing = false;
+        showForm = true;
+    }
+
+    private void EditWorkflow(WorkflowDefinition workflow)
+    {
+        editWorkflow = new WorkflowDefinition
+        {
+            Id = workflow.Id,
+            Name = workflow.Name,
+            Description = workflow.Description,
+            ActionType = workflow.ActionType,
+            CronExpression = workflow.CronExpression,
+            Enabled = workflow.Enabled,
+            TargetDatabase = workflow.TargetDatabase,
+            SqlQuery = workflow.SqlQuery,
+            EmailSubject = workflow.EmailSubject,
+            EmailRecipients = workflow.EmailRecipients,
+            CustomPrompt = workflow.CustomPrompt,
+            SystemPrompt = workflow.SystemPrompt,
+            CreatedAt = workflow.CreatedAt,
+            CreatedBy = workflow.CreatedBy
+        };
+        if (!string.IsNullOrWhiteSpace(editWorkflow.TargetDatabase) &&
+            !availableDatabases.Contains(editWorkflow.TargetDatabase, StringComparer.OrdinalIgnoreCase))
+        {
+            availableDatabases.Add(editWorkflow.TargetDatabase);
+            availableDatabases = availableDatabases.OrderBy(d => d).ToList();
+        }
+        editSchedulePreset = DetectSchedulePreset(editWorkflow.CronExpression);
+        editCustomDateTimeLocal = BuildDateTimeLocalFromCron(editWorkflow.CronExpression);
+        isEditing = true;
+        showForm = true;
+    }
+
+    private void CancelForm()
+    {
+        showForm = false;
+        editWorkflow = new();
+        editSchedulePreset = "hourly";
+        editCustomDateTimeLocal = null;
+    }
+
+    private async Task SaveWorkflowAsync()
+    {
+        var validationError = Validate(editWorkflow);
+        if (validationError is not null)
+        {
+            SetFeedback(validationError, "error");
+            return;
+        }
+
+        saveInProgress = true;
+        try
+        {
+            NormalizeWorkflowForSave(editWorkflow);
+
+            if (string.IsNullOrWhiteSpace(editWorkflow.Id))
+                editWorkflow.Id = Guid.NewGuid().ToString("N");
+
+            if (string.IsNullOrWhiteSpace(editWorkflow.CreatedBy))
+                editWorkflow.CreatedBy = "admin";
+
+            await WorkflowStore.UpsertAsync(editWorkflow);
+            await WorkflowScheduler.RefreshSchedulesAsync();
+            await ReloadAsync();
+            showForm = false;
+            SetFeedback(isEditing ? "Workflow updated." : "Workflow created.");
+        }
+        catch (Exception ex)
+        {
+            SetFeedback($"Failed to save workflow: {ex.Message}", "error");
+        }
+        finally
+        {
+            saveInProgress = false;
+        }
+    }
+
+    private async Task ToggleWorkflowAsync(WorkflowDefinition workflow)
+    {
+        var key = $"workflow-{workflow.Id}";
+        if (!busyActionKeys.Add(key)) return;
+
+        try
+        {
+            workflow.Enabled = !workflow.Enabled;
+            await WorkflowStore.UpsertAsync(workflow);
+            await WorkflowScheduler.RefreshSchedulesAsync();
+            await ReloadAsync();
+            SetFeedback($"Workflow {(workflow.Enabled ? "enabled" : "disabled")}.");
+        }
+        catch (Exception ex)
+        {
+            workflow.Enabled = !workflow.Enabled;
+            SetFeedback($"Failed to update workflow: {ex.Message}", "error");
+        }
+        finally
+        {
+            busyActionKeys.Remove(key);
+        }
+    }
+
+    private async Task RunNowAsync(WorkflowDefinition workflow)
+    {
+        var key = $"run-{workflow.Id}";
+        if (!busyActionKeys.Add(key)) return;
+
+        try
+        {
+            BackgroundJobs.Enqueue<WorkflowExecutionJob>(job => job.ExecuteAsync(workflow.Id));
+            SetFeedback("Workflow queued for immediate execution.", "info");
+        }
+        catch (Exception ex)
+        {
+            SetFeedback($"Failed to queue workflow: {ex.Message}", "error");
+        }
+        finally
+        {
+            busyActionKeys.Remove(key);
+        }
+    }
+
+    private void RequestDelete(WorkflowDefinition workflow)
+    {
+        deleteTargetId = workflow.Id;
+        deleteTargetName = workflow.Name;
+        showDeleteDialog = true;
+    }
+
+    private void CloseDeleteDialog()
+    {
+        if (deleteInProgress) return;
+        showDeleteDialog = false;
+        deleteTargetId = "";
+        deleteTargetName = "";
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        if (string.IsNullOrWhiteSpace(deleteTargetId))
+            return;
+
+        var key = $"workflow-{deleteTargetId}";
+        busyActionKeys.Add(key);
+        deleteInProgress = true;
+        try
+        {
+            WorkflowScheduler.RemoveWorkflowSchedule(deleteTargetId);
+            await WorkflowStore.DeleteAsync(deleteTargetId);
+            await WorkflowScheduler.RefreshSchedulesAsync();
+            await ReloadAsync();
+            showDeleteDialog = false;
+            deleteTargetId = "";
+            deleteTargetName = "";
+            SetFeedback("Workflow deleted.");
+        }
+        catch (Exception ex)
+        {
+            SetFeedback($"Failed to delete workflow: {ex.Message}", "error");
+        }
+        finally
+        {
+            busyActionKeys.Remove(key);
+            deleteInProgress = false;
+        }
+    }
+
+    private static WorkflowDefinition NewWorkflow() => new()
+    {
+        ActionType = WorkflowActionTypes.SqlEmailReport,
+        CronExpression = "0 * * * *",
+        Enabled = true
+    };
+
+    private static string? Validate(WorkflowDefinition workflow)
+    {
+        if (string.IsNullOrWhiteSpace(workflow.Name))
+            return "Workflow name is required.";
+
+        if (!WorkflowActionTypes.All.Contains(workflow.ActionType, StringComparer.OrdinalIgnoreCase))
+            return "Invalid workflow action type.";
+
+        if (!WorkflowSchedulerService.IsValidCron(workflow.CronExpression))
+            return "Invalid cron expression.";
+
+        if (string.IsNullOrWhiteSpace(workflow.TargetDatabase))
+            return "Target database is required.";
+
+        if (workflow.ActionType == WorkflowActionTypes.SqlEmailReport &&
+            string.IsNullOrWhiteSpace(workflow.CustomPrompt))
+            return "Prompt is required for SQL Email Report workflows.";
+
+        return null;
+    }
+
+    private static void NormalizeWorkflowForSave(WorkflowDefinition workflow)
+    {
+        if (workflow.ActionType == WorkflowActionTypes.SqlEmailReport)
+            workflow.SqlQuery = "";
+    }
+
+    private void OnEditSchedulePresetChanged(ChangeEventArgs args)
+    {
+        editSchedulePreset = args.Value?.ToString() ?? "hourly";
+        if (CronPresets.TryGetValue(editSchedulePreset, out var cron))
+        {
+            editWorkflow.CronExpression = cron;
+        }
+    }
+
+    private void OnEditCustomDateChanged(ChangeEventArgs args)
+    {
+        editCustomDateTimeLocal = args.Value?.ToString();
+        var customCron = BuildCustomDateCron(editCustomDateTimeLocal);
+        if (!string.IsNullOrWhiteSpace(customCron))
+            editWorkflow.CronExpression = customCron;
+    }
+
+    private bool IsBusy(string key) => busyActionKeys.Contains(key);
+
+    private void SetFeedback(string message, string kind = "success")
+    {
+        feedbackMessage = message;
+        feedbackKind = kind;
+    }
+
+    private void ClearFeedback() => feedbackMessage = null;
+
+    private string FeedbackClass() => feedbackKind switch
+    {
+        "error" => "rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-300",
+        "info" => "rounded-lg border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-300",
+        _ => "rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300"
+    };
+
+    private static string ExtractWorkflowRef(string triggeredBy) =>
+        triggeredBy.StartsWith("workflow:", StringComparison.OrdinalIgnoreCase)
+            ? triggeredBy["workflow:".Length..]
+            : triggeredBy;
+
+    private static string RunStatusClasses(string status)
+    {
+        return status switch
+        {
+            "completed" => "inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-emerald-500/10 text-emerald-400",
+            "error" or "failed" => "inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-rose-500/10 text-rose-400",
+            "stopped" => "inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-orange-500/10 text-orange-400",
+            "running" => "inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-blue-500/10 text-blue-400",
+            "queued" => "inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-gray-500/10 text-gray-400",
+            _ => "inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-amber-500/10 text-amber-400"
+        };
+    }
+
+    private static readonly Dictionary<string, string> CronPresets = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["every-5-minutes"] = "*/5 * * * *",
+        ["every-15-minutes"] = "*/15 * * * *",
+        ["every-30-minutes"] = "*/30 * * * *",
+        ["hourly"] = "0 * * * *",
+        ["every-2-hours"] = "0 */2 * * *",
+        ["daily"] = "0 0 * * *",
+        ["weekly"] = "0 0 * * 1"
+    };
+
+    private static string DetectSchedulePreset(string? cron)
+    {
+        if (string.IsNullOrWhiteSpace(cron))
+            return "hourly";
+
+        foreach (var preset in CronPresets)
+        {
+            if (string.Equals(preset.Value, cron.Trim(), StringComparison.OrdinalIgnoreCase))
+                return preset.Key;
+        }
+
+        return IsCustomDateCron(cron) ? "custom-date" : "hourly";
+    }
+
+    private static bool IsCustomDateCron(string cron)
+    {
+        var parts = cron.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return parts.Length == 5 &&
+               int.TryParse(parts[0], out _) &&
+               int.TryParse(parts[1], out _) &&
+               int.TryParse(parts[2], out _) &&
+               int.TryParse(parts[3], out _) &&
+               parts[4] == "*";
+    }
+
+    private static string? BuildDateTimeLocalFromCron(string? cron)
+    {
+        if (string.IsNullOrWhiteSpace(cron))
+            return null;
+
+        var parts = cron.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length != 5 ||
+            !int.TryParse(parts[0], out var minute) ||
+            !int.TryParse(parts[1], out var hour) ||
+            !int.TryParse(parts[2], out var day) ||
+            !int.TryParse(parts[3], out var month) ||
+            month is < 1 or > 12 ||
+            day < 1)
+        {
+            return null;
+        }
+
+        var now = DateTime.UtcNow;
+        var maxDay = DateTime.DaysInMonth(now.Year, month);
+        if (day > maxDay || hour is < 0 or > 23 || minute is < 0 or > 59)
+            return null;
+
+        var date = new DateTime(now.Year, month, day, hour, minute, 0, DateTimeKind.Utc);
+        return date.ToString("yyyy-MM-ddTHH:mm");
+    }
+
+    private static string? BuildCustomDateCron(string? dateTimeLocal)
+    {
+        if (string.IsNullOrWhiteSpace(dateTimeLocal))
+            return null;
+
+        if (!DateTime.TryParse(dateTimeLocal, out var selected))
+            return null;
+
+        return $"{selected.Minute} {selected.Hour} {selected.Day} {selected.Month} *";
+    }
+}
