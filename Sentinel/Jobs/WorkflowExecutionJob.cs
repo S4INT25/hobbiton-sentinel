@@ -2,13 +2,13 @@ using Hangfire;
 using Sentinel.Agent;
 using Sentinel.Admin.Models;
 using Sentinel.Admin.Stores;
-using Sentinel.Infrastructure;
 
 namespace Sentinel.Jobs;
 
 [Queue("default")]
 public class WorkflowExecutionJob(
     IWorkflowStore workflowStore,
+    IRunLogStore runLogStore,
     AnalyticsAgent analyticsAgent,
     IBackgroundJobClient backgroundJobs,
     ILogger<WorkflowExecutionJob> logger)
@@ -55,6 +55,8 @@ public class WorkflowExecutionJob(
 
     private async Task ExecuteEmailReportAsync(WorkflowDefinition workflow)
     {
+        var runId = Guid.NewGuid().ToString("N")[..16];
+        var startedAt = DateTime.UtcNow;
         var database = string.IsNullOrWhiteSpace(workflow.TargetDatabase)
             ? "lipila_blaze"
             : workflow.TargetDatabase;
@@ -73,11 +75,28 @@ public class WorkflowExecutionJob(
 
         var result = await analyticsAgent.AskAsync(prompt, database, mode: "autonomous");
 
+        // Save run summary so it appears in the UI
+        await runLogStore.SaveSummaryAsync(new RunSummary
+        {
+            RunId = runId,
+            StartedAt = startedAt,
+            FinishedAt = DateTime.UtcNow,
+            Iterations = 0,
+            InputTokens = (uint)result.InputTokens,
+            OutputTokens = (uint)result.OutputTokens,
+            CasesCreated = 0,
+            CasesResolved = 0,
+            AlertsSent = (ushort)(result.ReportSent ? 1 : 0),
+            Status = result.Success ? "completed" : "error",
+            TriggeredBy = $"workflow:{workflow.Id}"
+        });
+
         if (!result.Success)
             throw new InvalidOperationException(
                 $"Workflow {workflow.Id} analysis failed: {result.Error ?? "unknown error"}");
 
-        logger.LogInformation("Workflow {WorkflowId} completed. ReportSent={Sent}", workflow.Id, result.ReportSent);
+        logger.LogInformation("Workflow {WorkflowId} run {RunId} completed. ReportSent={Sent}",
+            workflow.Id, runId, result.ReportSent);
     }
 
     private static IReadOnlyList<string>? ParseRecipients(string recipients)
