@@ -10,7 +10,6 @@ namespace Sentinel.Jobs;
 public class WorkflowExecutionJob(
     IWorkflowStore workflowStore,
     AnalyticsAgent analyticsAgent,
-    EmailClient emailClient,
     IBackgroundJobClient backgroundJobs,
     ILogger<WorkflowExecutionJob> logger)
 {
@@ -63,77 +62,22 @@ public class WorkflowExecutionJob(
         if (string.IsNullOrWhiteSpace(workflow.CustomPrompt))
             throw new InvalidOperationException($"Workflow {workflow.Id} has no prompt configured.");
 
-        // Run in autonomous mode — agent will use send_report tool to email directly,
-        // but we also send a fallback if it doesn't.
-        var result = await analyticsAgent.AskAsync(
-            workflow.CustomPrompt, database, mode: "autonomous");
+        // Build prompt with recipient info so the agent uses send_report correctly
+        var recipients = ParseRecipients(workflow.EmailRecipients);
+        var recipientHint = recipients is { Count: > 0 }
+            ? $"\n\nSend the report to: {string.Join(", ", recipients)}"
+            : "";
+
+        var prompt = workflow.CustomPrompt + recipientHint +
+            "\n\nYou MUST call the send_report tool with your findings.";
+
+        var result = await analyticsAgent.AskAsync(prompt, database, mode: "autonomous");
 
         if (!result.Success)
             throw new InvalidOperationException(
                 $"Workflow {workflow.Id} analysis failed: {result.Error ?? "unknown error"}");
 
-        // If the agent already sent a report via send_report tool, we're done.
-        // Otherwise, send the fallback formatted email.
-        if (result.Explanation?.Contains("Report sent") == true)
-            return;
-
-        var body = BuildAgentReportBody(workflow, database, result);
-
-        var subject = string.IsNullOrWhiteSpace(workflow.EmailSubject)
-            ? $"Workflow Report: {workflow.Name}"
-            : workflow.EmailSubject;
-
-        await emailClient.SendAsync(subject, body, "watching", ParseRecipients(workflow.EmailRecipients));
-    }
-
-    private static string BuildAgentReportBody(WorkflowDefinition workflow, string database, AnalyticsResponse result)
-    {
-        var firstResult = result.Results.FirstOrDefault();
-        var sql = firstResult?.Sql ?? result.Sql ?? "(agent returned no SQL)";
-        var rows = firstResult?.Rows ?? result.Rows;
-        var columns = firstResult?.Columns ?? result.Columns;
-        var rowCount = firstResult?.RowCount ?? result.RowCount;
-
-        var lines = new List<string>
-        {
-            $"# {workflow.Name}",
-            "",
-            workflow.Description,
-            "",
-            $"**Database:** `{database}`",
-            $"**Rows:** {rowCount}",
-            ""
-        };
-
-        if (!string.IsNullOrWhiteSpace(result.Explanation))
-        {
-            lines.Add("## Summary");
-            lines.Add(result.Explanation!);
-            lines.Add("");
-        }
-
-        lines.Add("## Generated SQL");
-        lines.Add("```sql");
-        lines.Add(sql);
-        lines.Add("```");
-        lines.Add("");
-
-        if (columns.Count > 0 && rows.Count > 0)
-        {
-            lines.Add("## Sample Rows");
-            lines.Add("| " + string.Join(" | ", columns) + " |");
-            lines.Add("|" + string.Join("|", columns.Select(_ => "---")) + "|");
-
-            foreach (var row in rows.Take(20))
-            {
-                var values = columns
-                    .Select(c => row.TryGetValue(c, out var v) ? v.Replace("|", "\\|") : "")
-                    .ToList();
-                lines.Add("| " + string.Join(" | ", values) + " |");
-            }
-        }
-
-        return Truncate(string.Join('\n', lines), 15000);
+        logger.LogInformation("Workflow {WorkflowId} completed. ReportSent={Sent}", workflow.Id, result.ReportSent);
     }
 
     private static IReadOnlyList<string>? ParseRecipients(string recipients)
@@ -148,7 +92,4 @@ public class WorkflowExecutionJob(
 
         return parsed.Count == 0 ? null : parsed;
     }
-
-    private static string Truncate(string value, int limit) =>
-        value.Length <= limit ? value : value[..limit] + "\n... (truncated)";
 }

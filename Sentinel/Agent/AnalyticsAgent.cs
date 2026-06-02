@@ -197,7 +197,7 @@ public class AnalyticsAgent(
                 "get_schema" => await HandleGetSchema(root),
                 "describe_table" => await HandleDescribeTable(root),
                 "emit_chart" => HandleEmitChart(root, chartResults, onEvent).Result,
-                "send_report" => await HandleSendReport(root, onEvent),
+                "send_report" => await HandleSendReport(root, onEvent, response),
                 "ask_user" => HandleAskUser(root, isInteractive),
                 _ => $"Unknown tool: {toolCall.FunctionName}"
             };
@@ -344,7 +344,7 @@ public class AnalyticsAgent(
         return $"Chart emitted: {title} ({chartType}, {rows.Count} data points)";
     }
 
-    private async Task<string> HandleSendReport(JsonElement root, Func<AnalyticsStreamEvent, Task>? onEvent)
+    private async Task<string> HandleSendReport(JsonElement root, Func<AnalyticsStreamEvent, Task>? onEvent, AnalyticsResponse response)
     {
         var template = root.TryGetProperty("template", out var tp) ? tp.GetString() ?? "custom" : "custom";
         var subject = root.TryGetProperty("subject", out var s) ? s.GetString() ?? "" : "";
@@ -368,6 +368,7 @@ public class AnalyticsAgent(
         await Emit(onEvent, "sending_report", $"Sending {template} report: {subject}");
 
         var result = await emailClient.SendAsync(subject, body, severity, recipients);
+        response.ReportSent = true;
         await Emit(onEvent, "report_sent", result);
         return result;
     }
@@ -376,16 +377,13 @@ public class AnalyticsAgent(
     {
         if (!isInteractive)
         {
-            // In autonomous mode, return a default so the agent continues
             var question = root.TryGetProperty("question", out var q) ? q.GetString() ?? "" : "";
             return $"Running in autonomous mode — cannot ask user. Make a reasonable decision and proceed. Original question was: {question}";
         }
-
-        // In interactive mode, the caller will detect this and pause the loop
+        
         return "Question sent to user. Waiting for response.";
     }
-
-    // ── System prompt ──────────────────────────────────────────────────────────
+    
 
     private static string BuildSystemPrompt(string database, string schema, bool isInteractive)
     {
@@ -468,8 +466,7 @@ public class AnalyticsAgent(
                  Be concise but substantive. Don't repeat the query — focus on what the data means.
                  """;
     }
-
-    // ── Shared utilities (carried from previous implementation) ─────────────────
+    
 
     private async Task<string?> ValidateCategoricalFiltersAsync(string sql, string database)
     {
@@ -594,7 +591,7 @@ public class AnalyticsAgent(
         result.StartsWith("Error:") ||
         result.StartsWith("Query failed:");
 
-    internal static TableData ParseQueryResult(string json)
+    private static TableData ParseQueryResult(string json)
     {
         var data = new TableData();
         try
@@ -630,8 +627,7 @@ public class AnalyticsAgent(
         return data;
     }
 
-    private static async Task Emit(Func<AnalyticsStreamEvent, Task>? onEvent,
-        string type, string message, string? sql = null)
+    private static async Task Emit(Func<AnalyticsStreamEvent, Task>? onEvent, string type, string message, string? sql = null)
     {
         if (onEvent != null)
             await onEvent(new AnalyticsStreamEvent
@@ -671,6 +667,8 @@ public class AnalyticsResponse
     public string? PendingQuestion { get; set; }
     /// <summary>Choices offered by the agent (if any).</summary>
     public List<string>? PendingChoices { get; set; }
+    /// <summary>True if the agent already sent an email via the send_report tool.</summary>
+    public bool ReportSent { get; set; }
 }
 
 public class QueryResult
