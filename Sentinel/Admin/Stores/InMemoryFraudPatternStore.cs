@@ -43,11 +43,14 @@ public class InMemoryFraudPatternStore : IFraudPatternStore
         return Task.CompletedTask;
     }
 
-    public Task EnsureTableAsync() => Task.CompletedTask;
-
     public Task SeedDefaultsAsync()
     {
-        if (!_patterns.IsEmpty) return Task.CompletedTask;
+        if (!_patterns.IsEmpty)
+        {
+            foreach (var pattern in _patterns.Values.Where(p => string.IsNullOrWhiteSpace(p.WorkflowId)))
+                pattern.WorkflowId = WorkflowDefaults.FraudRunWorkflowId;
+            return Task.CompletedTask;
+        }
         foreach (var p in FraudPatternRegistry.GetDefaults())
         {
             _patterns[p.Id] = new FraudPatternEntity

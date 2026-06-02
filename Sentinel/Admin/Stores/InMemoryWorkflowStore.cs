@@ -54,8 +54,6 @@ public class InMemoryWorkflowStore : IWorkflowStore
         return Task.CompletedTask;
     }
 
-    public Task EnsureTableAsync() => Task.CompletedTask;
-
     public Task SeedDefaultsAsync()
     {
         foreach (var workflow in WorkflowDefaults.All)
@@ -78,7 +76,6 @@ public class InMemoryWorkflowStore : IWorkflowStore
                 CronExpression = workflow.CronExpression,
                 Enabled = workflow.Enabled,
                 TargetDatabase = workflow.TargetDatabase,
-                SqlQuery = workflow.SqlQuery,
                 EmailSubject = workflow.EmailSubject,
                 EmailRecipients = workflow.EmailRecipients,
                 CustomPrompt = workflow.CustomPrompt,
@@ -96,17 +93,15 @@ public class InMemoryWorkflowStore : IWorkflowStore
 
     private static void NormalizeAndValidate(WorkflowDefinition workflow)
     {
-        workflow.ActionType = (workflow.ActionType ?? "").Trim().ToLowerInvariant();
+        workflow.ActionType = WorkflowActionTypes.Normalize(workflow.ActionType);
 
         if (!WorkflowActionTypes.All.Contains(workflow.ActionType, StringComparer.OrdinalIgnoreCase))
             throw new InvalidOperationException($"Unsupported workflow action type: {workflow.ActionType}");
 
-        if (workflow.ActionType == WorkflowActionTypes.SqlEmailReport)
+        if (workflow.ActionType == WorkflowActionTypes.EmailReport)
         {
-            // Prompt-only policy for email report workflows.
-            workflow.SqlQuery = "";
             if (workflow.Enabled && !workflow.IsDeleted && string.IsNullOrWhiteSpace(workflow.CustomPrompt))
-                throw new InvalidOperationException("Prompt is required for SQL Email Report workflows.");
+                throw new InvalidOperationException("Prompt is required for Email Report workflows.");
         }
     }
 }

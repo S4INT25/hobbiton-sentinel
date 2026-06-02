@@ -5,11 +5,10 @@ public class WorkflowDefinition
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
-    public string ActionType { get; set; } = WorkflowActionTypes.SqlEmailReport;
+    public string ActionType { get; set; } = WorkflowActionTypes.EmailReport;
     public string CronExpression { get; set; } = "0 * * * *";
     public bool Enabled { get; set; } = true;
     public string TargetDatabase { get; set; } = "";
-    public string SqlQuery { get; set; } = "";
     public string EmailSubject { get; set; } = "";
     public string EmailRecipients { get; set; } = "";
     public string CustomPrompt { get; set; } = "";
@@ -25,8 +24,15 @@ public class WorkflowDefinition
 
 public static class WorkflowActionTypes
 {
-    public const string SqlEmailReport = "sql_email_report";
+    public const string EmailReport = "email_report";
+    public const string LegacySqlEmailReport = "sql_email_report";
     public const string FraudRun = "fraud_run";
 
-    public static readonly IReadOnlyList<string> All = [SqlEmailReport, FraudRun];
+    public static readonly IReadOnlyList<string> All = [EmailReport, FraudRun];
+
+    public static string Normalize(string? actionType)
+    {
+        var normalized = (actionType ?? "").Trim().ToLowerInvariant();
+        return normalized == LegacySqlEmailReport ? EmailReport : normalized;
+    }
 }

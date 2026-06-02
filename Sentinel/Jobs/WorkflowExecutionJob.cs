@@ -29,11 +29,11 @@ public class WorkflowExecutionJob(
             return;
         }
 
-        var actionType = workflow.ActionType.Trim().ToLowerInvariant();
+        var actionType = WorkflowActionTypes.Normalize(workflow.ActionType);
 
-        if (actionType == WorkflowActionTypes.SqlEmailReport)
+        if (actionType == WorkflowActionTypes.EmailReport)
         {
-            await ExecuteSqlEmailReportAsync(workflow);
+            await ExecuteEmailReportAsync(workflow);
             return;
         }
 
@@ -54,7 +54,7 @@ public class WorkflowExecutionJob(
         throw new InvalidOperationException($"Unsupported workflow action type: {workflow.ActionType}");
     }
 
-    private async Task ExecuteSqlEmailReportAsync(WorkflowDefinition workflow)
+    private async Task ExecuteEmailReportAsync(WorkflowDefinition workflow)
     {
         var database = string.IsNullOrWhiteSpace(workflow.TargetDatabase)
             ? "lipila_blaze"
@@ -65,7 +65,8 @@ public class WorkflowExecutionJob(
 
         var result = await analyticsAgent.AskAsync(workflow.CustomPrompt, database);
         if (!result.Success)
-            throw new InvalidOperationException($"Workflow {workflow.Id} analysis failed: {result.Error ?? "unknown error"}");
+            throw new InvalidOperationException(
+                $"Workflow {workflow.Id} analysis failed: {result.Error ?? "unknown error"}");
 
         var body = BuildAgentReportBody(workflow, database, result);
 

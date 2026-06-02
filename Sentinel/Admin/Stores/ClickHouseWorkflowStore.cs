@@ -8,17 +8,22 @@ public class ClickHouseWorkflowStore(SentinelClickHouseContext db, ILogger<Click
 {
     public async Task<List<WorkflowDefinition>> GetAllAsync() =>
         await db.Workflows
-            .FromSqlRaw("SELECT * FROM sentinel.workflows FINAL WHERE is_deleted = 0 ORDER BY updated_at DESC")
+            .AsNoTracking()
+            .Where(w => !w.IsDeleted)
+            .OrderByDescending(w => w.UpdatedAt)
             .ToListAsync();
 
     public async Task<List<WorkflowDefinition>> GetEnabledAsync() =>
         await db.Workflows
-            .FromSqlRaw("SELECT * FROM sentinel.workflows FINAL WHERE is_deleted = 0 AND enabled = 1 ORDER BY updated_at DESC")
+            .AsNoTracking()
+            .Where(w => !w.IsDeleted && w.Enabled)
+            .OrderByDescending(w => w.UpdatedAt)
             .ToListAsync();
 
     public async Task<WorkflowDefinition?> GetByIdAsync(string id) =>
         await db.Workflows
-            .FromSqlRaw($"SELECT * FROM sentinel.workflows FINAL WHERE id = '{Esc(id)}' AND is_deleted = 0")
+            .AsNoTracking()
+            .Where(w => w.Id == id && !w.IsDeleted)
             .FirstOrDefaultAsync();
 
     public async Task UpsertAsync(WorkflowDefinition workflow)
@@ -32,66 +37,22 @@ public class ClickHouseWorkflowStore(SentinelClickHouseContext db, ILogger<Click
         if (workflow.CreatedAt == default)
             workflow.CreatedAt = DateTime.UtcNow;
 
-        await db.Database.ExecuteSqlRawAsync($"""
-            INSERT INTO sentinel.workflows
-                (id, name, description, action_type, cron_expression, enabled,
-                 target_database, sql_query, email_subject, email_recipients,
-                 custom_prompt, system_prompt, is_deleted, created_at, updated_at, created_by)
-            VALUES
-                ('{Esc(workflow.Id)}', '{Esc(workflow.Name)}', '{Esc(workflow.Description)}',
-                 '{Esc(workflow.ActionType)}', '{Esc(workflow.CronExpression)}', {(workflow.Enabled ? 1 : 0)},
-                 '{Esc(workflow.TargetDatabase)}', '{Esc(workflow.SqlQuery)}', '{Esc(workflow.EmailSubject)}',
-                 '{Esc(workflow.EmailRecipients)}', '{Esc(workflow.CustomPrompt)}', '{Esc(workflow.SystemPrompt)}',
-                 {(workflow.IsDeleted ? 1 : 0)},
-                 '{workflow.CreatedAt:yyyy-MM-dd HH:mm:ss}', '{workflow.UpdatedAt:yyyy-MM-dd HH:mm:ss}', '{Esc(workflow.CreatedBy)}')
-            """);
+        db.ChangeTracker.Clear();
+        db.Workflows.Add(workflow);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
     }
 
     public async Task DeleteAsync(string id)
     {
-        var existing = await GetByIdAsync(id);
-        if (existing is null)
-            return;
-
-        existing.Enabled = false;
-        existing.IsDeleted = true;
-        await UpsertAsync(existing);
+        await db.Database.ExecuteSqlRawAsync($"""
+            ALTER TABLE sentinel.workflows
+            UPDATE enabled = 0, is_deleted = 1, updated_at = now()
+            WHERE id = '{Esc(id)}' AND is_deleted = 0
+            """);
     }
 
     private static string Esc(string? s) => (s ?? "").Replace("\\", "\\\\").Replace("'", "\\'");
-
-    public async Task EnsureTableAsync()
-    {
-        try
-        {
-            await db.Database.ExecuteSqlRawAsync("""
-                CREATE TABLE IF NOT EXISTS sentinel.workflows (
-                    id String,
-                    name String,
-                    description String DEFAULT '',
-                    action_type String DEFAULT 'sql_email_report',
-                    cron_expression String DEFAULT '0 * * * *',
-                    enabled UInt8 DEFAULT 1,
-                    target_database String DEFAULT '',
-                    sql_query String DEFAULT '',
-                    email_subject String DEFAULT '',
-                    email_recipients String DEFAULT '',
-                    custom_prompt String DEFAULT '',
-                    system_prompt String DEFAULT '',
-                    is_deleted UInt8 DEFAULT 0,
-                    created_at DateTime DEFAULT now(),
-                    updated_at DateTime DEFAULT now(),
-                    created_by String DEFAULT 'system'
-                ) ENGINE = ReplacingMergeTree(updated_at)
-                ORDER BY id
-                """);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to ensure workflows table");
-            throw;
-        }
-    }
 
     public async Task SeedDefaultsAsync()
     {
@@ -117,7 +78,6 @@ public class ClickHouseWorkflowStore(SentinelClickHouseContext db, ILogger<Click
                 CronExpression = workflow.CronExpression,
                 Enabled = workflow.Enabled,
                 TargetDatabase = workflow.TargetDatabase,
-                SqlQuery = workflow.SqlQuery,
                 EmailSubject = workflow.EmailSubject,
                 EmailRecipients = workflow.EmailRecipients,
                 CustomPrompt = workflow.CustomPrompt,
@@ -134,17 +94,15 @@ public class ClickHouseWorkflowStore(SentinelClickHouseContext db, ILogger<Click
 
     private static void NormalizeAndValidate(WorkflowDefinition workflow)
     {
-        workflow.ActionType = (workflow.ActionType ?? "").Trim().ToLowerInvariant();
+        workflow.ActionType = WorkflowActionTypes.Normalize(workflow.ActionType);
 
         if (!WorkflowActionTypes.All.Contains(workflow.ActionType, StringComparer.OrdinalIgnoreCase))
             throw new InvalidOperationException($"Unsupported workflow action type: {workflow.ActionType}");
 
-        if (workflow.ActionType == WorkflowActionTypes.SqlEmailReport)
+        if (workflow.ActionType == WorkflowActionTypes.EmailReport)
         {
-            // Prompt-only policy for email report workflows.
-            workflow.SqlQuery = "";
             if (workflow.Enabled && !workflow.IsDeleted && string.IsNullOrWhiteSpace(workflow.CustomPrompt))
-                throw new InvalidOperationException("Prompt is required for SQL Email Report workflows.");
+                throw new InvalidOperationException("Prompt is required for Email Report workflows.");
         }
     }
 }

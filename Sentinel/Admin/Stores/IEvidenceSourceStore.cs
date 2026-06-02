@@ -16,6 +16,5 @@ public interface IEvidenceSourceStore
     Task<EvidenceSource?> GetByIdAsync(int id);
     Task UpsertAsync(EvidenceSource source);
     Task DeleteAsync(int id);
-    Task EnsureTableAsync();
     Task SeedDefaultsAsync();
 }

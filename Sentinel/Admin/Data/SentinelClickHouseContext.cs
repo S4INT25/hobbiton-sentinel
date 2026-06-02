@@ -79,7 +79,6 @@ public class SentinelClickHouseContext(DbContextOptions<SentinelClickHouseContex
             e.Property(w => w.CronExpression).HasColumnName("cron_expression");
             e.Property(w => w.Enabled).HasColumnName("enabled");
             e.Property(w => w.TargetDatabase).HasColumnName("target_database");
-            e.Property(w => w.SqlQuery).HasColumnName("sql_query");
             e.Property(w => w.EmailSubject).HasColumnName("email_subject");
             e.Property(w => w.EmailRecipients).HasColumnName("email_recipients");
             e.Property(w => w.CustomPrompt).HasColumnName("custom_prompt");

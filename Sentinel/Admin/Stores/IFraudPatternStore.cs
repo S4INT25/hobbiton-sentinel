@@ -16,6 +16,5 @@ public interface IFraudPatternStore
     Task<FraudPatternEntity?> GetByIdAsync(int id);
     Task UpsertAsync(FraudPatternEntity pattern);
     Task DeleteAsync(int id);
-    Task EnsureTableAsync();
     Task SeedDefaultsAsync();
 }

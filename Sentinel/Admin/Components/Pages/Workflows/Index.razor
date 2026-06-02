@@ -43,7 +43,7 @@
                 <div>
                     <label class="block text-xs text-gray-400 mb-1">Action Type</label>
                     <select @bind="editWorkflow.ActionType" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition-colors">
-                        <option value="@WorkflowActionTypes.SqlEmailReport">SQL Email Report</option>
+                        <option value="@WorkflowActionTypes.EmailReport">Email Report</option>
                         <option value="@WorkflowActionTypes.FraudRun">Fraud Run</option>
                     </select>
                 </div>
@@ -93,7 +93,7 @@
                 </div>
             </div>
 
-            @if (editWorkflow.ActionType == WorkflowActionTypes.SqlEmailReport)
+            @if (WorkflowActionTypes.Normalize(editWorkflow.ActionType) == WorkflowActionTypes.EmailReport)
             {
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
@@ -330,7 +330,6 @@
             CronExpression = workflow.CronExpression,
             Enabled = workflow.Enabled,
             TargetDatabase = workflow.TargetDatabase,
-            SqlQuery = workflow.SqlQuery,
             EmailSubject = workflow.EmailSubject,
             EmailRecipients = workflow.EmailRecipients,
             CustomPrompt = workflow.CustomPrompt,
@@ -485,7 +484,7 @@
 
     private static WorkflowDefinition NewWorkflow() => new()
     {
-        ActionType = WorkflowActionTypes.SqlEmailReport,
+        ActionType = WorkflowActionTypes.EmailReport,
         CronExpression = "0 * * * *",
         Enabled = true
     };
@@ -495,7 +494,9 @@
         if (string.IsNullOrWhiteSpace(workflow.Name))
             return "Workflow name is required.";
 
-        if (!WorkflowActionTypes.All.Contains(workflow.ActionType, StringComparer.OrdinalIgnoreCase))
+        var normalizedActionType = WorkflowActionTypes.Normalize(workflow.ActionType);
+
+        if (!WorkflowActionTypes.All.Contains(normalizedActionType, StringComparer.OrdinalIgnoreCase))
             return "Invalid workflow action type.";
 
         if (!WorkflowSchedulerService.IsValidCron(workflow.CronExpression))
@@ -504,18 +505,15 @@
         if (string.IsNullOrWhiteSpace(workflow.TargetDatabase))
             return "Target database is required.";
 
-        if (workflow.ActionType == WorkflowActionTypes.SqlEmailReport &&
+        if (normalizedActionType == WorkflowActionTypes.EmailReport &&
             string.IsNullOrWhiteSpace(workflow.CustomPrompt))
-            return "Prompt is required for SQL Email Report workflows.";
+            return "Prompt is required for Email Report workflows.";
 
         return null;
     }
 
-    private static void NormalizeWorkflowForSave(WorkflowDefinition workflow)
-    {
-        if (workflow.ActionType == WorkflowActionTypes.SqlEmailReport)
-            workflow.SqlQuery = "";
-    }
+    private static void NormalizeWorkflowForSave(WorkflowDefinition workflow) =>
+        workflow.ActionType = WorkflowActionTypes.Normalize(workflow.ActionType);
 
     private void OnEditSchedulePresetChanged(ChangeEventArgs args)
     {

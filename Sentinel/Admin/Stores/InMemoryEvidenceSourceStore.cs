@@ -43,11 +43,14 @@ public class InMemoryEvidenceSourceStore : IEvidenceSourceStore
         return Task.CompletedTask;
     }
 
-    public Task EnsureTableAsync() => Task.CompletedTask;
-
     public Task SeedDefaultsAsync()
     {
-        if (!_sources.IsEmpty) return Task.CompletedTask;
+        if (!_sources.IsEmpty)
+        {
+            foreach (var source in _sources.Values.Where(s => string.IsNullOrWhiteSpace(s.WorkflowId)))
+                source.WorkflowId = WorkflowDefaults.FraudRunWorkflowId;
+            return Task.CompletedTask;
+        }
         foreach (var s in EvidenceSourceDefaults.GetDefaults())
         {
             s.WorkflowId = WorkflowDefaults.FraudRunWorkflowId;

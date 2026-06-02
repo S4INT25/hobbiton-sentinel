@@ -9,6 +9,5 @@ public interface IWorkflowStore
     Task<WorkflowDefinition?> GetByIdAsync(string id);
     Task UpsertAsync(WorkflowDefinition workflow);
     Task DeleteAsync(string id);
-    Task EnsureTableAsync();
     Task SeedDefaultsAsync();
 }

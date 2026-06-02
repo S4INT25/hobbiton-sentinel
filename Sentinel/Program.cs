@@ -169,32 +169,20 @@ try
 
     var app = builder.Build();
 
-    // ── Ensure ClickHouse database & tables exist ──
+
+    using var scope = app.Services.CreateScope();
     if (!useInMemory)
     {
-        using var scope = app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SentinelClickHouseContext>();
         await db.Database.EnsureCreatedAsync();
-        var patternStore = scope.ServiceProvider.GetRequiredService<IFraudPatternStore>();
-        await patternStore.EnsureTableAsync();
-        await patternStore.SeedDefaultsAsync();
-        var evidenceStore = scope.ServiceProvider.GetRequiredService<IEvidenceSourceStore>();
-        await evidenceStore.EnsureTableAsync();
-        await evidenceStore.SeedDefaultsAsync();
-        var workflowStore = scope.ServiceProvider.GetRequiredService<IWorkflowStore>();
-        await workflowStore.EnsureTableAsync();
-        await workflowStore.SeedDefaultsAsync();
-    }
-    else
-    {
-        var patternStore = app.Services.GetRequiredService<IFraudPatternStore>();
-        await patternStore.SeedDefaultsAsync();
-        var evidenceStore = app.Services.GetRequiredService<IEvidenceSourceStore>();
-        await evidenceStore.SeedDefaultsAsync();
-        var workflowStore = app.Services.GetRequiredService<IWorkflowStore>();
-        await workflowStore.SeedDefaultsAsync();
     }
 
+    var patternStore = scope.ServiceProvider.GetRequiredService<IFraudPatternStore>();
+    await patternStore.SeedDefaultsAsync();
+    var evidenceStore = scope.ServiceProvider.GetRequiredService<IEvidenceSourceStore>();
+    await evidenceStore.SeedDefaultsAsync();
+    var workflowStore = scope.ServiceProvider.GetRequiredService<IWorkflowStore>();
+    await workflowStore.SeedDefaultsAsync();
     await SeedAdminUser(app);
 
     // Warm schema cache for all databases at startup (non-blocking)
