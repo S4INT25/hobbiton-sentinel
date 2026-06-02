@@ -295,229 +295,229 @@
             </div>
         </div>
     </div>
+}
 
-    @code {
-        private int openCases;
-        private int activeRules;
-        private long tokensUsed;
-        private int workflowRuns24h;
-        private List<RunSummary> recentRunsList = [];
-        private string? triggerMessage;
-        private bool triggerSuccess;
-        private bool showWorkflowModal;
-        private bool workflowSaving;
-        private WorkflowDefinition newWorkflow = NewWorkflowDraft();
-        private List<string> workflowDatabases = ["lipila_blaze"];
-        private string newWorkflowSchedulePreset = "hourly";
-        private string? newWorkflowCustomDateTimeLocal;
+@code {
+    private int openCases;
+    private int activeRules;
+    private long tokensUsed;
+    private int workflowRuns24h;
+    private List<RunSummary> recentRunsList = [];
+    private string? triggerMessage;
+    private bool triggerSuccess;
+    private bool showWorkflowModal;
+    private bool workflowSaving;
+    private WorkflowDefinition newWorkflow = NewWorkflowDraft();
+    private List<string> workflowDatabases = ["lipila_blaze"];
+    private string newWorkflowSchedulePreset = "hourly";
+    private string? newWorkflowCustomDateTimeLocal;
 
-        protected override async Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadWorkflowDatabasesAsync();
+        await LoadDashboardData();
+    }
+
+    private async Task LoadDashboardData()
+    {
+        var cases = await CaseStore.GetOpenCasesAsync();
+        openCases = cases.Count;
+
+        var rules = await RuleStore.GetActiveRulesAsync();
+        activeRules = rules.Count;
+
+        var runs = await RunLogStore.GetRecentRunsAsync(100);
+        recentRunsList = runs;
+        workflowRuns24h = runs.Count(r =>
+            r.StartedAt >= DateTime.UtcNow.AddHours(-24) &&
+            r.TriggeredBy.StartsWith("workflow:", StringComparison.OrdinalIgnoreCase));
+        tokensUsed = runs
+            .Where(r => r.StartedAt >= DateTime.UtcNow.AddHours(-24))
+            .Sum(r => (long)(r.InputTokens + r.OutputTokens));
+    }
+
+    private async Task LoadWorkflowDatabasesAsync()
+    {
+        var databases = await SchemaLoader.GetDatabasesAsync();
+        workflowDatabases = databases.Count > 0
+            ? databases.OrderBy(d => d).ToList()
+            : ["lipila_blaze"];
+    }
+
+    private void OpenWorkflowModal()
+    {
+        newWorkflow = NewWorkflowDraft();
+        if (workflowDatabases.Count > 0)
+            newWorkflow.TargetDatabase = workflowDatabases[0];
+        newWorkflowSchedulePreset = DetectSchedulePreset(newWorkflow.CronExpression);
+        newWorkflowCustomDateTimeLocal = BuildDateTimeLocalFromCron(newWorkflow.CronExpression);
+        showWorkflowModal = true;
+    }
+
+    private void CloseWorkflowModal()
+    {
+        if (workflowSaving) return;
+        showWorkflowModal = false;
+    }
+
+    private async Task CreateWorkflowAsync()
+    {
+        var validationError = ValidateWorkflow(newWorkflow);
+        if (validationError is not null)
         {
-            await LoadWorkflowDatabasesAsync();
-            await LoadDashboardData();
+            triggerSuccess = false;
+            triggerMessage = validationError;
+            return;
         }
 
-        private async Task LoadDashboardData()
+        workflowSaving = true;
+        try
         {
-            var cases = await CaseStore.GetOpenCasesAsync();
-            openCases = cases.Count;
-
-            var rules = await RuleStore.GetActiveRulesAsync();
-            activeRules = rules.Count;
-
-            var runs = await RunLogStore.GetRecentRunsAsync(100);
-            recentRunsList = runs;
-            workflowRuns24h = runs.Count(r =>
-                r.StartedAt >= DateTime.UtcNow.AddHours(-24) &&
-                r.TriggeredBy.StartsWith("workflow:", StringComparison.OrdinalIgnoreCase));
-            tokensUsed = runs
-                .Where(r => r.StartedAt >= DateTime.UtcNow.AddHours(-24))
-                .Sum(r => (long)(r.InputTokens + r.OutputTokens));
-        }
-
-        private async Task LoadWorkflowDatabasesAsync()
-        {
-            var databases = await SchemaLoader.GetDatabasesAsync();
-            workflowDatabases = databases.Count > 0
-                ? databases.OrderBy(d => d).ToList()
-                : ["lipila_blaze"];
-        }
-
-        private void OpenWorkflowModal()
-        {
-            newWorkflow = NewWorkflowDraft();
-            if (workflowDatabases.Count > 0)
-                newWorkflow.TargetDatabase = workflowDatabases[0];
-            newWorkflowSchedulePreset = DetectSchedulePreset(newWorkflow.CronExpression);
-            newWorkflowCustomDateTimeLocal = BuildDateTimeLocalFromCron(newWorkflow.CronExpression);
-            showWorkflowModal = true;
-        }
-
-        private void CloseWorkflowModal()
-        {
-            if (workflowSaving) return;
+            NormalizeWorkflowForSave(newWorkflow);
+            newWorkflow.Id = Guid.NewGuid().ToString("N");
+            newWorkflow.CreatedBy = "admin";
+            await WorkflowStore.UpsertAsync(newWorkflow);
+            await WorkflowScheduler.RefreshSchedulesAsync();
             showWorkflowModal = false;
+            triggerSuccess = true;
+            triggerMessage = $"Workflow created: {newWorkflow.Name}";
+        }
+        catch (Exception ex)
+        {
+            triggerSuccess = false;
+            triggerMessage = $"Failed to create workflow: {ex.Message}";
+        }
+        finally
+        {
+            workflowSaving = false;
+        }
+    }
+
+    private static WorkflowDefinition NewWorkflowDraft() => new()
+    {
+        ActionType = WorkflowActionTypes.EmailReport,
+        CronExpression = "0 * * * *",
+        Enabled = true,
+        TargetDatabase = "lipila_blaze"
+    };
+
+    private void OnNewWorkflowSchedulePresetChanged(ChangeEventArgs args)
+    {
+        newWorkflowSchedulePreset = args.Value?.ToString() ?? "hourly";
+        if (CronPresets.TryGetValue(newWorkflowSchedulePreset, out var cron))
+        {
+            newWorkflow.CronExpression = cron;
+        }
+    }
+
+    private void OnNewWorkflowCustomDateChanged(ChangeEventArgs args)
+    {
+        newWorkflowCustomDateTimeLocal = args.Value?.ToString();
+        var customCron = BuildCustomDateCron(newWorkflowCustomDateTimeLocal);
+        if (!string.IsNullOrWhiteSpace(customCron))
+            newWorkflow.CronExpression = customCron;
+    }
+
+    private static string? ValidateWorkflow(WorkflowDefinition workflow)
+    {
+        var normalizedActionType = WorkflowActionTypes.Normalize(workflow.ActionType);
+
+        if (string.IsNullOrWhiteSpace(workflow.Name))
+            return "Workflow name is required.";
+        if (string.IsNullOrWhiteSpace(workflow.TargetDatabase))
+            return "Workflow database is required.";
+        if (!WorkflowSchedulerService.IsValidCron(workflow.CronExpression))
+            return "Workflow cron expression is invalid.";
+        if (normalizedActionType == WorkflowActionTypes.EmailReport &&
+            string.IsNullOrWhiteSpace(workflow.CustomPrompt))
+            return "Workflow prompt is required.";
+        if (!WorkflowActionTypes.All.Contains(normalizedActionType, StringComparer.OrdinalIgnoreCase))
+            return "Workflow action type is invalid.";
+        return null;
+    }
+
+    private static void NormalizeWorkflowForSave(WorkflowDefinition workflow) =>
+        workflow.ActionType = WorkflowActionTypes.Normalize(workflow.ActionType);
+
+    private static readonly Dictionary<string, string> CronPresets = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["every-5-minutes"] = "*/5 * * * *",
+        ["every-15-minutes"] = "*/15 * * * *",
+        ["every-30-minutes"] = "*/30 * * * *",
+        ["hourly"] = "0 * * * *",
+        ["every-2-hours"] = "0 */2 * * *",
+        ["daily"] = "0 0 * * *",
+        ["weekly"] = "0 0 * * 1"
+    };
+
+    private static string DetectSchedulePreset(string? cron)
+    {
+        if (string.IsNullOrWhiteSpace(cron))
+            return "hourly";
+
+        foreach (var preset in CronPresets)
+        {
+            if (string.Equals(preset.Value, cron.Trim(), StringComparison.OrdinalIgnoreCase))
+                return preset.Key;
         }
 
-        private async Task CreateWorkflowAsync()
+        return IsCustomDateCron(cron) ? "custom-date" : "hourly";
+    }
+
+    private static bool IsCustomDateCron(string cron)
+    {
+        var parts = cron.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return parts.Length == 5 &&
+               int.TryParse(parts[0], out _) &&
+               int.TryParse(parts[1], out _) &&
+               int.TryParse(parts[2], out _) &&
+               int.TryParse(parts[3], out _) &&
+               parts[4] == "*";
+    }
+
+    private static string? BuildDateTimeLocalFromCron(string? cron)
+    {
+        if (string.IsNullOrWhiteSpace(cron))
+            return null;
+
+        var parts = cron.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length != 5 ||
+            !int.TryParse(parts[0], out var minute) ||
+            !int.TryParse(parts[1], out var hour) ||
+            !int.TryParse(parts[2], out var day) ||
+            !int.TryParse(parts[3], out var month) ||
+            month is < 1 or > 12 ||
+            day < 1)
         {
-            var validationError = ValidateWorkflow(newWorkflow);
-            if (validationError is not null)
-            {
-                triggerSuccess = false;
-                triggerMessage = validationError;
-                return;
-            }
-
-            workflowSaving = true;
-            try
-            {
-                NormalizeWorkflowForSave(newWorkflow);
-                newWorkflow.Id = Guid.NewGuid().ToString("N");
-                newWorkflow.CreatedBy = "admin";
-                await WorkflowStore.UpsertAsync(newWorkflow);
-                await WorkflowScheduler.RefreshSchedulesAsync();
-                showWorkflowModal = false;
-                triggerSuccess = true;
-                triggerMessage = $"Workflow created: {newWorkflow.Name}";
-            }
-            catch (Exception ex)
-            {
-                triggerSuccess = false;
-                triggerMessage = $"Failed to create workflow: {ex.Message}";
-            }
-            finally
-            {
-                workflowSaving = false;
-            }
-        }
-
-        private static WorkflowDefinition NewWorkflowDraft() => new()
-        {
-            ActionType = WorkflowActionTypes.EmailReport,
-            CronExpression = "0 * * * *",
-            Enabled = true,
-            TargetDatabase = "lipila_blaze"
-        };
-
-        private void OnNewWorkflowSchedulePresetChanged(ChangeEventArgs args)
-        {
-            newWorkflowSchedulePreset = args.Value?.ToString() ?? "hourly";
-            if (CronPresets.TryGetValue(newWorkflowSchedulePreset, out var cron))
-            {
-                newWorkflow.CronExpression = cron;
-            }
-        }
-
-        private void OnNewWorkflowCustomDateChanged(ChangeEventArgs args)
-        {
-            newWorkflowCustomDateTimeLocal = args.Value?.ToString();
-            var customCron = BuildCustomDateCron(newWorkflowCustomDateTimeLocal);
-            if (!string.IsNullOrWhiteSpace(customCron))
-                newWorkflow.CronExpression = customCron;
-        }
-
-        private static string? ValidateWorkflow(WorkflowDefinition workflow)
-        {
-            var normalizedActionType = WorkflowActionTypes.Normalize(workflow.ActionType);
-
-            if (string.IsNullOrWhiteSpace(workflow.Name))
-                return "Workflow name is required.";
-            if (string.IsNullOrWhiteSpace(workflow.TargetDatabase))
-                return "Workflow database is required.";
-            if (!WorkflowSchedulerService.IsValidCron(workflow.CronExpression))
-                return "Workflow cron expression is invalid.";
-            if (normalizedActionType == WorkflowActionTypes.EmailReport &&
-                string.IsNullOrWhiteSpace(workflow.CustomPrompt))
-                return "Workflow prompt is required.";
-            if (!WorkflowActionTypes.All.Contains(normalizedActionType, StringComparer.OrdinalIgnoreCase))
-                return "Workflow action type is invalid.";
             return null;
         }
 
-        private static void NormalizeWorkflowForSave(WorkflowDefinition workflow) =>
-            workflow.ActionType = WorkflowActionTypes.Normalize(workflow.ActionType);
+        var now = DateTime.UtcNow;
+        var maxDay = DateTime.DaysInMonth(now.Year, month);
+        if (day > maxDay || hour is < 0 or > 23 || minute is < 0 or > 59)
+            return null;
 
-        private static readonly Dictionary<string, string> CronPresets = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["every-5-minutes"] = "*/5 * * * *",
-            ["every-15-minutes"] = "*/15 * * * *",
-            ["every-30-minutes"] = "*/30 * * * *",
-            ["hourly"] = "0 * * * *",
-            ["every-2-hours"] = "0 */2 * * *",
-            ["daily"] = "0 0 * * *",
-            ["weekly"] = "0 0 * * 1"
-        };
-
-        private static string DetectSchedulePreset(string? cron)
-        {
-            if (string.IsNullOrWhiteSpace(cron))
-                return "hourly";
-
-            foreach (var preset in CronPresets)
-            {
-                if (string.Equals(preset.Value, cron.Trim(), StringComparison.OrdinalIgnoreCase))
-                    return preset.Key;
-            }
-
-            return IsCustomDateCron(cron) ? "custom-date" : "hourly";
-        }
-
-        private static bool IsCustomDateCron(string cron)
-        {
-            var parts = cron.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            return parts.Length == 5 &&
-                   int.TryParse(parts[0], out _) &&
-                   int.TryParse(parts[1], out _) &&
-                   int.TryParse(parts[2], out _) &&
-                   int.TryParse(parts[3], out _) &&
-                   parts[4] == "*";
-        }
-
-        private static string? BuildDateTimeLocalFromCron(string? cron)
-        {
-            if (string.IsNullOrWhiteSpace(cron))
-                return null;
-
-            var parts = cron.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (parts.Length != 5 ||
-                !int.TryParse(parts[0], out var minute) ||
-                !int.TryParse(parts[1], out var hour) ||
-                !int.TryParse(parts[2], out var day) ||
-                !int.TryParse(parts[3], out var month) ||
-                month is < 1 or > 12 ||
-                day < 1)
-            {
-                return null;
-            }
-
-            var now = DateTime.UtcNow;
-            var maxDay = DateTime.DaysInMonth(now.Year, month);
-            if (day > maxDay || hour is < 0 or > 23 || minute is < 0 or > 59)
-                return null;
-
-            var date = new DateTime(now.Year, month, day, hour, minute, 0, DateTimeKind.Utc);
-            return date.ToString("yyyy-MM-ddTHH:mm");
-        }
-
-        private static string? BuildCustomDateCron(string? dateTimeLocal)
-        {
-            if (string.IsNullOrWhiteSpace(dateTimeLocal))
-                return null;
-
-            if (!DateTime.TryParse(dateTimeLocal, out var selected))
-                return null;
-
-            return $"{selected.Minute} {selected.Hour} {selected.Day} {selected.Month} *";
-        }
-
-        private static string RunStatusClasses(string status) => status?.ToLowerInvariant() switch
-        {
-            "completed" => "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
-            "running" => "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20",
-            "failed" or "error" => "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20",
-            _ => "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-500/10 text-gray-400 border border-gray-500/20"
-        };
-
+        var date = new DateTime(now.Year, month, day, hour, minute, 0, DateTimeKind.Utc);
+        return date.ToString("yyyy-MM-ddTHH:mm");
     }
+
+    private static string? BuildCustomDateCron(string? dateTimeLocal)
+    {
+        if (string.IsNullOrWhiteSpace(dateTimeLocal))
+            return null;
+
+        if (!DateTime.TryParse(dateTimeLocal, out var selected))
+            return null;
+
+        return $"{selected.Minute} {selected.Hour} {selected.Day} {selected.Month} *";
+    }
+
+    private static string RunStatusClasses(string status) => status?.ToLowerInvariant() switch
+    {
+        "completed" => "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+        "running" => "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20",
+        "failed" or "error" => "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20",
+        _ => "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-500/10 text-gray-400 border border-gray-500/20"
+    };
+
 }
