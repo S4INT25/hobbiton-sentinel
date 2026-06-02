@@ -98,8 +98,7 @@ try
         var chPass = builder.Configuration["ClickHouse:Password"] ?? "";
         var chConnectionString =
             $"Host={chHost.Host};Port={chHost.Port};Database=sentinel;Username={chUser};Password={chPass}";
-        builder.Services.AddDbContextFactory<SentinelClickHouseContext>(options => options.UseClickHouse(chConnectionString));
-        builder.Services.AddDbContext<SentinelClickHouseContext>(options => options.UseClickHouse(chConnectionString));
+        builder.Services.AddDbContextFactory<SentinelClickHouseContext>(options => options.UseClickHouse(chConnectionString), ServiceLifetime.Singleton);
         builder.Services.AddScoped<IRunLogStore, RunLogStore>();
         builder.Services.AddScoped<IAuditLogStore, AuditLogStore>();
         builder.Services.AddScoped<IFraudPatternStore, ClickHouseFraudPatternStore>();

@@ -63,10 +63,19 @@ public class WorkflowExecutionJob(
         if (string.IsNullOrWhiteSpace(workflow.CustomPrompt))
             throw new InvalidOperationException($"Workflow {workflow.Id} has no prompt configured.");
 
-        var result = await analyticsAgent.AskAsync(workflow.CustomPrompt, database);
+        // Run in autonomous mode — agent will use send_report tool to email directly,
+        // but we also send a fallback if it doesn't.
+        var result = await analyticsAgent.AskAsync(
+            workflow.CustomPrompt, database, mode: "autonomous");
+
         if (!result.Success)
             throw new InvalidOperationException(
                 $"Workflow {workflow.Id} analysis failed: {result.Error ?? "unknown error"}");
+
+        // If the agent already sent a report via send_report tool, we're done.
+        // Otherwise, send the fallback formatted email.
+        if (result.Explanation?.Contains("Report sent") == true)
+            return;
 
         var body = BuildAgentReportBody(workflow, database, result);
 
