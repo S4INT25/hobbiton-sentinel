@@ -1,6 +1,8 @@
 @page "/admin/workflows/{WorkflowId}"
+@using Sentinel.Admin.Models
 @using Sentinel.Infrastructure
 @inject IWorkflowStore WorkflowStore
+@inject IRunLogStore RunLogStore
 @inject IFraudPatternStore FraudPatternStore
 @inject IEvidenceSourceStore EvidenceSourceStore
 @inject SchemaLoader SchemaLoader
@@ -45,6 +47,7 @@
             <button @onclick='() => activeTab = "prompt"' class="@TabClass("prompt")">System Prompt</button>
             <button @onclick='() => activeTab = "patterns"' class="@TabClass("patterns")">Fraud Patterns</button>
             <button @onclick='() => activeTab = "sources"' class="@TabClass("sources")">Evidence Sources</button>
+            <button @onclick='() => activeTab = "runs"' class="@TabClass("runs")">Runs</button>
         </div>
 
         @* System Prompt Tab *@
@@ -253,6 +256,76 @@
                 </div>
             </div>
         }
+
+        @if (activeTab == "runs")
+        {
+            <div class="space-y-4">
+                <div class="flex items-center justify-between gap-3">
+                    <p class="text-xs text-gray-500">Tool calls from recent runs of this workflow.</p>
+                    @if (selectedRunId is not null)
+                    {
+                        <a href="/admin/runs/@selectedRunId"
+                           class="text-xs text-emerald-400 hover:text-emerald-300 transition-colors">
+                            Open run detail →
+                        </a>
+                    }
+                </div>
+
+                @if (!workflowRuns.Any())
+                {
+                    <div class="text-center py-8 text-gray-600 text-xs">No runs recorded for this workflow yet.</div>
+                }
+                else
+                {
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Run</label>
+                        <select @bind="selectedRunId" @bind:after="LoadSelectedRunLogsAsync"
+                                class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:border-emerald-500 focus:outline-none transition-colors">
+                            @foreach (var run in workflowRuns)
+                            {
+                                <option value="@run.RunId">
+                                    @run.StartedAt.ToString("yyyy-MM-dd HH:mm:ss") • @run.Status • @run.RunId
+                                </option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="space-y-2">
+                        @foreach (var log in selectedRunLogs)
+                        {
+                            <div class="border border-gray-800 rounded-lg overflow-hidden">
+                                <button @onclick="() => ToggleLog(log)"
+                                        class="w-full flex items-center justify-between px-4 py-2.5 hover:bg-gray-900/50 transition-colors text-left">
+                                    <div class="flex items-center gap-3">
+                                        <span class="text-[10px] font-mono text-gray-600">@log.Iteration</span>
+                                        <span class="text-xs font-medium text-emerald-400 font-mono">@log.ToolName</span>
+                                        <span class="text-xs text-gray-500">@(log.DurationMs)ms</span>
+                                    </div>
+                                    <span class="text-xs text-gray-600 font-mono">@log.StartedAt.ToString("HH:mm:ss.fff")</span>
+                                </button>
+                                @if (expandedLogKeys.Contains(LogKey(log)))
+                                {
+                                    <div class="border-t border-gray-800 bg-gray-900/30">
+                                        <div class="p-3">
+                                            <div class="text-[10px] text-gray-500 mb-1 uppercase tracking-wider">Arguments</div>
+                                            <pre class="text-xs text-gray-300 font-mono whitespace-pre-wrap break-all max-h-40 overflow-y-auto">@log.Args</pre>
+                                        </div>
+                                        <div class="p-3 border-t border-gray-800/50">
+                                            <div class="text-[10px] text-gray-500 mb-1 uppercase tracking-wider">Result</div>
+                                            <pre class="text-xs text-gray-300 font-mono whitespace-pre-wrap break-all max-h-60 overflow-y-auto">@log.Result</pre>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        @if (!selectedRunLogs.Any())
+                        {
+                            <div class="text-center py-8 text-gray-600 text-xs">No tool calls recorded for this run.</div>
+                        }
+                    </div>
+                }
+            </div>
+        }
     }
 </div>
 
@@ -262,6 +335,10 @@
     private WorkflowDefinition? workflow;
     private List<FraudPatternEntity> workflowPatterns = [];
     private List<EvidenceSource> workflowSources = [];
+    private List<RunSummary> workflowRuns = [];
+    private List<RunLog> selectedRunLogs = [];
+    private HashSet<string> expandedLogKeys = [];
+    private string? selectedRunId;
     private List<string> availableDatabases = ["lipila_blaze"];
     private string activeTab = "prompt";
     private bool saving;
@@ -293,12 +370,47 @@
             return;
         }
         await ReloadScopedDataAsync();
+        await ReloadRunsAsync();
     }
 
     private async Task ReloadScopedDataAsync()
     {
         workflowPatterns = await FraudPatternStore.GetByWorkflowAsync(WorkflowId);
         workflowSources = await EvidenceSourceStore.GetByWorkflowAsync(WorkflowId);
+    }
+
+    private async Task ReloadRunsAsync()
+    {
+        var runs = await RunLogStore.GetRecentRunsAsync(200);
+        workflowRuns = runs
+            .Where(r => r.TriggeredBy.Equals($"workflow:{WorkflowId}", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(r => r.StartedAt)
+            .ToList();
+
+        if (!workflowRuns.Any())
+        {
+            selectedRunId = null;
+            selectedRunLogs = [];
+            expandedLogKeys.Clear();
+            return;
+        }
+
+        if (selectedRunId is null || !workflowRuns.Any(r => r.RunId == selectedRunId))
+            selectedRunId = workflowRuns[0].RunId;
+
+        await LoadSelectedRunLogsAsync();
+    }
+
+    private async Task LoadSelectedRunLogsAsync()
+    {
+        expandedLogKeys.Clear();
+        if (string.IsNullOrWhiteSpace(selectedRunId))
+        {
+            selectedRunLogs = [];
+            return;
+        }
+
+        selectedRunLogs = await RunLogStore.GetRunLogsAsync(selectedRunId);
     }
 
     private async Task LoadDatabasesAsync()
@@ -494,6 +606,16 @@
     }
 
     private void ClearFeedback() => feedbackMessage = null;
+
+    private static string LogKey(RunLog log) =>
+        $"{log.Iteration}|{log.ToolName}|{log.StartedAt.Ticks}";
+
+    private void ToggleLog(RunLog log)
+    {
+        var key = LogKey(log);
+        if (!expandedLogKeys.Remove(key))
+            expandedLogKeys.Add(key);
+    }
 
     private string FeedbackClass() => feedbackKind switch
     {

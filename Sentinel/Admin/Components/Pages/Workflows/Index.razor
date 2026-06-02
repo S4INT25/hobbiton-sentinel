@@ -4,6 +4,7 @@
 @using Sentinel.Infrastructure
 @inject IWorkflowStore WorkflowStore
 @inject IRunLogStore RunLogStore
+@inject IActiveRunTracker ActiveRunTracker
 @inject WorkflowSchedulerService WorkflowScheduler
 @inject IBackgroundJobClient BackgroundJobs
 @inject SchemaLoader SchemaLoader
@@ -346,7 +347,8 @@
     {
         var workflowTask = WorkflowStore.GetAllAsync();
         var runsTask = RunLogStore.GetRecentRunsAsync(100);
-        await Task.WhenAll(workflowTask, runsTask);
+        var activeRunsTask = ActiveRunTracker.GetActiveRunsAsync();
+        await Task.WhenAll(workflowTask, runsTask, activeRunsTask);
         workflows = workflowTask.Result;
         workflowRuns = runsTask.Result
             .Where(r => r.TriggeredBy.StartsWith("workflow:", StringComparison.OrdinalIgnoreCase))
@@ -354,11 +356,13 @@
             .ToList();
 
         // Build per-workflow state (last run, next run, running status)
-        workflowStates = BuildWorkflowStates(workflows, workflowRuns);
+        workflowStates = BuildWorkflowStates(workflows, workflowRuns, activeRunsTask.Result);
     }
 
     private static Dictionary<string, WorkflowRunState> BuildWorkflowStates(
-        List<WorkflowDefinition> workflows, List<RunSummary> runs)
+        List<WorkflowDefinition> workflows,
+        List<RunSummary> runs,
+        IReadOnlyList<ActiveRunState> activeRuns)
     {
         var states = new Dictionary<string, WorkflowRunState>();
         foreach (var wf in workflows)
@@ -368,7 +372,11 @@
                 .ToList();
 
             var lastRun = wfRuns.FirstOrDefault(); // already sorted desc
-            var isRunning = lastRun?.Status == "running";
+            var activeState = activeRuns.FirstOrDefault(a =>
+                a.TriggeredBy.Equals($"workflow:{wf.Id}", StringComparison.OrdinalIgnoreCase));
+            var isRunning = activeState is { Status: "running" or "queued" } || lastRun?.Status == "running";
+            var lastRunAt = activeState?.StartedAtUtc ?? lastRun?.StartedAt;
+            var lastRunStatus = activeState?.Status ?? lastRun?.Status;
 
             DateTime? nextRun = null;
             if (wf.Enabled && WorkflowSchedulerService.IsValidCron(wf.CronExpression))
@@ -383,8 +391,8 @@
 
             states[wf.Id] = new WorkflowRunState
             {
-                LastRunAt = lastRun?.StartedAt,
-                LastRunStatus = lastRun?.Status,
+                LastRunAt = lastRunAt,
+                LastRunStatus = lastRunStatus,
                 LastRunDuration = lastRun != null && lastRun.FinishedAt > lastRun.StartedAt
                     ? lastRun.FinishedAt - lastRun.StartedAt
                     : null,

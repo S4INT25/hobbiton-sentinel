@@ -62,6 +62,33 @@ public class ActiveRunTracker(IFusionCache cache, ILogger<ActiveRunTracker> logg
         return null;
     }
 
+    public async Task<IReadOnlyList<ActiveRunState>> GetActiveRunsAsync()
+    {
+        var index = await cache.GetOrDefaultAsync<List<string>>(IndexKey) ?? [];
+        var active = new List<ActiveRunState>();
+        var stale = new List<string>();
+
+        foreach (var runId in index)
+        {
+            var state = await cache.GetOrDefaultAsync<ActiveRunState>(Key(runId));
+            if (state is null)
+            {
+                stale.Add(runId);
+                continue;
+            }
+
+            active.Add(state);
+        }
+
+        if (stale.Count > 0)
+        {
+            index.RemoveAll(stale.Contains);
+            await cache.SetAsync(IndexKey, index, o => o.SetDuration(TimeSpan.MaxValue));
+        }
+
+        return active;
+    }
+
     private async Task UpsertAsync(string runId, string status, string triggeredBy, DateTime startedAtUtc)
     {
         var state = new ActiveRunState(runId, status, triggeredBy, startedAtUtc, DateTime.UtcNow);

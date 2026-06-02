@@ -9,4 +9,5 @@ public interface IActiveRunTracker
     Task MarkCompletedAsync(string runId);
     Task<ActiveRunState?> GetAsync(string runId);
     Task<ActiveRunState?> GetLatestTrackedRunAsync();
+    Task<IReadOnlyList<ActiveRunState>> GetActiveRunsAsync();
 }
