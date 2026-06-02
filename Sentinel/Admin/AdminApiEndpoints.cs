@@ -219,9 +219,16 @@ public static class AdminApiEndpoints
 
         api.MapPost("/auth/logout", async (HttpContext ctx, IAuditLogStore audit) =>
         {
+            var returnUrl = ctx.Request.Query["returnUrl"].FirstOrDefault()
+                            ?? (ctx.Request.HasFormContentType
+                                ? (await ctx.Request.ReadFormAsync())["returnUrl"].FirstOrDefault()
+                                : null)
+                            ?? "/admin";
+            if (!returnUrl.StartsWith("/")) returnUrl = "/admin";
+
             await AuditAction(audit, ctx, "logout", "auth", ctx.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "");
             await ctx.SignOutAsync(AuthConstants.Scheme);
-            return Results.Ok();
+            return Results.Redirect(returnUrl);
         });
 
         // ── Analytics ──

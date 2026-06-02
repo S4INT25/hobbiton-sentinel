@@ -214,6 +214,7 @@ try
     app.UseAuthorization();
     app.UseStaticFiles();
     app.UseAntiforgery();
+    app.MapGet("/", () => Results.Redirect("/admin"));
     app.MapRazorComponents<Sentinel.Admin.Components.App>()
         .AddInteractiveServerRenderMode();
 
