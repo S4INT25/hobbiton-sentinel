@@ -299,12 +299,12 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
     private const string FallbackTemplate = """
                                             <html><body style="font-family:sans-serif;max-width:680px;margin:0 auto;padding:24px;color:#111">
                                             <div style="border-bottom:2px solid {{COLOR}};padding-bottom:10px;margin-bottom:20px">
-                                              <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#666">Lipila Payment Gateway</div>
+                                              <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#666">Sentinel Analytics</div>
                                               <h1 style="font-size:18px;margin:6px 0 4px">{{SUBJECT}}</h1>
                                               <p style="font-size:12px;color:#999">{{TIMESTAMP}} &nbsp;·&nbsp; {{SEVERITY}}</p>
                                             </div>
                                             {{BODY}}
-                                            <p style="font-size:11px;color:#bbb;margin-top:24px;border-top:1px solid #eee;padding-top:10px">Fraud Detector · Automated report · Do not reply</p>
+                                            <p style="font-size:11px;color:#bbb;margin-top:24px;border-top:1px solid #eee;padding-top:10px">Sentinel · Automated report · Do not reply</p>
                                             </body></html>
                                             """;
 }

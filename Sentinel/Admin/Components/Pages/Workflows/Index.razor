@@ -142,6 +142,7 @@
     <div class="space-y-2">
         @foreach (var workflow in workflows)
         {
+            var state = GetState(workflow.Id);
             <div class="border border-gray-800 rounded-lg p-3 bg-gray-900/30 hover:bg-gray-900/50 transition-all duration-200 group">
                 <div class="flex items-start justify-between gap-3">
                     <div class="flex-1 min-w-0">
@@ -149,15 +150,54 @@
                             <span class="text-sm font-medium text-white">@workflow.Name</span>
                             <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">@workflow.ActionType</span>
                             <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-500/10 text-gray-300 border border-gray-600 font-mono">@workflow.CronExpression</span>
-                            @if (!workflow.Enabled)
+                            @if (state.IsRunning)
+                            {
+                                <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/15 text-blue-400 border border-blue-500/30 animate-pulse">
+                                    <svg class="w-2.5 h-2.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle><path class="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z"></path></svg>
+                                    Running
+                                </span>
+                            }
+                            else if (!workflow.Enabled)
                             {
                                 <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-700/40 text-gray-400 border border-gray-700">Disabled</span>
+                            }
+                            else if (state.LastRunStatus is "error" or "failed")
+                            {
+                                <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">Last run failed</span>
                             }
                         </div>
                         @if (!string.IsNullOrWhiteSpace(workflow.Description))
                         {
                             <p class="text-xs text-gray-500 mt-1 whitespace-pre-wrap">@workflow.Description</p>
                         }
+                        <div class="flex items-center gap-3 mt-1.5 text-[10px] text-gray-500">
+                            @if (state.LastRunAt != null)
+                            {
+                                <span title="@state.LastRunAt?.ToString("yyyy-MM-dd HH:mm:ss UTC")">
+                                    Last: <span class="text-gray-400">@FormatRelativeTime(state.LastRunAt)</span>
+                                    @if (state.LastRunDuration != null)
+                                    {
+                                        <span class="text-gray-600">(@FormatDuration(state.LastRunDuration))</span>
+                                    }
+                                </span>
+                            }
+                            @if (state.NextRunAt != null)
+                            {
+                                <span title="@state.NextRunAt?.ToString("yyyy-MM-dd HH:mm:ss UTC")">
+                                    Next: <span class="text-gray-400">@FormatRelativeTime(state.NextRunAt)</span>
+                                </span>
+                            }
+                            @if (state.TotalRuns > 0)
+                            {
+                                <span>
+                                    Runs: <span class="text-gray-400">@state.TotalRuns</span>
+                                    @if (state.FailedRuns > 0)
+                                    {
+                                        <span class="text-rose-400">(@state.FailedRuns failed)</span>
+                                    }
+                                </span>
+                            }
+                        </div>
                     </div>
                     <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                         <button @onclick="() => RunNowAsync(workflow)" disabled="@IsBusy($"run-{workflow.Id}")" class="p-1.5 text-gray-500 hover:text-cyan-400 transition-colors disabled:opacity-40" title="Run now">
@@ -218,19 +258,32 @@
                             <th class="text-left px-4 py-2.5 text-[11px] font-medium text-gray-500 uppercase tracking-wider">Run</th>
                             <th class="text-left px-4 py-2.5 text-[11px] font-medium text-gray-500 uppercase tracking-wider">Workflow</th>
                             <th class="text-left px-4 py-2.5 text-[11px] font-medium text-gray-500 uppercase tracking-wider">Started</th>
+                            <th class="text-left px-4 py-2.5 text-[11px] font-medium text-gray-500 uppercase tracking-wider">Duration</th>
                             <th class="text-left px-4 py-2.5 text-[11px] font-medium text-gray-500 uppercase tracking-wider">Status</th>
                             <th class="text-left px-4 py-2.5 text-[11px] font-medium text-gray-500 uppercase tracking-wider">Tokens</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-800/40">
-                        @foreach (var run in workflowRuns.Take(10))
+                        @foreach (var run in workflowRuns.Take(15))
                         {
+                            var duration = run.FinishedAt > run.StartedAt ? (TimeSpan?)(run.FinishedAt - run.StartedAt) : null;
+                            var wfName = GetWorkflowName(run.TriggeredBy);
                             <tr class="hover:bg-gray-900/40">
                                 <td class="px-4 py-2.5">
-                                    <a href="/admin/runs/@run.RunId" class="text-cyan-400 hover:text-cyan-300 font-mono text-xs transition-colors">@run.RunId[..Math.Min(12, run.RunId.Length)]</a>
+                                    <a href="/admin/runs/@run.RunId" class="text-cyan-400 hover:text-cyan-300 font-mono text-xs transition-colors">@run.RunId[..Math.Min(8, run.RunId.Length)]</a>
                                 </td>
-                                <td class="px-4 py-2.5 text-gray-400 text-xs font-mono">@ExtractWorkflowRef(run.TriggeredBy)</td>
+                                <td class="px-4 py-2.5 text-xs">
+                                    @if (wfName != null)
+                                    {
+                                        <span class="text-gray-300">@wfName</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-gray-500 font-mono">@ExtractWorkflowRef(run.TriggeredBy)[..Math.Min(8, ExtractWorkflowRef(run.TriggeredBy).Length)]</span>
+                                    }
+                                </td>
                                 <td class="px-4 py-2.5 text-gray-400 text-xs">@run.StartedAt.ToString("MMM dd HH:mm")</td>
+                                <td class="px-4 py-2.5 text-gray-400 text-xs">@FormatDuration(duration)</td>
                                 <td class="px-4 py-2.5">
                                     <span class="@RunStatusClasses(run.Status)">@run.Status</span>
                                 </td>
@@ -239,7 +292,7 @@
                         }
                         @if (!workflowRuns.Any())
                         {
-                            <tr><td colspan="5" class="px-4 py-8 text-center text-gray-600 text-xs">No workflow-triggered runs yet</td></tr>
+                            <tr><td colspan="6" class="px-4 py-8 text-center text-gray-600 text-xs">No workflow-triggered runs yet</td></tr>
                         }
                     </tbody>
                 </table>
@@ -268,6 +321,7 @@
     private readonly HashSet<string> busyActionKeys = [];
     private List<WorkflowDefinition> workflows = [];
     private List<RunSummary> workflowRuns = [];
+    private Dictionary<string, WorkflowRunState> workflowStates = new();
     private List<string> availableDatabases = ["lipila_blaze"];
     private WorkflowDefinition editWorkflow = new();
     private bool showForm;
@@ -298,6 +352,59 @@
             .Where(r => r.TriggeredBy.StartsWith("workflow:", StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(r => r.StartedAt)
             .ToList();
+
+        // Build per-workflow state (last run, next run, running status)
+        workflowStates = BuildWorkflowStates(workflows, workflowRuns);
+    }
+
+    private static Dictionary<string, WorkflowRunState> BuildWorkflowStates(
+        List<WorkflowDefinition> workflows, List<RunSummary> runs)
+    {
+        var states = new Dictionary<string, WorkflowRunState>();
+        foreach (var wf in workflows)
+        {
+            var wfRuns = runs
+                .Where(r => r.TriggeredBy.Equals($"workflow:{wf.Id}", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            var lastRun = wfRuns.FirstOrDefault(); // already sorted desc
+            var isRunning = lastRun?.Status == "running";
+
+            DateTime? nextRun = null;
+            if (wf.Enabled && WorkflowSchedulerService.IsValidCron(wf.CronExpression))
+            {
+                try
+                {
+                    var cron = Cronos.CronExpression.Parse(wf.CronExpression);
+                    nextRun = cron.GetNextOccurrence(DateTime.UtcNow, TimeZoneInfo.Utc);
+                }
+                catch { /* ignore parse failures */ }
+            }
+
+            states[wf.Id] = new WorkflowRunState
+            {
+                LastRunAt = lastRun?.StartedAt,
+                LastRunStatus = lastRun?.Status,
+                LastRunDuration = lastRun != null && lastRun.FinishedAt > lastRun.StartedAt
+                    ? lastRun.FinishedAt - lastRun.StartedAt
+                    : null,
+                NextRunAt = nextRun,
+                IsRunning = isRunning,
+                TotalRuns = wfRuns.Count,
+                SuccessfulRuns = wfRuns.Count(r => r.Status == "completed"),
+                FailedRuns = wfRuns.Count(r => r.Status is "error" or "failed")
+            };
+        }
+        return states;
+    }
+
+    private WorkflowRunState GetState(string workflowId) =>
+        workflowStates.TryGetValue(workflowId, out var s) ? s : new();
+
+    private string? GetWorkflowName(string triggeredBy)
+    {
+        var id = ExtractWorkflowRef(triggeredBy);
+        return workflows.FirstOrDefault(w => w.Id == id)?.Name;
     }
 
     private async Task LoadDatabasesAsync()
@@ -425,7 +532,11 @@
         try
         {
             BackgroundJobs.Enqueue<WorkflowExecutionJob>(job => job.ExecuteAsync(workflow.Id));
-            SetFeedback("Workflow queued for immediate execution.", "info");
+            SetFeedback($"'{workflow.Name}' queued — running now.", "info");
+            // Brief delay then reload to reflect running state
+            await Task.Delay(1500);
+            await ReloadAsync();
+            StateHasChanged();
         }
         catch (Exception ex)
         {
@@ -638,5 +749,45 @@
             return null;
 
         return $"{selected.Minute} {selected.Hour} {selected.Day} {selected.Month} *";
+    }
+
+    private static string FormatDuration(TimeSpan? duration)
+    {
+        if (duration == null) return "—";
+        var d = duration.Value;
+        if (d.TotalSeconds < 60) return $"{d.TotalSeconds:F0}s";
+        if (d.TotalMinutes < 60) return $"{d.TotalMinutes:F0}m {d.Seconds}s";
+        return $"{d.TotalHours:F0}h {d.Minutes}m";
+    }
+
+    private static string FormatRelativeTime(DateTime? utcTime)
+    {
+        if (utcTime == null) return "Never";
+        var diff = DateTime.UtcNow - utcTime.Value;
+        if (diff.TotalSeconds < 0) // Future
+        {
+            var future = -diff;
+            if (future.TotalMinutes < 1) return "< 1 min";
+            if (future.TotalMinutes < 60) return $"in {future.TotalMinutes:F0}m";
+            if (future.TotalHours < 24) return $"in {future.TotalHours:F0}h {future.Minutes}m";
+            return utcTime.Value.ToString("MMM dd HH:mm");
+        }
+        if (diff.TotalMinutes < 1) return "Just now";
+        if (diff.TotalMinutes < 60) return $"{diff.TotalMinutes:F0}m ago";
+        if (diff.TotalHours < 24) return $"{diff.TotalHours:F0}h ago";
+        if (diff.TotalDays < 7) return $"{diff.TotalDays:F0}d ago";
+        return utcTime.Value.ToString("MMM dd");
+    }
+
+    private class WorkflowRunState
+    {
+        public DateTime? LastRunAt { get; set; }
+        public string? LastRunStatus { get; set; }
+        public TimeSpan? LastRunDuration { get; set; }
+        public DateTime? NextRunAt { get; set; }
+        public bool IsRunning { get; set; }
+        public int TotalRuns { get; set; }
+        public int SuccessfulRuns { get; set; }
+        public int FailedRuns { get; set; }
     }
 }
