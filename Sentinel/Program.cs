@@ -174,7 +174,7 @@ try
     if (!useInMemory)
     {
         var db = scope.ServiceProvider.GetRequiredService<SentinelClickHouseContext>();
-        await db.Database.EnsureCreatedAsync();
+        await db.Database.MigrateAsync();
     }
 
     var patternStore = scope.ServiceProvider.GetRequiredService<IFraudPatternStore>();
