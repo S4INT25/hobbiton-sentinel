@@ -11,30 +11,43 @@ public class ClickHouseWorkflowStore(
     public async Task<List<WorkflowDefinition>> GetAllAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.Workflows
+        var rows = await db.Workflows
             .AsNoTracking()
-            .Where(w => !w.IsDeleted)
             .OrderByDescending(w => w.UpdatedAt)
             .ToListAsync();
+
+        return CollapseLatest(rows)
+            .Where(w => !w.IsDeleted)
+            .OrderByDescending(w => w.UpdatedAt)
+            .ToList();
     }
 
     public async Task<List<WorkflowDefinition>> GetEnabledAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.Workflows
+        var rows = await db.Workflows
             .AsNoTracking()
-            .Where(w => !w.IsDeleted && w.Enabled)
             .OrderByDescending(w => w.UpdatedAt)
             .ToListAsync();
+
+        return CollapseLatest(rows)
+            .Where(w => !w.IsDeleted && w.Enabled)
+            .OrderByDescending(w => w.UpdatedAt)
+            .ToList();
     }
 
     public async Task<WorkflowDefinition?> GetByIdAsync(string id)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.Workflows
+        var rows = await db.Workflows
             .AsNoTracking()
-            .Where(w => w.Id == id && !w.IsDeleted)
-            .FirstOrDefaultAsync();
+            .Where(w => w.Id == id)
+            .OrderByDescending(w => w.UpdatedAt)
+            .ToListAsync();
+
+        return rows
+            .OrderByDescending(w => w.UpdatedAt)
+            .FirstOrDefault(w => !w.IsDeleted);
     }
 
     public async Task UpsertAsync(WorkflowDefinition workflow)
@@ -45,10 +58,28 @@ public class ClickHouseWorkflowStore(
         if (string.IsNullOrWhiteSpace(workflow.Id))
             workflow.Id = Guid.NewGuid().ToString("N");
 
-        workflow.UpdatedAt = DateTime.UtcNow;
+        var now = DateTime.UtcNow;
+        workflow.UpdatedAt = now;
         if (workflow.CreatedAt == default)
-            workflow.CreatedAt = DateTime.UtcNow;
+            workflow.CreatedAt = now;
 
+        var existing = await db.Workflows
+            .AsNoTracking()
+            .Where(w => w.Id == workflow.Id)
+            .OrderByDescending(w => w.UpdatedAt)
+            .FirstOrDefaultAsync();
+
+        if (existing is null)
+        {
+            db.ChangeTracker.Clear();
+            db.Workflows.Add(workflow);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+            return;
+        }
+
+        workflow.CreatedAt = existing.CreatedAt == default ? workflow.CreatedAt : existing.CreatedAt;
+        workflow.CreatedBy = string.IsNullOrWhiteSpace(existing.CreatedBy) ? workflow.CreatedBy : existing.CreatedBy;
         db.ChangeTracker.Clear();
         db.Workflows.Add(workflow);
         await db.SaveChangesAsync();
@@ -66,6 +97,9 @@ public class ClickHouseWorkflowStore(
     }
 
     private static string Esc(string? s) => (s ?? "").Replace("\\", "\\\\").Replace("'", "\\'");
+    private static IEnumerable<WorkflowDefinition> CollapseLatest(IEnumerable<WorkflowDefinition> rows) => rows
+        .GroupBy(w => w.Id, StringComparer.Ordinal)
+        .Select(g => g.OrderByDescending(x => x.UpdatedAt).ThenByDescending(x => x.CreatedAt).First());
 
     public async Task SeedDefaultsAsync()
     {

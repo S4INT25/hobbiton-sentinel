@@ -264,7 +264,7 @@
                     <p class="text-xs text-gray-500">Tool calls from recent runs of this workflow.</p>
                     @if (selectedRunId is not null)
                     {
-                        <a href="/admin/runs/@selectedRunId"
+                        <a href="/admin/runs/@selectedRunId?workflowId=@Uri.EscapeDataString(WorkflowId)"
                            class="text-xs text-emerald-400 hover:text-emerald-300 transition-colors">
                             Open run detail →
                         </a>

@@ -16,58 +16,101 @@ public class ClickHouseFraudPatternStore(
     public async Task<List<FraudPatternEntity>> GetAllAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.FraudPatterns
+        var rows = await db.FraudPatterns
             .AsNoTracking()
             .OrderBy(p => p.Id)
             .ToListAsync();
+
+        return CollapseLatest(rows)
+            .OrderBy(p => p.Id)
+            .ToList();
     }
 
     public async Task<List<FraudPatternEntity>> GetEnabledAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.FraudPatterns
+        var rows = await db.FraudPatterns
             .AsNoTracking()
-            .Where(p => p.Enabled)
             .OrderBy(p => p.Id)
             .ToListAsync();
+
+        return CollapseLatest(rows)
+            .Where(p => p.Enabled)
+            .OrderBy(p => p.Id)
+            .ToList();
     }
 
     public async Task<List<FraudPatternEntity>> GetEnabledForWorkflowAsync(string workflowId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.FraudPatterns
+        var rows = await db.FraudPatterns
             .AsNoTracking()
-            .Where(p =>
-                p.Enabled &&
-                (p.WorkflowId == null || p.WorkflowId == "" || p.WorkflowId == (workflowId ?? "")))
             .OrderBy(p => p.Id)
             .ToListAsync();
+
+        var targetWorkflowId = workflowId ?? "";
+        return CollapseLatest(rows)
+            .Where(p =>
+                p.Enabled &&
+                (string.IsNullOrEmpty(p.WorkflowId) || p.WorkflowId == targetWorkflowId))
+            .OrderBy(p => p.Id)
+            .ToList();
     }
 
     public async Task<List<FraudPatternEntity>> GetByWorkflowAsync(string workflowId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.FraudPatterns
+        var rows = await db.FraudPatterns
             .AsNoTracking()
-            .Where(p => p.WorkflowId == (workflowId ?? ""))
             .OrderBy(p => p.Id)
             .ToListAsync();
+
+        var targetWorkflowId = workflowId ?? "";
+        return CollapseLatest(rows)
+            .Where(p => (p.WorkflowId ?? "") == targetWorkflowId)
+            .OrderBy(p => p.Id)
+            .ToList();
     }
 
     public async Task<FraudPatternEntity?> GetByIdAsync(int id)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.FraudPatterns
+        var rows = await db.FraudPatterns
             .AsNoTracking()
             .Where(p => p.Id == id)
-            .FirstOrDefaultAsync();
+            .OrderByDescending(p => p.UpdatedAt)
+            .ToListAsync();
+
+        return rows
+            .OrderByDescending(p => p.UpdatedAt)
+            .ThenByDescending(p => p.CreatedAt)
+            .FirstOrDefault();
     }
 
     public async Task UpsertAsync(FraudPatternEntity pattern)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        pattern.UpdatedAt = DateTime.UtcNow;
-        if (pattern.CreatedAt == default) pattern.CreatedAt = DateTime.UtcNow;
+        var now = DateTime.UtcNow;
+        pattern.UpdatedAt = now;
+        if (pattern.CreatedAt == default) pattern.CreatedAt = now;
+
+        var existing = await db.FraudPatterns
+            .AsNoTracking()
+            .Where(p => p.Id == pattern.Id)
+            .OrderByDescending(p => p.UpdatedAt)
+            .FirstOrDefaultAsync();
+
+        if (existing is null)
+        {
+            db.ChangeTracker.Clear();
+            db.FraudPatterns.Add(pattern);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+            return;
+        }
+
+        pattern.CreatedAt = existing.CreatedAt == default ? pattern.CreatedAt : existing.CreatedAt;
+        pattern.CreatedBy = string.IsNullOrWhiteSpace(existing.CreatedBy) ? pattern.CreatedBy : existing.CreatedBy;
         db.ChangeTracker.Clear();
         db.FraudPatterns.Add(pattern);
         await db.SaveChangesAsync();
@@ -113,4 +156,9 @@ public class ClickHouseFraudPatternStore(
         }
         logger.LogInformation("Seeded {Count} default fraud patterns to ClickHouse", defaults.Count());
     }
+
+    private static string Esc(string? s) => (s ?? "").Replace("\\", "\\\\").Replace("'", "\\'");
+    private static IEnumerable<FraudPatternEntity> CollapseLatest(IEnumerable<FraudPatternEntity> rows) => rows
+        .GroupBy(p => p.Id)
+        .Select(g => g.OrderByDescending(x => x.UpdatedAt).ThenByDescending(x => x.CreatedAt).First());
 }

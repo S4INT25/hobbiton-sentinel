@@ -271,7 +271,7 @@
                             var wfName = GetWorkflowName(run.TriggeredBy);
                             <tr class="hover:bg-gray-900/40">
                                 <td class="px-4 py-2.5">
-                                    <a href="/admin/runs/@run.RunId" class="text-cyan-400 hover:text-cyan-300 font-mono text-xs transition-colors">@run.RunId[..Math.Min(8, run.RunId.Length)]</a>
+                                    <a href="@BuildWorkflowRunDetailHref(run)" class="text-cyan-400 hover:text-cyan-300 font-mono text-xs transition-colors">@run.RunId[..Math.Min(8, run.RunId.Length)]</a>
                                 </td>
                                 <td class="px-4 py-2.5 text-xs">
                                     @if (wfName != null)
@@ -672,6 +672,14 @@
         triggeredBy.StartsWith("workflow:", StringComparison.OrdinalIgnoreCase)
             ? triggeredBy["workflow:".Length..]
             : triggeredBy;
+
+    private static string BuildWorkflowRunDetailHref(RunSummary run)
+    {
+        var workflowId = ExtractWorkflowRef(run.TriggeredBy);
+        if (string.IsNullOrWhiteSpace(workflowId))
+            return $"/admin/runs/{run.RunId}";
+        return $"/admin/runs/{run.RunId}?workflowId={Uri.EscapeDataString(workflowId)}";
+    }
 
     private static string RunStatusClasses(string status)
     {

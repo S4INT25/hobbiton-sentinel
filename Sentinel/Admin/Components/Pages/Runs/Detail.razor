@@ -6,7 +6,7 @@
 
 <div class="space-y-4">
     <div class="flex items-center gap-3">
-        <a href="/admin/runs" class="text-gray-500 hover:text-gray-300 text-sm">← Runs</a>
+        <a href="@BackHref" class="text-gray-500 hover:text-gray-300 text-sm">@BackLabel</a>
         <h1 class="text-lg font-semibold text-white font-mono">@RunId</h1>
         @if (summary != null)
         {
@@ -42,7 +42,7 @@
             </div>
             <div class="p-3 bg-gray-900 border border-gray-800 rounded-lg">
                 <div class="text-gray-500 mb-0.5">Triggered By</div>
-                <div class="text-white">@summary.TriggeredBy</div>
+                <div class="text-white break-all">@summary.TriggeredBy</div>
             </div>
         </div>
     }
@@ -85,20 +85,37 @@
 
 @code {
     [Parameter] public string RunId { get; set; } = "";
+    [Parameter, SupplyParameterFromQuery(Name = "workflowId")] public string? WorkflowId { get; set; }
 
     private RunSummary? summary;
     private List<RunLog> logs = [];
     private HashSet<RunLog> expandedLogs = [];
+    private string? derivedWorkflowId;
+
+    private string? EffectiveWorkflowId => !string.IsNullOrWhiteSpace(WorkflowId) ? WorkflowId : derivedWorkflowId;
+    private string BackHref => !string.IsNullOrWhiteSpace(EffectiveWorkflowId)
+        ? $"/admin/workflows/{Uri.EscapeDataString(EffectiveWorkflowId)}"
+        : "/admin/runs";
+    private string BackLabel => !string.IsNullOrWhiteSpace(EffectiveWorkflowId) ? "← Workflow" : "← Runs";
 
     protected override async Task OnInitializedAsync()
     {
         summary = await RunLogStore.GetRunSummaryAsync(RunId);
         logs = await RunLogStore.GetRunLogsAsync(RunId);
+        derivedWorkflowId = ExtractWorkflowId(summary?.TriggeredBy);
     }
 
     private void ToggleLog(RunLog log)
     {
         if (!expandedLogs.Remove(log))
             expandedLogs.Add(log);
+    }
+
+    private static string? ExtractWorkflowId(string? triggeredBy)
+    {
+        if (string.IsNullOrWhiteSpace(triggeredBy) ||
+            !triggeredBy.StartsWith("workflow:", StringComparison.OrdinalIgnoreCase))
+            return null;
+        return triggeredBy["workflow:".Length..];
     }
 }
