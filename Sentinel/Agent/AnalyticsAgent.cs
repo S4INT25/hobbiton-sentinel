@@ -52,7 +52,11 @@ public class AnalyticsAgent(
 
         messages.Add(new UserChatMessage(prompt));
 
-        var tools = AnalyticsAgentTools.GetToolDefinitions();
+        var allTools = AnalyticsAgentTools.GetToolDefinitions();
+        // Only provide emit_chart and ask_user in interactive (chat) mode
+        var tools = isInteractive
+            ? allTools
+            : allTools.Where(t => t.FunctionName != "emit_chart" && t.FunctionName != "ask_user").ToList();
         var chatClient = ai.GetChatClient(modelName);
         int totalInput = 0, totalOutput = 0;
         var iteration = 0;
@@ -394,12 +398,30 @@ public class AnalyticsAgent(
               - "Which time period?" with choices ["Last 24 hours", "Last 7 days", "Last 30 days", "Custom"]
               - "Which database?" with available database options
               Don't over-ask — only when genuinely needed. If you can make a reasonable assumption, do so.
+              
+              ## Charts
+              Use `emit_chart` when visualization would help the user understand patterns or trends.
+              Decide the chart type based on data shape (time series → line, categories → bar, proportions → pie).
               """
             : """
               
               ## Mode
-              You are in autonomous mode (running from a workflow/scheduled job). Do NOT call ask_user.
+              You are in autonomous mode (running from a workflow/scheduled job).
+              Do NOT call ask_user or emit_chart — these tools are not available.
               Make reasonable decisions and proceed. Default to last 7 days if no time period specified.
+              
+              ## Email Reports
+              When using `send_report`, produce a PROFESSIONAL executive-quality report suitable for management.
+              Structure:
+              - **Clear subject line** — concise, actionable (e.g. "Weekly Revenue Summary: K 2.4M (+12% WoW)")
+              - **Executive summary** — 2-3 sentences with key takeaways at the top
+              - **Key metrics** — use a clean markdown table with well-formatted numbers (K prefix, commas, percentages)
+              - **Trends & insights** — specific observations with supporting data points
+              - **Recommendations** — clear, actionable next steps (if applicable)
+              
+              Tone: professional, data-driven, concise. No filler, no hedging, no casual language.
+              Format numbers consistently: K 1,250.00 for currency, use percentages for changes.
+              Keep it scannable — busy executives should grasp the key points in 10 seconds.
               """;
 
         return $$"""
@@ -412,13 +434,11 @@ public class AnalyticsAgent(
                  1. Think about what data you need to answer the question
                  2. Run SQL queries to get the data (batch related queries together)
                  3. Analyse the results — look for patterns, trends, outliers
-                 4. If the data would benefit from visualization, call emit_chart with the data
+                 4. In chat mode: use emit_chart if visualization adds insight
                  5. If asked to send a report, use send_report with well-structured markdown content
                  6. Provide a clear, insightful explanation of your findings
                  
                  ## Decision making
-                 - Decide YOURSELF when to chart vs not chart — chart when it adds insight, skip for simple lookups
-                 - Decide the chart type based on data shape (time series → line, categories → bar, proportions → pie)
                  - Structure reports however makes most sense for the content — no fixed template
                  - If you find something interesting while investigating, follow up on it
                  - You can run multiple rounds of queries if initial results lead to follow-up questions

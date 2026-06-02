@@ -115,15 +115,19 @@ public static class AnalyticsAgentTools
         ChatTool.CreateFunctionTool(
             functionName: "send_report",
             functionDescription: """
-                Send an email report with your analysis findings. Structure the content yourself based
-                on what you found. You decide the sections, formatting, and level of detail.
+                Send a professional email report with your analysis findings. This will be read by management
+                and stakeholders — make it clean, polished, and executive-ready.
                 
                 Use template "fraud_alert" for security/fraud findings (include severity, evidence, recommendations).
                 Use template "insights" for general analytics/business intelligence reports.
                 Use template "custom" for any other structured report.
                 
-                The body should be well-formatted markdown. Include tables for data, bullet points for findings,
-                and clear section headers. Be professional and concise.
+                The body must be well-formatted markdown suitable for a professional audience:
+                - Start with a brief executive summary (2-3 sentences)
+                - Use tables for metrics with properly formatted numbers
+                - Include section headers for scannability
+                - End with actionable recommendations if applicable
+                - Keep it concise — respect the reader's time
                 """,
             functionParameters: BinaryData.FromString("""
                 {

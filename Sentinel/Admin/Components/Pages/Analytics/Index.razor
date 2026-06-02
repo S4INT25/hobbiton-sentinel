@@ -122,7 +122,7 @@
 
                                 @if (!string.IsNullOrEmpty(msg.Explanation))
                                 {
-                                    <div class="text-sm text-gray-300 leading-relaxed">@msg.Explanation</div>
+                                    <div class="text-sm text-gray-300 leading-relaxed prose prose-invert prose-sm max-w-none">@(Infrastructure.MarkdownRenderer.ToHtml(msg.Explanation))</div>
                                 }
 
                                 @if (!string.IsNullOrEmpty(msg.Summary) || !string.IsNullOrEmpty(msg.RiskLevel) || (msg.Findings?.Count > 0) || (msg.RecommendedActions?.Count > 0))
@@ -130,7 +130,7 @@
                                     <div class="border border-gray-800 rounded-lg p-3 bg-gray-900/40 space-y-2">
                                         @if (!string.IsNullOrEmpty(msg.Summary))
                                         {
-                                            <div class="text-sm text-gray-200">@msg.Summary</div>
+                                            <div class="text-sm text-gray-200 prose prose-invert prose-sm max-w-none">@(Infrastructure.MarkdownRenderer.ToHtml(msg.Summary))</div>
                                         }
                                         @if (!string.IsNullOrEmpty(msg.RiskLevel))
                                         {
