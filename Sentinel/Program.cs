@@ -57,7 +57,9 @@ try
     });
 
     var redisConnectionString = builder.Configuration["Redis:ConnectionString"];
-    var useInMemory = builder.Environment.IsDevelopment() || string.IsNullOrWhiteSpace(redisConnectionString);
+    var clickHouseHostRaw = builder.Configuration["ClickHouse:Host"];
+    var useClickHouseStores = !string.IsNullOrWhiteSpace(clickHouseHostRaw);
+    var useRedisInfrastructure = !string.IsNullOrWhiteSpace(redisConnectionString);
 
     builder.Services.AddSingleton(_ =>
     {
@@ -80,23 +82,18 @@ try
     builder.Services.AddSingleton<IAnalyticsJobStore, AnalyticsJobStore>();
     builder.Services.AddSingleton<IActiveRunTracker, ActiveRunTracker>();
 
-    if (useInMemory)
+    if (!useClickHouseStores)
     {
         builder.Services.AddSingleton<IRunLogStore, InMemoryRunLogStore>();
         builder.Services.AddSingleton<IAuditLogStore, InMemoryAuditLogStore>();
         builder.Services.AddSingleton<IFraudPatternStore, InMemoryFraudPatternStore>();
         builder.Services.AddSingleton<IEvidenceSourceStore, InMemoryEvidenceSourceStore>();
         builder.Services.AddSingleton<IWorkflowStore, InMemoryWorkflowStore>();
-        builder.Services.AddFusionCache();
-        builder.Services.AddHangfire(config => config.UseInMemoryStorage());
     }
     else
     {
-        builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
-            ConnectionMultiplexer.Connect(redisConnectionString!));
-
         // ClickHouse EF Core — run logs + audit (constructed from ClickHouse config section)
-        var chHost = new Uri(builder.Configuration["ClickHouse:Host"] ?? "http://localhost:8123");
+        var chHost = new Uri(clickHouseHostRaw!);
         var chUser = builder.Configuration["ClickHouse:User"] ?? "default";
         var chPass = builder.Configuration["ClickHouse:Password"] ?? "";
         var chConnectionString =
@@ -108,6 +105,13 @@ try
         builder.Services.AddScoped<IEvidenceSourceStore, ClickHouseEvidenceSourceStore>();
         builder.Services.AddScoped<IWorkflowStore, ClickHouseWorkflowStore>();
 
+    }
+
+    if (useRedisInfrastructure)
+    {
+        builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+            ConnectionMultiplexer.Connect(redisConnectionString!));
+
         // L2 distributed cache — Redis as persistent cache storage
         builder.Services.AddStackExchangeRedisCache(o => o.Configuration = redisConnectionString!);
         builder.Services.AddFusionCache()
@@ -117,6 +121,11 @@ try
             .AsHybridCache();
         builder.Services.AddHangfire((sp, config) =>
             config.UseRedisStorage(sp.GetRequiredService<IConnectionMultiplexer>()));
+    }
+    else
+    {
+        builder.Services.AddFusionCache();
+        builder.Services.AddHangfire(config => config.UseInMemoryStorage());
     }
 
     builder.Services.AddSingleton<SchemaLoader>();
@@ -171,7 +180,7 @@ try
 
 
     using var scope = app.Services.CreateScope();
-    if (!useInMemory)
+    if (useClickHouseStores)
     {
         var db = scope.ServiceProvider.GetRequiredService<SentinelClickHouseContext>();
         await db.Database.MigrateAsync();
