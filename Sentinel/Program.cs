@@ -98,6 +98,7 @@ try
         var chPass = builder.Configuration["ClickHouse:Password"] ?? "";
         var chConnectionString =
             $"Host={chHost.Host};Port={chHost.Port};Database=sentinel;Username={chUser};Password={chPass}";
+        builder.Services.AddDbContextFactory<SentinelClickHouseContext>(options => options.UseClickHouse(chConnectionString));
         builder.Services.AddDbContext<SentinelClickHouseContext>(options => options.UseClickHouse(chConnectionString));
         builder.Services.AddScoped<IRunLogStore, RunLogStore>();
         builder.Services.AddScoped<IAuditLogStore, AuditLogStore>();
@@ -182,7 +183,8 @@ try
     using var scope = app.Services.CreateScope();
     if (useClickHouseStores)
     {
-        var db = scope.ServiceProvider.GetRequiredService<SentinelClickHouseContext>();
+        var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<SentinelClickHouseContext>>();
+        await using var db = await factory.CreateDbContextAsync();
         await db.Database.MigrateAsync();
     }
 

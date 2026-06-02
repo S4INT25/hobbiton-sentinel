@@ -4,30 +4,42 @@ using Sentinel.Admin.Models;
 
 namespace Sentinel.Admin.Stores;
 
-public class ClickHouseWorkflowStore(SentinelClickHouseContext db, ILogger<ClickHouseWorkflowStore> logger) : IWorkflowStore
+public class ClickHouseWorkflowStore(
+    IDbContextFactory<SentinelClickHouseContext> dbFactory,
+    ILogger<ClickHouseWorkflowStore> logger) : IWorkflowStore
 {
-    public async Task<List<WorkflowDefinition>> GetAllAsync() =>
-        await db.Workflows
+    public async Task<List<WorkflowDefinition>> GetAllAsync()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.Workflows
             .AsNoTracking()
             .Where(w => !w.IsDeleted)
             .OrderByDescending(w => w.UpdatedAt)
             .ToListAsync();
+    }
 
-    public async Task<List<WorkflowDefinition>> GetEnabledAsync() =>
-        await db.Workflows
+    public async Task<List<WorkflowDefinition>> GetEnabledAsync()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.Workflows
             .AsNoTracking()
             .Where(w => !w.IsDeleted && w.Enabled)
             .OrderByDescending(w => w.UpdatedAt)
             .ToListAsync();
+    }
 
-    public async Task<WorkflowDefinition?> GetByIdAsync(string id) =>
-        await db.Workflows
+    public async Task<WorkflowDefinition?> GetByIdAsync(string id)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.Workflows
             .AsNoTracking()
             .Where(w => w.Id == id && !w.IsDeleted)
             .FirstOrDefaultAsync();
+    }
 
     public async Task UpsertAsync(WorkflowDefinition workflow)
     {
+        await using var db = await dbFactory.CreateDbContextAsync();
         NormalizeAndValidate(workflow);
 
         if (string.IsNullOrWhiteSpace(workflow.Id))
@@ -45,6 +57,7 @@ public class ClickHouseWorkflowStore(SentinelClickHouseContext db, ILogger<Click
 
     public async Task DeleteAsync(string id)
     {
+        await using var db = await dbFactory.CreateDbContextAsync();
         await db.Database.ExecuteSqlRawAsync($"""
             ALTER TABLE sentinel.workflows
             UPDATE enabled = 0, is_deleted = 1, updated_at = now()

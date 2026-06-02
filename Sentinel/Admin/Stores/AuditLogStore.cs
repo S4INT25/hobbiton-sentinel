@@ -4,10 +4,11 @@ using Sentinel.Admin.Models;
 
 namespace Sentinel.Admin.Stores;
 
-public class AuditLogStore(SentinelClickHouseContext db) : IAuditLogStore
+public class AuditLogStore(IDbContextFactory<SentinelClickHouseContext> dbFactory) : IAuditLogStore
 {
     public async Task LogAsync(AuditLog entry)
     {
+        await using var db = await dbFactory.CreateDbContextAsync();
         db.AuditLogs.Add(entry);
         await db.SaveChangesAsync();
     }
@@ -15,6 +16,7 @@ public class AuditLogStore(SentinelClickHouseContext db) : IAuditLogStore
     public async Task<List<AuditLog>> GetRecentAsync(int limit = 100, int offset = 0,
         string? userId = null, string? action = null, string? resourceType = null)
     {
+        await using var db = await dbFactory.CreateDbContextAsync();
         var query = db.AuditLogs.AsQueryable();
 
         if (!string.IsNullOrEmpty(userId))

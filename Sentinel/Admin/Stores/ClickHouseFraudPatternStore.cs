@@ -8,46 +8,64 @@ namespace Sentinel.Admin.Stores;
 /// ClickHouse EF Core-backed fraud pattern store.
 /// Table: sentinel.fraud_patterns (ReplacingMergeTree, ordered by id).
 /// </summary>
-public class ClickHouseFraudPatternStore(SentinelClickHouseContext db, ILogger<ClickHouseFraudPatternStore> logger)
+public class ClickHouseFraudPatternStore(
+    IDbContextFactory<SentinelClickHouseContext> dbFactory,
+    ILogger<ClickHouseFraudPatternStore> logger)
     : IFraudPatternStore
 {
-    public async Task<List<FraudPatternEntity>> GetAllAsync() =>
-        await db.FraudPatterns
+    public async Task<List<FraudPatternEntity>> GetAllAsync()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.FraudPatterns
             .AsNoTracking()
             .OrderBy(p => p.Id)
             .ToListAsync();
+    }
 
-    public async Task<List<FraudPatternEntity>> GetEnabledAsync() =>
-        await db.FraudPatterns
+    public async Task<List<FraudPatternEntity>> GetEnabledAsync()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.FraudPatterns
             .AsNoTracking()
             .Where(p => p.Enabled)
             .OrderBy(p => p.Id)
             .ToListAsync();
+    }
 
-    public async Task<List<FraudPatternEntity>> GetEnabledForWorkflowAsync(string workflowId) =>
-        await db.FraudPatterns
+    public async Task<List<FraudPatternEntity>> GetEnabledForWorkflowAsync(string workflowId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.FraudPatterns
             .AsNoTracking()
             .Where(p =>
                 p.Enabled &&
                 (p.WorkflowId == null || p.WorkflowId == "" || p.WorkflowId == (workflowId ?? "")))
             .OrderBy(p => p.Id)
             .ToListAsync();
+    }
 
-    public async Task<List<FraudPatternEntity>> GetByWorkflowAsync(string workflowId) =>
-        await db.FraudPatterns
+    public async Task<List<FraudPatternEntity>> GetByWorkflowAsync(string workflowId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.FraudPatterns
             .AsNoTracking()
             .Where(p => p.WorkflowId == (workflowId ?? ""))
             .OrderBy(p => p.Id)
             .ToListAsync();
+    }
 
-    public async Task<FraudPatternEntity?> GetByIdAsync(int id) =>
-        await db.FraudPatterns
+    public async Task<FraudPatternEntity?> GetByIdAsync(int id)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.FraudPatterns
             .AsNoTracking()
             .Where(p => p.Id == id)
             .FirstOrDefaultAsync();
+    }
 
     public async Task UpsertAsync(FraudPatternEntity pattern)
     {
+        await using var db = await dbFactory.CreateDbContextAsync();
         pattern.UpdatedAt = DateTime.UtcNow;
         if (pattern.CreatedAt == default) pattern.CreatedAt = DateTime.UtcNow;
         db.ChangeTracker.Clear();
@@ -58,12 +76,14 @@ public class ClickHouseFraudPatternStore(SentinelClickHouseContext db, ILogger<C
 
     public async Task DeleteAsync(int id)
     {
+        await using var db = await dbFactory.CreateDbContextAsync();
         await db.Database.ExecuteSqlRawAsync(
             $"ALTER TABLE sentinel.fraud_patterns DELETE WHERE id = {id}");
     }
 
     public async Task SeedDefaultsAsync()
     {
+        await using var db = await dbFactory.CreateDbContextAsync();
         var count = await db.FraudPatterns.CountAsync();
         if (count > 0)
         {
