@@ -120,6 +120,22 @@
             </div>
         </div>
 
+        @if (showBetaDisclaimer)
+        {
+            <div class="mx-4 mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
+                <div class="flex items-start justify-between gap-3">
+                    <p>
+                        <span class="font-semibold">Beta disclaimer:</span> this assistant is still in beta and may produce inaccurate information or wrong values when context is incomplete.
+                    </p>
+                    <button @onclick="DismissBetaDisclaimer"
+                            class="shrink-0 text-amber-300 hover:text-amber-100 transition-colors"
+                            title="Dismiss disclaimer">
+                        ✕
+                    </button>
+                </div>
+            </div>
+        }
+
         <div class="flex-1 min-h-0">
             <div class="flex flex-col min-h-0 min-w-0 h-full">
                 <!-- Chat Messages -->
@@ -408,7 +424,7 @@
                                     }
                                 </div>
                                 
-                                @if (HasSqlContent(msg))
+                                @if (debugMode && HasSqlContent(msg))
                                 {
                                     <details class="border border-gray-800/60 rounded-lg overflow-hidden">
                                         <summary
@@ -449,7 +465,7 @@
                                     </details>
                                 }
 
-                                @if (msg.StreamEvents?.Count > 0)
+                                @if (debugMode && msg.StreamEvents?.Count > 0)
                                 {
                                     <details class="border border-gray-800/60 rounded-lg overflow-hidden">
                                         <summary
@@ -476,7 +492,22 @@
                     @if (loading)
                     {
                         <div class="space-y-2 max-w-2xl">
-                            @if (_pendingMessage?.StreamEvents?.Count > 0)
+                            @if (!string.IsNullOrWhiteSpace(GetPendingThinkingText(_pendingMessage)))
+                            {
+                                <div class="border border-emerald-500/20 rounded-lg bg-emerald-500/5 px-3 py-2">
+                                    <div class="flex items-start gap-2">
+                                        <svg class="w-3.5 h-3.5 mt-0.5 text-emerald-400 shrink-0 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                        </svg>
+                                        <div class="min-w-0">
+                                            <div class="text-[10px] uppercase tracking-wider text-emerald-300/80 font-medium">LLM thinking</div>
+                                            <div class="text-xs text-emerald-100/90">@GetPendingThinkingText(_pendingMessage)</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+
+                            @if (debugMode && _pendingMessage?.StreamEvents?.Count > 0)
                             {
                                 <div class="border border-gray-800/60 rounded-lg overflow-hidden bg-gray-900/30">
                                     <div class="px-3 py-1.5 border-b border-gray-800/60 flex items-center gap-2">
@@ -532,22 +563,7 @@
 
                 <!-- Input -->
                 <div class="border-t border-gray-800 p-3">
-                    <form @onsubmit="Send" @onsubmit:preventDefault class="space-y-2">
-                        <textarea @bind="input" @bind:event="oninput" rows="3"
-                                  placeholder="Ask about your data... e.g. Top 10 merchants by volume this week"
-                                  disabled="@loading"
-                                  class="w-full px-3 py-2.5 bg-gray-900 border border-gray-800 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 disabled:opacity-50 resize-y min-h-[2.75rem] max-h-56"></textarea>
-                        <div class="flex items-center justify-between gap-2">
-                            <span
-                                class="text-[10px] text-gray-600">Tip: use line breaks for context-rich prompts.</span>
-                            <button type="submit"
-                                    disabled="@(loading || string.IsNullOrWhiteSpace(input) || string.IsNullOrEmpty(database))"
-                                    class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-800 disabled:text-gray-600 text-white text-sm font-medium rounded-lg transition-colors">
-                                Ask
-                            </button>
-                        </div>
-                    </form>
-                    <div class="mt-2 flex flex-wrap gap-2">
+                    <div class="mb-2 flex flex-wrap gap-2">
                         @foreach (var suggestion in quickAskSuggestions)
                         {
                             <button @onclick="() => QuickAsk(suggestion.Prompt)"
@@ -556,6 +572,26 @@
                             </button>
                         }
                     </div>
+                    <form @onsubmit="Send" @onsubmit:preventDefault class="space-y-2">
+                        <div class="rounded-2xl border border-gray-700/80 bg-gray-900/80 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] focus-within:border-emerald-500/50 focus-within:shadow-[0_0_0_2px_rgba(16,185,129,0.15)] transition-all">
+                            <textarea @bind="input" @bind:event="oninput" rows="3"
+                                      @onkeydown="OnComposerKeyDown"
+                                      placeholder="Message Sentinel..."
+                                      disabled="@loading"
+                                      class="w-full px-4 pt-3 pb-2 bg-transparent border-0 text-sm text-white placeholder-gray-500 focus:outline-none disabled:opacity-50 resize-y min-h-[3rem] max-h-56"></textarea>
+                            <div class="flex items-center justify-between px-2 pb-2">
+                                <span class="pl-2 text-[10px] text-gray-500">Sentinel can make mistakes. Verify important results.</span>
+                                <button type="submit"
+                                        disabled="@(loading || string.IsNullOrWhiteSpace(input) || string.IsNullOrEmpty(database))"
+                                        class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-gray-900 hover:bg-gray-200 disabled:bg-gray-800 disabled:text-gray-500 transition-colors"
+                                        title="Send">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h13m-6-7l7 7-7 7" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>
@@ -584,6 +620,7 @@
     private ChatMessage? _pendingMessage;
     private bool showHistoryMobile;
     private bool showHistoryPanel = true;
+    private bool showBetaDisclaimer = true;
     private HashSet<string> databaseTables = new(StringComparer.OrdinalIgnoreCase);
     private List<QuickAskSuggestion> quickAskSuggestions = [];
     private int? selectedAssistantIdx;
@@ -631,21 +668,12 @@
 
     private string DbPrefKey => $"analytics:prefs:{userId}:database";
     private string ModePrefKey => $"analytics:prefs:{userId}:mode";
+    private string BetaDisclaimerPrefKey => $"analytics:prefs:{userId}:beta-disclaimer-dismissed";
 
     private async Task LoadDatabases()
     {
-        databases = ["lipila_blaze"];
+        databases = AllowedDatabases.ToList();
         dbLoadError = null;
-        try
-        {
-            var loaded = await SchemaLoader.GetDatabasesAsync();
-            if (loaded.Count > 0)
-                databases = loaded.OrderBy(s => s).ToList();
-        }
-        catch (Exception ex)
-        {
-            dbLoadError = ex.Message;
-        }
 
         // Restore saved database preference, fall back to first in list
         var saved = await Cache.GetOrDefaultAsync<string>(DbPrefKey);
@@ -656,6 +684,9 @@
 
         var savedMode = await Cache.GetOrDefaultAsync<string>(ModePrefKey);
         mode = savedMode is "fraud" ? "fraud" : "general";
+
+        var disclaimerDismissed = await Cache.GetOrDefaultAsync<string>(BetaDisclaimerPrefKey);
+        showBetaDisclaimer = !string.Equals(disclaimerDismissed, "1", StringComparison.Ordinal);
 
         await RefreshDatabaseContext();
     }
@@ -698,14 +729,23 @@
         var normalized = databaseName.Trim().ToLowerInvariant();
         return normalized switch
         {
-            "lipila_blaze" => "Lipila (Payments)",
-            "inshuwa_analytics" => "Inshuwa (Insurance)",
-            "hobbiton_lending" => "Hobbiton Lending",
+            "lipila_blaze" => "lipila_blaze",
+            "inshuwa" => "insurer",
+            "bnpl" => "bnpl",
+            "patumba_app" => "patumba_app",
             _ => string.Join(" ", databaseName
                 .Split(['_', '-'], StringSplitOptions.RemoveEmptyEntries)
                 .Select(segment => char.ToUpperInvariant(segment[0]) + segment[1..]))
         };
     }
+
+    private static readonly IReadOnlyList<string> AllowedDatabases =
+    [
+        "inshuwa", // insurer
+        "lipila_blaze",
+        "bnpl",
+        "patumba_app"
+    ];
 
     private async Task LoadConversations()
     {
@@ -847,6 +887,30 @@
             messages.Add(assistant);
             SelectLatestAssistantMessage();
             loading = false;
+        }
+    }
+
+    private async Task OnComposerKeyDown(KeyboardEventArgs e)
+    {
+        if (loading) return;
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            input = input.TrimEnd('\r', '\n');
+            await Send();
+        }
+    }
+
+    private async Task DismissBetaDisclaimer()
+    {
+        showBetaDisclaimer = false;
+        try
+        {
+            await Cache.SetAsync(BetaDisclaimerPrefKey, "1",
+                new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(365) });
+        }
+        catch
+        {
+            /* best-effort */
         }
     }
 
@@ -1078,6 +1142,23 @@
 
     private static bool HasReasoningContent(ChatMessage msg) =>
         !string.IsNullOrWhiteSpace(msg.Thinking);
+
+    private static string? GetPendingThinkingText(ChatMessage? pendingMessage)
+    {
+        if (pendingMessage?.StreamEvents?.Count is not > 0)
+            return null;
+
+        var latestThinking = pendingMessage.StreamEvents
+            .LastOrDefault(e => string.Equals(e.Type, "thinking", StringComparison.OrdinalIgnoreCase)
+                                || string.Equals(e.Type, "analysing", StringComparison.OrdinalIgnoreCase)
+                                || string.Equals(e.Type, "asking", StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrWhiteSpace(latestThinking?.Message))
+            return latestThinking.Message;
+
+        var latestMessage = pendingMessage.StreamEvents.LastOrDefault(e => !string.IsNullOrWhiteSpace(e.Message));
+        return latestMessage?.Message;
+    }
 
     private static string MessageTabClass(ChatMessage msg, string tab) =>
         msg.ActiveTab == tab

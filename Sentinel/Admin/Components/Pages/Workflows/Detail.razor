@@ -176,7 +176,7 @@
                                 <select @bind="editSource.EvidenceDatabase" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition-colors">
                                     @foreach (var db in availableDatabases)
                                     {
-                                        <option value="@db">@db</option>
+                                        <option value="@db">@DatabaseDisplayName(db)</option>
                                     }
                                 </select>
                             </div>
@@ -415,8 +415,7 @@
 
     private async Task LoadDatabasesAsync()
     {
-        var dbs = await SchemaLoader.GetDatabasesAsync();
-        availableDatabases = dbs.Count > 0 ? dbs.OrderBy(d => d).ToList() : ["lipila_blaze"];
+        availableDatabases = AllowedDatabases.ToList();
     }
 
     // --- System Prompt ---
@@ -627,4 +626,18 @@
     private string TabClass(string tab) => tab == activeTab
         ? "pb-2 text-sm font-medium text-emerald-400 border-b-2 border-emerald-400 transition-colors"
         : "pb-2 text-sm font-medium text-gray-500 hover:text-gray-300 border-b-2 border-transparent transition-colors";
+
+    private static string DatabaseDisplayName(string db) => db switch
+    {
+        "inshuwa" => "insurer",
+        _ => db
+    };
+
+    private static readonly IReadOnlyList<string> AllowedDatabases =
+    [
+        "inshuwa", // insurer
+        "lipila_blaze",
+        "bnpl",
+        "patumba_app"
+    ];
 }

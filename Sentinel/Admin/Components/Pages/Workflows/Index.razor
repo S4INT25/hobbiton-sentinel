@@ -97,7 +97,7 @@
                     <select @bind="editWorkflow.TargetDatabase" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition-colors">
                         @foreach (var db in availableDatabases)
                         {
-                            <option value="@db">@db</option>
+                            <option value="@db">@DatabaseDisplayName(db)</option>
                         }
                     </select>
                 </div>
@@ -437,10 +437,7 @@
 
     private async Task LoadDatabasesAsync()
     {
-        var dbs = await SchemaLoader.GetDatabasesAsync();
-        availableDatabases = dbs.Count > 0
-            ? dbs.OrderBy(d => d).ToList()
-            : ["lipila_blaze"];
+        availableDatabases = AllowedDatabases.ToList();
     }
 
     private void ShowCreateForm()
@@ -473,12 +470,6 @@
             CreatedAt = workflow.CreatedAt,
             CreatedBy = workflow.CreatedBy
         };
-        if (!string.IsNullOrWhiteSpace(editWorkflow.TargetDatabase) &&
-            !availableDatabases.Contains(editWorkflow.TargetDatabase, StringComparer.OrdinalIgnoreCase))
-        {
-            availableDatabases.Add(editWorkflow.TargetDatabase);
-            availableDatabases = availableDatabases.OrderBy(d => d).ToList();
-        }
         editSchedulePreset = DetectSchedulePreset(editWorkflow.CronExpression);
         editCustomDateTimeLocal = BuildDateTimeLocalFromCron(editWorkflow.CronExpression, editWorkflow.TimeZoneId);
         isEditing = true;
@@ -841,6 +832,20 @@
     private static string DisplayTimeZone(string? timeZoneId) =>
         WorkflowTimeZones.Options.FirstOrDefault(z => string.Equals(z.Id, WorkflowTimeZones.NormalizeOrDefaultId(timeZoneId), StringComparison.OrdinalIgnoreCase))?.Label
         ?? WorkflowTimeZones.DefaultId;
+
+    private static string DatabaseDisplayName(string db) => db switch
+    {
+        "inshuwa" => "insurer",
+        _ => db
+    };
+
+    private static readonly IReadOnlyList<string> AllowedDatabases =
+    [
+        "inshuwa", // insurer
+        "lipila_blaze",
+        "bnpl",
+        "patumba_app"
+    ];
 
     private static string FormatInZone(DateTimeOffset? utcTime, string? timeZoneId)
     {
