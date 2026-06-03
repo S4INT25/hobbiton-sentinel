@@ -48,6 +48,7 @@ public class WorkflowSchedulerService(
                     continue;
                 }
 
+                var workflowTimeZone = WorkflowTimeZones.ResolveOrDefault(workflow.TimeZoneId);
                 jobs.AddOrUpdate<WorkflowExecutionJob>(
                     recurringJobId: recurringId,
                     methodCall: job => job.ExecuteAsync(workflow.Id),
@@ -55,7 +56,7 @@ public class WorkflowSchedulerService(
                     queue: "default",
                     options: new RecurringJobOptions
                     {
-                        TimeZone = TimeZoneInfo.Utc
+                        TimeZone = workflowTimeZone
                     });
             }
         }

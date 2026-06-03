@@ -70,11 +70,12 @@
                         History
                     </span>
                 </button>
-                <select value="@database" @onchange="OnDatabaseChanged"
+                <span class="text-[10px] text-gray-500 uppercase tracking-wider">Product</span>
+                <select value="@database" @onchange="OnDatabaseChanged" title="Product"
                         class="px-2.5 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white">
                     @foreach (var db in databases)
                     {
-                        <option value="@db">@db</option>
+                        <option value="@db">@GetProductLabel(db)</option>
                     }
                 </select>
                 <select value="@mode" @onchange="OnModeChanged"
@@ -687,6 +688,23 @@
         }
 
         BuildQuickAskSuggestions();
+    }
+
+    private static string GetProductLabel(string databaseName)
+    {
+        if (string.IsNullOrWhiteSpace(databaseName))
+            return "Unknown Product";
+
+        var normalized = databaseName.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "lipila_blaze" => "Lipila (Payments)",
+            "inshuwa_analytics" => "Inshuwa (Insurance)",
+            "hobbiton_lending" => "Hobbiton Lending",
+            _ => string.Join(" ", databaseName
+                .Split(['_', '-'], StringSplitOptions.RemoveEmptyEntries)
+                .Select(segment => char.ToUpperInvariant(segment[0]) + segment[1..]))
+        };
     }
 
     private async Task LoadConversations()

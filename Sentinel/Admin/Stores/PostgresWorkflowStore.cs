@@ -58,6 +58,7 @@ public class PostgresWorkflowStore(
             existing.Description = workflow.Description;
             existing.ActionType = workflow.ActionType;
             existing.CronExpression = workflow.CronExpression;
+            existing.TimeZoneId = workflow.TimeZoneId;
             existing.Enabled = workflow.Enabled;
             existing.TargetDatabase = workflow.TargetDatabase;
             existing.EmailSubject = workflow.EmailSubject;
@@ -102,6 +103,7 @@ public class PostgresWorkflowStore(
                 Description = workflow.Description,
                 ActionType = workflow.ActionType,
                 CronExpression = workflow.CronExpression,
+                TimeZoneId = workflow.TimeZoneId,
                 Enabled = workflow.Enabled,
                 TargetDatabase = workflow.TargetDatabase,
                 EmailSubject = workflow.EmailSubject,
@@ -119,6 +121,8 @@ public class PostgresWorkflowStore(
     private static void NormalizeAndValidate(WorkflowDefinition workflow)
     {
         workflow.ActionType = WorkflowActionTypes.Normalize(workflow.ActionType);
+        workflow.TimeZoneId = WorkflowTimeZones.NormalizeOrDefaultId(workflow.TimeZoneId);
+
         if (!WorkflowActionTypes.All.Contains(workflow.ActionType, StringComparer.OrdinalIgnoreCase))
             throw new InvalidOperationException($"Unsupported workflow action type: {workflow.ActionType}");
         if (workflow.ActionType == WorkflowActionTypes.EmailReport)

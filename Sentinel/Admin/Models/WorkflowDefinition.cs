@@ -7,6 +7,7 @@ public class WorkflowDefinition
     public string Description { get; set; } = "";
     public string ActionType { get; set; } = WorkflowActionTypes.EmailReport;
     public string CronExpression { get; set; } = "0 * * * *";
+    public string TimeZoneId { get; set; } = WorkflowTimeZones.DefaultId;
     public bool Enabled { get; set; } = true;
     public string TargetDatabase { get; set; } = "";
     public string EmailSubject { get; set; } = "";

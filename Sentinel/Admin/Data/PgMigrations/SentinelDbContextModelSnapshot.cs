@@ -374,6 +374,11 @@ namespace Sentinel.Admin.Data.PgMigrations
                         .HasColumnType("text")
                         .HasColumnName("target_database");
 
+                    b.Property<string>("TimeZoneId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("time_zone_id");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");

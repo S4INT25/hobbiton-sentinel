@@ -13,6 +13,7 @@ public static class WorkflowDefaults
             Description = "Runs the current Sentinel fraud detection pipeline. You can trigger it manually from Workflows or keep it scheduled.",
             ActionType = WorkflowActionTypes.FraudRun,
             CronExpression = "0 0 1 1 *",
+            TimeZoneId = WorkflowTimeZones.DefaultId,
             Enabled = true,
             TargetDatabase = "lipila_blaze",
             CreatedBy = "system"

@@ -109,6 +109,7 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
             e.Property(w => w.Description).HasColumnName("description");
             e.Property(w => w.ActionType).HasColumnName("action_type");
             e.Property(w => w.CronExpression).HasColumnName("cron_expression");
+            e.Property(w => w.TimeZoneId).HasColumnName("time_zone_id");
             e.Property(w => w.Enabled).HasColumnName("enabled");
             e.Property(w => w.TargetDatabase).HasColumnName("target_database");
             e.Property(w => w.EmailSubject).HasColumnName("email_subject");

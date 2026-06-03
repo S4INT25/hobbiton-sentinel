@@ -1,5 +1,6 @@
 using Hangfire;
 using Sentinel.Agent;
+using Sentinel.Admin.Models;
 
 namespace Sentinel.Jobs;
 
@@ -12,6 +13,7 @@ public class FraudSchedulerService(
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         var cron = config["Sentinel:CronSchedule"] ?? Cron.Hourly();
+        var catZone = WorkflowTimeZones.ResolveOrDefault(WorkflowTimeZones.DefaultId);
 
         jobs.AddOrUpdate<SentinelJob>(
             recurringJobId: "fraud-detector-hourly",
@@ -20,7 +22,7 @@ public class FraudSchedulerService(
             queue:"fraud",
             options: new RecurringJobOptions
             {
-                TimeZone = TimeZoneInfo.Utc
+                TimeZone = catZone
             });
 
         jobs.AddOrUpdate<StaleResolutionJob>(
@@ -30,7 +32,7 @@ public class FraudSchedulerService(
             queue: "fraud",
             options: new RecurringJobOptions
             {
-                TimeZone = TimeZoneInfo.Utc
+                TimeZone = catZone
             });
 
         logger.LogInformation("Fraud detector scheduled: {Cron}", cron);

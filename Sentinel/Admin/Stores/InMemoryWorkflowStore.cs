@@ -74,6 +74,7 @@ public class InMemoryWorkflowStore : IWorkflowStore
                 Description = workflow.Description,
                 ActionType = workflow.ActionType,
                 CronExpression = workflow.CronExpression,
+                TimeZoneId = workflow.TimeZoneId,
                 Enabled = workflow.Enabled,
                 TargetDatabase = workflow.TargetDatabase,
                 EmailSubject = workflow.EmailSubject,
@@ -94,6 +95,7 @@ public class InMemoryWorkflowStore : IWorkflowStore
     private static void NormalizeAndValidate(WorkflowDefinition workflow)
     {
         workflow.ActionType = WorkflowActionTypes.Normalize(workflow.ActionType);
+        workflow.TimeZoneId = WorkflowTimeZones.NormalizeOrDefaultId(workflow.TimeZoneId);
 
         if (!WorkflowActionTypes.All.Contains(workflow.ActionType, StringComparer.OrdinalIgnoreCase))
             throw new InvalidOperationException($"Unsupported workflow action type: {workflow.ActionType}");

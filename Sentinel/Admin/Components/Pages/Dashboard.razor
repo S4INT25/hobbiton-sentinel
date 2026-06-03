@@ -254,10 +254,20 @@
                     </select>
                 </div>
             </div>
+            <div>
+                <label class="block text-xs text-gray-400 mb-1">Time zone</label>
+                <select @bind="newWorkflow.TimeZoneId"
+                        class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none transition-colors">
+                    @foreach (var zone in workflowTimeZones)
+                    {
+                        <option value="@zone.Id">@zone.Label</option>
+                    }
+                </select>
+            </div>
             @if (newWorkflowSchedulePreset == "custom-date")
             {
                 <div>
-                    <label class="block text-xs text-gray-400 mb-1">Custom Date/Time (UTC)</label>
+                    <label class="block text-xs text-gray-400 mb-1">Custom Date/Time (@CurrentNewWorkflowTimeZoneLabel)</label>
                     <input type="datetime-local" value="@newWorkflowCustomDateTimeLocal"
                            @onchange="OnNewWorkflowCustomDateChanged"
                            class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none transition-colors"/>
@@ -265,7 +275,7 @@
             }
             <div>
                 <div>
-                    <label class="block text-xs text-gray-400 mb-1">Cron (UTC)</label>
+                    <label class="block text-xs text-gray-400 mb-1">Cron</label>
                     <input @bind="newWorkflow.CronExpression"
                            class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white font-mono focus:border-blue-500 focus:outline-none transition-colors"
                            placeholder="0 */2 * * *"/>
@@ -318,8 +328,12 @@
     private bool isAdmin;
     private WorkflowDefinition newWorkflow = NewWorkflowDraft();
     private List<string> workflowDatabases = ["lipila_blaze"];
+    private readonly List<WorkflowTimeZoneOption> workflowTimeZones = WorkflowTimeZones.Options.ToList();
     private string newWorkflowSchedulePreset = "hourly";
     private string? newWorkflowCustomDateTimeLocal;
+    private string CurrentNewWorkflowTimeZoneLabel =>
+        workflowTimeZones.FirstOrDefault(z => string.Equals(z.Id, newWorkflow.TimeZoneId, StringComparison.OrdinalIgnoreCase))?.Label
+        ?? "CAT";
 
     protected override async Task OnInitializedAsync()
     {
@@ -369,7 +383,7 @@
         if (workflowDatabases.Count > 0)
             newWorkflow.TargetDatabase = workflowDatabases[0];
         newWorkflowSchedulePreset = DetectSchedulePreset(newWorkflow.CronExpression);
-        newWorkflowCustomDateTimeLocal = BuildDateTimeLocalFromCron(newWorkflow.CronExpression);
+        newWorkflowCustomDateTimeLocal = BuildDateTimeLocalFromCron(newWorkflow.CronExpression, newWorkflow.TimeZoneId);
         showWorkflowModal = true;
     }
 
@@ -416,6 +430,7 @@
     {
         ActionType = WorkflowActionTypes.EmailReport,
         CronExpression = "0 * * * *",
+        TimeZoneId = WorkflowTimeZones.DefaultId,
         Enabled = true,
         TargetDatabase = "lipila_blaze"
     };
@@ -432,7 +447,7 @@
     private void OnNewWorkflowCustomDateChanged(ChangeEventArgs args)
     {
         newWorkflowCustomDateTimeLocal = args.Value?.ToString();
-        var customCron = BuildCustomDateCron(newWorkflowCustomDateTimeLocal);
+        var customCron = BuildCustomDateCron(newWorkflowCustomDateTimeLocal, newWorkflow.TimeZoneId);
         if (!string.IsNullOrWhiteSpace(customCron))
             newWorkflow.CronExpression = customCron;
     }
@@ -445,6 +460,8 @@
             return "Workflow name is required.";
         if (string.IsNullOrWhiteSpace(workflow.TargetDatabase))
             return "Workflow database is required.";
+        if (!WorkflowTimeZones.IsSupported(workflow.TimeZoneId))
+            return "Workflow time zone is invalid.";
         if (!WorkflowSchedulerService.IsValidCron(workflow.CronExpression))
             return "Workflow cron expression is invalid.";
         if (normalizedActionType == WorkflowActionTypes.EmailReport &&
@@ -455,8 +472,11 @@
         return null;
     }
 
-    private static void NormalizeWorkflowForSave(WorkflowDefinition workflow) =>
+    private static void NormalizeWorkflowForSave(WorkflowDefinition workflow)
+    {
         workflow.ActionType = WorkflowActionTypes.Normalize(workflow.ActionType);
+        workflow.TimeZoneId = WorkflowTimeZones.NormalizeOrDefaultId(workflow.TimeZoneId);
+    }
 
     private static readonly Dictionary<string, string> CronPresets = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -494,7 +514,7 @@
                parts[4] == "*";
     }
 
-    private static string? BuildDateTimeLocalFromCron(string? cron)
+    private static string? BuildDateTimeLocalFromCron(string? cron, string? timeZoneId)
     {
         if (string.IsNullOrWhiteSpace(cron))
             return null;
@@ -511,17 +531,19 @@
             return null;
         }
 
-        var now = DateTime.UtcNow;
+        var zone = WorkflowTimeZones.ResolveOrDefault(timeZoneId);
+        var now = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone);
         var maxDay = DateTime.DaysInMonth(now.Year, month);
         if (day > maxDay || hour is < 0 or > 23 || minute is < 0 or > 59)
             return null;
 
-        var date = new DateTime(now.Year, month, day, hour, minute, 0, DateTimeKind.Utc);
+        var date = new DateTime(now.Year, month, day, hour, minute, 0, DateTimeKind.Unspecified);
         return date.ToString("yyyy-MM-ddTHH:mm");
     }
 
-    private static string? BuildCustomDateCron(string? dateTimeLocal)
+    private static string? BuildCustomDateCron(string? dateTimeLocal, string? timeZoneId)
     {
+        _ = WorkflowTimeZones.ResolveOrDefault(timeZoneId);
         if (string.IsNullOrWhiteSpace(dateTimeLocal))
             return null;
 
