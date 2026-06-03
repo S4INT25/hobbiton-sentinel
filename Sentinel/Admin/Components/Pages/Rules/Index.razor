@@ -3,7 +3,7 @@
 @inject IAuditLogStore AuditStore
 @inject AuthenticationStateProvider AuthState
 @inject IHttpContextAccessor HttpContextAccessor
-@attribute [Authorize(Policy = AuthConstants.Policy)]
+@attribute [Authorize(Policy = AuthConstants.AdminOnlyPolicy)]
 
 <PageTitle>Rules — Sentinel</PageTitle>
 

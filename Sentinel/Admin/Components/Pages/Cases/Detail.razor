@@ -5,7 +5,7 @@
 @inject AuthenticationStateProvider AuthState
 @inject IHttpContextAccessor HttpContextAccessor
 @inject NavigationManager Navigation
-@attribute [Authorize(Policy = AuthConstants.Policy)]
+@attribute [Authorize(Policy = AuthConstants.AdminOnlyPolicy)]
 
 <PageTitle>Case @(fraudCase?.Id?[..8]) — Sentinel</PageTitle>
 

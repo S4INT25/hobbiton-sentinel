@@ -1,6 +1,6 @@
 @page "/admin/audit"
 @inject IAuditLogStore AuditStore
-@attribute [Authorize(Policy = AuthConstants.Policy)]
+@attribute [Authorize(Policy = AuthConstants.AdminOnlyPolicy)]
 
 <PageTitle>Audit Log — Sentinel</PageTitle>
 

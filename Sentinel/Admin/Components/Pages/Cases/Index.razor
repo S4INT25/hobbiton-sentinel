@@ -2,7 +2,7 @@
 @inject ICaseStore CaseStore
 @inject IAuditLogStore AuditStore
 @inject AuthenticationStateProvider AuthState
-@attribute [Authorize(Policy = AuthConstants.Policy)]
+@attribute [Authorize(Policy = AuthConstants.AdminOnlyPolicy)]
 
 <PageTitle>Cases — Sentinel</PageTitle>
 

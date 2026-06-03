@@ -189,7 +189,8 @@ public static class AdminApiEndpoints
         var api = app.MapGroup("/api").RequireAuthorization(AuthConstants.Policy);
 
         api.MapGet("/rules", async (IFeedbackRuleStore store) =>
-            Results.Ok(await store.GetAllRulesAsync()));
+            Results.Ok(await store.GetAllRulesAsync()))
+            .RequireAuthorization(AuthConstants.AdminOnlyPolicy);
 
         api.MapPost("/rules", async (FeedbackRule rule, IFeedbackRuleStore store,
             IAuditLogStore audit, HttpContext ctx) =>
@@ -198,7 +199,7 @@ public static class AdminApiEndpoints
             await store.SaveAsync(rule);
             await AuditAction(audit, ctx, "create", "rule", rule.Id, rule.Reason);
             return Results.Created($"/api/rules/{rule.Id}", rule);
-        });
+        }).RequireAuthorization(AuthConstants.AdminOnlyPolicy);
 
         api.MapPut("/rules/{id}", async (string id, FeedbackRule rule,
             IFeedbackRuleStore store, IAuditLogStore audit, HttpContext ctx) =>
@@ -207,7 +208,7 @@ public static class AdminApiEndpoints
             await store.SaveAsync(rule);
             await AuditAction(audit, ctx, "update", "rule", id, rule.Reason);
             return Results.Ok(rule);
-        });
+        }).RequireAuthorization(AuthConstants.AdminOnlyPolicy);
 
         api.MapDelete("/rules/{id}", async (string id, IFeedbackRuleStore store,
             IAuditLogStore audit, HttpContext ctx) =>
@@ -215,7 +216,7 @@ public static class AdminApiEndpoints
             await store.DeleteAsync(id);
             await AuditAction(audit, ctx, "delete", "rule", id);
             return Results.NoContent();
-        });
+        }).RequireAuthorization(AuthConstants.AdminOnlyPolicy);
         
         api.MapGet("/runs", async (IRunLogStore store, int? limit, int? offset) =>
             Results.Ok(await store.GetRecentRunsAsync(limit ?? 50, offset ?? 0)));
@@ -254,7 +255,8 @@ public static class AdminApiEndpoints
         });
         
         api.MapGet("/cases", async (Memory.ICaseStore store) =>
-            Results.Ok(await store.GetOpenCasesAsync()));
+            Results.Ok(await store.GetOpenCasesAsync()))
+            .RequireAuthorization(AuthConstants.AdminOnlyPolicy);
 
         api.MapPost("/cases/{id}/feedback", async (string id, CaseFeedbackRequest req,
             Memory.ICaseStore caseStore, IFeedbackRuleStore ruleStore,
@@ -288,7 +290,7 @@ public static class AdminApiEndpoints
 
             await AuditAction(audit, ctx, $"case_{req.Action}", "case", id, req.Reason);
             return Results.Ok();
-        });
+        }).RequireAuthorization(AuthConstants.AdminOnlyPolicy);
 
         // ── Users (admin only) ──
         var adminApi = api.MapGroup("/users").RequireAuthorization(AuthConstants.AdminOnlyPolicy);
@@ -322,7 +324,8 @@ public static class AdminApiEndpoints
         // ── Audit ──
         api.MapGet("/audit", async (IAuditLogStore store, int? limit, int? offset,
                 string? userId, string? action, string? resourceType) =>
-            Results.Ok(await store.GetRecentAsync(limit ?? 100, offset ?? 0, userId, action, resourceType)));
+            Results.Ok(await store.GetRecentAsync(limit ?? 100, offset ?? 0, userId, action, resourceType)))
+            .RequireAuthorization(AuthConstants.AdminOnlyPolicy);
 
         // ── Auth ──
         api.MapPost("/auth/login", async (LoginRequest req, IUserStore userStore,

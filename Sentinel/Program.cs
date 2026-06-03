@@ -161,7 +161,7 @@ try
     {
         options.AddPolicy(AuthConstants.AdminOnlyPolicy, p => p.RequireRole(AuthConstants.AdminRole));
         options.AddPolicy(AuthConstants.Policy, p =>
-            p.RequireRole(AuthConstants.AdminRole, AuthConstants.AnalystRole));
+            p.RequireRole(AuthConstants.AdminRole, AuthConstants.AnalystRole, AuthConstants.DeveloperRole));
     });
 
     builder.Services.AddRazorComponents()

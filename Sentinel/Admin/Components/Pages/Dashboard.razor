@@ -7,6 +7,7 @@
 @inject IWorkflowStore WorkflowStore
 @inject WorkflowSchedulerService WorkflowScheduler
 @inject SchemaLoader SchemaLoader
+@inject AuthenticationStateProvider AuthState
 @attribute [Authorize(Policy = AuthConstants.Policy)]
 
 <PageTitle>Dashboard — Sentinel</PageTitle>
@@ -36,33 +37,36 @@
     </div>
 
     <!-- Stats Grid -->
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div
-            class="p-4 rounded-xl bg-gray-900/60 border border-gray-800/60 hover:border-gray-700/60 transition-colors duration-200">
-            <div class="flex items-center gap-2 mb-2">
-                <div class="w-7 h-7 rounded-lg bg-rose-500/10 flex items-center justify-center">
-                    <svg class="w-3.5 h-3.5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/>
-                    </svg>
+    <div class="@StatsGridClass">
+        @if (isAdmin)
+        {
+            <div
+                class="p-4 rounded-xl bg-gray-900/60 border border-gray-800/60 hover:border-gray-700/60 transition-colors duration-200">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="w-7 h-7 rounded-lg bg-rose-500/10 flex items-center justify-center">
+                        <svg class="w-3.5 h-3.5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/>
+                        </svg>
+                    </div>
+                    <span class="text-[11px] text-gray-500 font-medium">Open Cases</span>
                 </div>
-                <span class="text-[11px] text-gray-500 font-medium">Open Cases</span>
+                <div class="text-2xl font-semibold text-white tabular-nums">@openCases</div>
             </div>
-            <div class="text-2xl font-semibold text-white tabular-nums">@openCases</div>
-        </div>
-        <div
-            class="p-4 rounded-xl bg-gray-900/60 border border-gray-800/60 hover:border-gray-700/60 transition-colors duration-200">
-            <div class="flex items-center gap-2 mb-2">
-                <div class="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                    <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
-                    </svg>
+            <div
+                class="p-4 rounded-xl bg-gray-900/60 border border-gray-800/60 hover:border-gray-700/60 transition-colors duration-200">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                        <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
+                        </svg>
+                    </div>
+                    <span class="text-[11px] text-gray-500 font-medium">Active Rules</span>
                 </div>
-                <span class="text-[11px] text-gray-500 font-medium">Active Rules</span>
+                <div class="text-2xl font-semibold text-white tabular-nums">@activeRules</div>
             </div>
-            <div class="text-2xl font-semibold text-white tabular-nums">@activeRules</div>
-        </div>
+        }
         <div
             class="p-4 rounded-xl bg-gray-900/60 border border-gray-800/60 hover:border-gray-700/60 transition-colors duration-200">
             <div class="flex items-center gap-2 mb-2">
@@ -95,38 +99,41 @@
     <div>
         <h2 class="text-sm font-medium text-gray-300 mb-3">Quick Actions</h2>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <a href="/admin/workflows"
-               class="p-4 rounded-xl bg-gray-900/60 border border-gray-800/60 hover:border-emerald-500/30 hover:bg-gray-900/80 transition-all duration-200 group">
-                <div class="flex items-center gap-3">
-                    <div
-                        class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center group-hover:bg-emerald-500/20 transition-colors">
-                        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                        </svg>
+            @if (isAdmin)
+            {
+                <a href="/admin/workflows"
+                   class="p-4 rounded-xl bg-gray-900/60 border border-gray-800/60 hover:border-emerald-500/30 hover:bg-gray-900/80 transition-all duration-200 group">
+                    <div class="flex items-center gap-3">
+                        <div
+                            class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center group-hover:bg-emerald-500/20 transition-colors">
+                            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <span class="text-sm font-medium text-white">Workflows</span>
+                            <p class="text-[11px] text-gray-500">Manage and run workflows</p>
+                        </div>
                     </div>
-                    <div>
-                        <span class="text-sm font-medium text-white">Workflows</span>
-                        <p class="text-[11px] text-gray-500">Manage and run workflows</p>
+                </a>
+                <a href="/admin/cases"
+                   class="p-4 rounded-xl bg-gray-900/60 border border-gray-800/60 hover:border-rose-500/30 hover:bg-gray-900/80 transition-all duration-200 group">
+                    <div class="flex items-center gap-3">
+                        <div
+                            class="w-8 h-8 rounded-lg bg-rose-500/10 flex items-center justify-center group-hover:bg-rose-500/20 transition-colors">
+                            <svg class="w-4 h-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <span class="text-sm font-medium text-white">Cases</span>
+                            <p class="text-[11px] text-gray-500">@openCases open investigations</p>
+                        </div>
                     </div>
-                </div>
-            </a>
-            <a href="/admin/cases"
-               class="p-4 rounded-xl bg-gray-900/60 border border-gray-800/60 hover:border-rose-500/30 hover:bg-gray-900/80 transition-all duration-200 group">
-                <div class="flex items-center gap-3">
-                    <div
-                        class="w-8 h-8 rounded-lg bg-rose-500/10 flex items-center justify-center group-hover:bg-rose-500/20 transition-colors">
-                        <svg class="w-4 h-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/>
-                        </svg>
-                    </div>
-                    <div>
-                        <span class="text-sm font-medium text-white">Cases</span>
-                        <p class="text-[11px] text-gray-500">@openCases open investigations</p>
-                    </div>
-                </div>
-            </a>
+                </a>
+            }
         </div>
     </div>
 
@@ -134,8 +141,9 @@
     <div>
         <div class="flex items-center justify-between mb-3">
             <h2 class="text-sm font-medium text-gray-300">Recent Runs</h2>
-            <a href="/admin/workflows" class="text-[11px] text-gray-500 hover:text-gray-300 transition-colors">View all
-                in Workflows →</a>
+            <a href="@(isAdmin ? "/admin/workflows" : "/admin/runs")" class="text-[11px] text-gray-500 hover:text-gray-300 transition-colors">
+                @(isAdmin ? "View all in Workflows →" : "View all runs →")
+            </a>
         </div>
         <div class="border border-gray-800/60 rounded-xl overflow-hidden">
             <div class="overflow-x-auto">
@@ -307,6 +315,7 @@
     private bool triggerSuccess;
     private bool showWorkflowModal;
     private bool workflowSaving;
+    private bool isAdmin;
     private WorkflowDefinition newWorkflow = NewWorkflowDraft();
     private List<string> workflowDatabases = ["lipila_blaze"];
     private string newWorkflowSchedulePreset = "hourly";
@@ -314,17 +323,27 @@
 
     protected override async Task OnInitializedAsync()
     {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        isAdmin = authState.User.IsInRole(AuthConstants.AdminRole);
         await LoadWorkflowDatabasesAsync();
         await LoadDashboardData();
     }
 
     private async Task LoadDashboardData()
     {
-        var cases = await CaseStore.GetOpenCasesAsync();
-        openCases = cases.Count;
+        if (isAdmin)
+        {
+            var cases = await CaseStore.GetOpenCasesAsync();
+            openCases = cases.Count;
 
-        var rules = await RuleStore.GetActiveRulesAsync();
-        activeRules = rules.Count;
+            var rules = await RuleStore.GetActiveRulesAsync();
+            activeRules = rules.Count;
+        }
+        else
+        {
+            openCases = 0;
+            activeRules = 0;
+        }
 
         var runs = await RunLogStore.GetRecentRunsAsync(100);
         recentRunsList = runs;
@@ -519,5 +538,7 @@
         "failed" or "error" => "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20",
         _ => "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-500/10 text-gray-400 border border-gray-500/20"
     };
+
+    private string StatsGridClass => isAdmin ? "grid grid-cols-2 lg:grid-cols-4 gap-3" : "grid grid-cols-1 sm:grid-cols-2 gap-3";
 
 }
