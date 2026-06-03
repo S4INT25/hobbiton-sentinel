@@ -34,7 +34,8 @@ public class AnalyticsAgent(
         var schema = await schemaLoader.GetSchemaBlockAsync(database);
         var isInteractive = !string.Equals(mode, "autonomous", StringComparison.OrdinalIgnoreCase);
 
-        var systemPrompt = BuildSystemPrompt(database, schema, isInteractive);
+        var allowInteractiveReportSending = !isInteractive || HasExplicitEmailIntent(prompt);
+        var systemPrompt = BuildSystemPrompt(database, schema, isInteractive, allowInteractiveReportSending);
         var messages = new List<ChatMessage> { new SystemChatMessage(systemPrompt) };
 
         if (history is { Count: > 0 })
@@ -126,7 +127,7 @@ public class AnalyticsAgent(
                         toolCall.FunctionName, args.Length > 200 ? args[..200] + "…" : args);
 
                     var result = await ExecuteToolAsync(
-                        toolCall, database, isInteractive, onEvent, response, chartResults);
+                        toolCall, database, isInteractive, allowInteractiveReportSending, onEvent, response, chartResults);
 
                     // Check if ask_user was invoked — pause iteration
                     if (toolCall.FunctionName == "ask_user" && isInteractive)
@@ -182,6 +183,7 @@ public class AnalyticsAgent(
         ChatToolCall toolCall,
         string database,
         bool isInteractive,
+        bool allowInteractiveReportSending,
         Func<AnalyticsStreamEvent, Task>? onEvent,
         AnalyticsResponse response,
         List<QueryResult> chartResults)
@@ -197,7 +199,7 @@ public class AnalyticsAgent(
                 "get_schema" => await HandleGetSchema(root),
                 "describe_table" => await HandleDescribeTable(root),
                 "emit_chart" => HandleEmitChart(root, chartResults, onEvent).Result,
-                "send_report" => await HandleSendReport(root, onEvent, response),
+                "send_report" => await HandleSendReport(root, isInteractive, allowInteractiveReportSending, onEvent, response),
                 "ask_user" => HandleAskUser(root, isInteractive),
                 _ => $"Unknown tool: {toolCall.FunctionName}"
             };
@@ -344,8 +346,16 @@ public class AnalyticsAgent(
         return $"Chart emitted: {title} ({chartType}, {rows.Count} data points)";
     }
 
-    private async Task<string> HandleSendReport(JsonElement root, Func<AnalyticsStreamEvent, Task>? onEvent, AnalyticsResponse response)
+    private async Task<string> HandleSendReport(
+        JsonElement root,
+        bool isInteractive,
+        bool allowInteractiveReportSending,
+        Func<AnalyticsStreamEvent, Task>? onEvent,
+        AnalyticsResponse response)
     {
+        if (isInteractive && !allowInteractiveReportSending)
+            return "Email sending is blocked in chat mode unless the user explicitly asks to send an email report in this message.";
+
         var template = root.TryGetProperty("template", out var tp) ? tp.GetString() ?? "custom" : "custom";
         var subject = root.TryGetProperty("subject", out var s) ? s.GetString() ?? "" : "";
         var body = root.TryGetProperty("body", out var b) ? b.GetString() ?? "" : "";
@@ -385,8 +395,24 @@ public class AnalyticsAgent(
     }
     
 
-    private static string BuildSystemPrompt(string database, string schema, bool isInteractive)
+    private static string BuildSystemPrompt(string database, string schema, bool isInteractive, bool allowInteractiveReportSending)
     {
+        var reportPolicyBlock = isInteractive
+            ? (allowInteractiveReportSending
+                ? """
+                  
+                  ## Email Reports
+                  The user explicitly asked to send an email report in this message.
+                  You may use `send_report` if it improves the outcome.
+                  """
+                : """
+                  
+                  ## Email Reports
+                  Do NOT call `send_report` in chat mode unless the user explicitly asks to send an email/report.
+                  Focus on analysis in chat and keep results in the conversation.
+                  """)
+            : "";
+
         var interactiveBlock = isInteractive
             ? """
               
@@ -460,11 +486,26 @@ public class AnalyticsAgent(
                  ## Currency
                  All amounts are Zambian Kwacha (ZMW). Use "K" prefix in explanations (e.g. K 1,250.00). Never use $.
                  {{interactiveBlock}}
+                 {{reportPolicyBlock}}
                  
                  ## Response style
                  After your tool calls complete, write a clear, insightful final response. Reference specific numbers.
                  Be concise but substantive. Don't repeat the query — focus on what the data means.
                  """;
+    }
+
+    private static bool HasExplicitEmailIntent(string prompt)
+    {
+        if (string.IsNullOrWhiteSpace(prompt)) return false;
+        var normalized = prompt.Trim();
+
+        // Require explicit "email/mail/report" intent with an action verb to avoid accidental sends in chat mode.
+        var mentionsEmailOrReport =
+            Regex.IsMatch(normalized, @"\b(email|e-mail|mail|report)\b", RegexOptions.IgnoreCase);
+        var hasDeliveryVerb =
+            Regex.IsMatch(normalized, @"\b(send|share|forward|deliver|notify)\b", RegexOptions.IgnoreCase);
+
+        return mentionsEmailOrReport && hasDeliveryVerb;
     }
     
 

@@ -117,7 +117,8 @@ public static class AnalyticsAgentTools
             functionDescription: """
                 Send a professional email report with your analysis findings. This will be read by management
                 and stakeholders — make it clean, polished, and executive-ready.
-                
+                In chat mode, only use this when the user explicitly asks to send an email/report.
+                 
                 Use template "fraud_alert" for security/fraud findings (include severity, evidence, recommendations).
                 Use template "insights" for general analytics/business intelligence reports.
                 Use template "custom" for any other structured report.

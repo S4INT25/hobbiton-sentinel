@@ -110,7 +110,84 @@ public static class AdminApiEndpoints
             return Results.Redirect("/admin");
         }).AllowAnonymous().DisableAntiforgery();
 
+        // ── Forgot password ──
+        app.MapPost("/admin/auth/forgot-password", async (
+            HttpContext ctx,
+            IUserStore userStore,
+            EmailClient emailClient) =>
+        {
+            var form = await ctx.Request.ReadFormAsync();
+            var email = (form["email"].FirstOrDefault() ?? "").Trim().ToLowerInvariant();
+
+            // Always redirect to the same page — never reveal whether the email exists
+            if (!string.IsNullOrWhiteSpace(email))
+            {
+                var user = await userStore.GetByEmailAsync(email);
+                if (user is { IsActive: true })
+                {
+                    var token = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32))
+                        .Replace("+", "-").Replace("/", "_").Replace("=", "");
+                    user.PasswordResetToken = token;
+                    user.PasswordResetTokenExpiry = DateTime.UtcNow.AddHours(1);
+                    await userStore.SaveAsync(user);
+
+                    var resetUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}/admin/reset-password?token={token}";
+                    var body = $"""
+                        Hi {user.DisplayName},
+
+                        You requested a password reset for your Sentinel account.
+
+                        **Reset your password** by visiting the link below (expires in 1 hour):
+
+                        {resetUrl}
+
+                        If you did not request this, you can safely ignore this email.
+                        """;
+
+                    await emailClient.SendAsync(
+                        subject: "Reset your Sentinel password",
+                        body: body,
+                        severity: "info",
+                        recipients: [user.Email!]);
+                }
+            }
+
+            return Results.Redirect("/admin/forgot-password?sent=1");
+        }).AllowAnonymous().DisableAntiforgery();
+
+        // ── Reset password ──
+        app.MapPost("/admin/auth/reset-password", async (
+            HttpContext ctx,
+            IUserStore userStore) =>
+        {
+            var form = await ctx.Request.ReadFormAsync();
+            var token = form["token"].FirstOrDefault() ?? "";
+            var password = form["password"].FirstOrDefault() ?? "";
+            var confirm = form["confirmPassword"].FirstOrDefault() ?? "";
+
+            if (string.IsNullOrWhiteSpace(token))
+                return Results.Redirect("/admin/forgot-password");
+
+            if (password.Length < 8)
+                return Results.Redirect($"/admin/reset-password?token={token}&error=password");
+
+            if (password != confirm)
+                return Results.Redirect($"/admin/reset-password?token={token}&error=mismatch");
+
+            var user = await userStore.GetByResetTokenAsync(token);
+            if (user is null)
+                return Results.Redirect("/admin/reset-password?error=expired");
+
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(password);
+            user.PasswordResetToken = null;
+            user.PasswordResetTokenExpiry = null;
+            await userStore.SaveAsync(user);
+
+            return Results.Redirect("/admin/login?reset=1");
+        }).AllowAnonymous().DisableAntiforgery();
+
         var api = app.MapGroup("/api").RequireAuthorization(AuthConstants.Policy);
+
         api.MapGet("/rules", async (IFeedbackRuleStore store) =>
             Results.Ok(await store.GetAllRulesAsync()));
 

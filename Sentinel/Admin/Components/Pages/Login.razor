@@ -5,6 +5,9 @@
 @code {
     [SupplyParameterFromQuery(Name = "error")]
     public string? ErrorParam { get; set; }
+
+    [SupplyParameterFromQuery(Name = "reset")]
+    public string? ResetParam { get; set; }
 }
 
 <PageTitle>Sign in — Sentinel</PageTitle>
@@ -17,6 +20,12 @@
             <p class="text-sm text-gray-500 mt-1">Sign in to continue</p>
         </div>
 
+        @if (ResetParam == "1")
+        {
+            <div class="mb-4 p-3 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-sm text-emerald-400">
+                Password updated. You can now sign in with your new password.
+            </div>
+        }
         @if (ErrorParam == "invalid")
         {
             <div class="mb-4 p-3 rounded-md bg-rose-500/10 border border-rose-500/20 text-sm text-rose-400">
@@ -42,6 +51,9 @@
                     class="w-full py-2 px-4 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-md transition-colors">
                 Sign in
             </button>
+            <div class="text-center">
+                <a href="/admin/forgot-password" class="text-xs text-gray-500 hover:text-emerald-400 transition-colors">Forgot your password?</a>
+            </div>
         </form>
 
         <p class="mt-6 text-center text-xs text-gray-500">

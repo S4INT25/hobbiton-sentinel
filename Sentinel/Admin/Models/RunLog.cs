@@ -6,6 +6,7 @@ namespace Sentinel.Admin.Models;
 [Table("run_logs")]
 public class RunLog
 {
+    [Column("id")] public long Id { get; set; }
     [Column("run_id")] public string RunId { get; set; } = "";
     [Column("iteration")] public ushort Iteration { get; set; }
     [Column("tool_name")] public string ToolName { get; set; } = "";

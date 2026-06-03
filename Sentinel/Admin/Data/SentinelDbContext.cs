@@ -35,8 +35,9 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
 
         modelBuilder.Entity<RunLog>(e =>
         {
-            e.HasKey(r => new { r.RunId, r.StartedAt, r.ToolName });
+            e.HasKey(r => r.Id);
             e.ToTable("run_logs");
+            e.Property(r => r.Id).HasColumnName("id").ValueGeneratedOnAdd();
             e.Property(r => r.RunId).HasColumnName("run_id");
             e.Property(r => r.Iteration).HasColumnName("iteration");
             e.Property(r => r.ToolName).HasColumnName("tool_name");

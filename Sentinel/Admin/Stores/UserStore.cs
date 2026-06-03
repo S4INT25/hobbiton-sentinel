@@ -42,6 +42,11 @@ public class UserStore(IFusionCache cache) : IUserStore
         (await LoadAsync()).FirstOrDefault(u =>
             u.Email != null && u.Email.Equals(email, StringComparison.OrdinalIgnoreCase));
 
+    public async Task<AdminUser?> GetByResetTokenAsync(string token) =>
+        (await LoadAsync()).FirstOrDefault(u =>
+            u.PasswordResetToken == token &&
+            u.PasswordResetTokenExpiry > DateTime.UtcNow);
+
     public async Task UpdateLastLoginAsync(string id)
     {
         var users = await LoadAsync();

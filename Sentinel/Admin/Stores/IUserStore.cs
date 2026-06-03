@@ -11,4 +11,5 @@ public interface IUserStore
     Task DeleteAsync(string id);
     Task UpdateLastLoginAsync(string id);
     Task<AdminUser?> GetByEmailAsync(string email);
+    Task<AdminUser?> GetByResetTokenAsync(string token);
 }
