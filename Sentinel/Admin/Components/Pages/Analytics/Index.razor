@@ -16,13 +16,21 @@
 
 <div class="flex flex-col md:flex-row h-[calc(100vh-6rem)]">
     <!-- Conversation Sidebar -->
-    <div class="@(showHistoryPanel ? "flex" : "hidden") w-full md:w-56 border-b md:border-b-0 md:border-r border-gray-800 flex-col shrink-0 max-h-64 md:max-h-none transition-all">
+    <div
+        class="@(showHistoryPanel ? "flex" : "hidden") w-full md:w-56 border-b md:border-b-0 md:border-r border-gray-800 flex-col shrink-0 max-h-64 md:max-h-none transition-all">
         <div class="flex items-center justify-between px-3 py-2 border-b border-gray-800">
             <span class="text-xs font-medium text-gray-400">History</span>
             <div class="flex items-center gap-1.5">
-                <button @onclick="NewConversation" class="px-2 py-1 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white rounded transition-colors">+ New</button>
-                <button @onclick="() => showHistoryPanel = false" class="p-1 text-gray-500 hover:text-gray-300 rounded hover:bg-gray-800 transition-colors" title="Close history">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                <button @onclick="NewConversation"
+                        class="px-2 py-1 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white rounded transition-colors">
+                    + New
+                </button>
+                <button @onclick="() => showHistoryPanel = false"
+                        class="p-1 text-gray-500 hover:text-gray-300 rounded hover:bg-gray-800 transition-colors"
+                        title="Close history">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
                 </button>
             </div>
         </div>
@@ -34,7 +42,10 @@
                     <div class="text-xs text-gray-300 truncate">@conv.Title</div>
                     <div class="flex items-center justify-between mt-0.5">
                         <span class="text-[10px] text-gray-600">@conv.Database</span>
-                        <button @onclick="() => DeleteConversation(conv.Id)" @onclick:stopPropagation="true" class="opacity-0 group-hover:opacity-100 text-[10px] text-rose-500 hover:text-rose-400 transition-opacity">✕</button>
+                        <button @onclick="() => DeleteConversation(conv.Id)" @onclick:stopPropagation="true"
+                                class="opacity-0 group-hover:opacity-100 text-[10px] text-rose-500 hover:text-rose-400 transition-opacity">
+                            ✕
+                        </button>
                     </div>
                 </div>
             }
@@ -53,30 +64,38 @@
                         class="px-2.5 py-1.5 text-xs border rounded transition-colors whitespace-nowrap @(showHistoryPanel ? "bg-gray-800 border-gray-700 text-gray-200" : "border-gray-800 text-gray-500 hover:text-gray-300 hover:bg-gray-900")"
                         title="@(showHistoryPanel ? "Hide history" : "Show history")">
                     <span class="flex items-center gap-1.5">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path
+                                stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                         History
                     </span>
                 </button>
-                <select value="@database" @onchange="OnDatabaseChanged" class="px-2.5 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white">
+                <select value="@database" @onchange="OnDatabaseChanged"
+                        class="px-2.5 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white">
                     @foreach (var db in databases)
                     {
                         <option value="@db">@db</option>
                     }
                 </select>
-                <select value="@mode" @onchange="OnModeChanged" class="px-2.5 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white">
+                <select value="@mode" @onchange="OnModeChanged"
+                        class="px-2.5 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white">
                     <option value="general">General</option>
                     <option value="fraud">Fraud Detection</option>
                 </select>
                 @if (!string.IsNullOrEmpty(dbLoadError))
                 {
-                    <span class="text-[10px] text-rose-400 truncate max-w-xs" title="@dbLoadError">⚠ DB load failed</span>
+                    <span class="text-[10px] text-rose-400 truncate max-w-xs"
+                          title="@dbLoadError">⚠ DB load failed</span>
                 }
                 @if (activePolls.Count > 0)
                 {
-                    <span class="inline-flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
+                    <span
+                        class="inline-flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
                         <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                    stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor"
+                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
                         </svg>
                         Query running
                     </span>
@@ -87,11 +106,14 @@
                         class="px-2.5 py-1.5 text-xs border rounded transition-colors whitespace-nowrap @(debugMode ? "bg-amber-600/20 border-amber-500/40 text-amber-300" : "border-gray-800 text-gray-500 hover:text-gray-300 hover:bg-gray-900")"
                         title="@(debugMode ? "Hide debug info" : "Show SQL, reasoning & timeline")">
                     <span class="flex items-center gap-1.5">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path
+                                stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
                         Debug
                     </span>
                 </button>
-                <button @onclick="ClearChat" class="px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-300 border border-gray-800 rounded hover:bg-gray-900 transition-colors whitespace-nowrap">
+                <button @onclick="ClearChat"
+                        class="px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-300 border border-gray-800 rounded hover:bg-gray-900 transition-colors whitespace-nowrap">
                     Clear
                 </button>
             </div>
@@ -106,7 +128,8 @@
                         @if (msg.Role == "user")
                         {
                             <div class="flex justify-end">
-                                <div class="max-w-2xl px-3 py-2 bg-emerald-600/20 border border-emerald-500/20 rounded-xl text-sm text-gray-200">
+                                <div
+                                    class="max-w-2xl px-3 py-2 bg-emerald-600/20 border border-emerald-500/20 rounded-xl text-sm text-gray-200">
                                     @msg.Content
                                 </div>
                             </div>
@@ -117,12 +140,14 @@
 
                                 @if (!string.IsNullOrEmpty(msg.Error))
                                 {
-                                    <div class="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-xs text-rose-400 font-mono whitespace-pre-wrap">@msg.Error</div>
+                                    <div
+                                        class="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-xs text-rose-400 font-mono whitespace-pre-wrap">@msg.Error</div>
                                 }
 
                                 @if (!string.IsNullOrEmpty(msg.Explanation))
                                 {
-                                    <div class="text-sm text-gray-300 leading-relaxed prose prose-invert prose-sm max-w-none">@(Infrastructure.MarkdownRenderer.ToHtml(msg.Explanation))</div>
+                                    <div
+                                        class="text-sm text-gray-300 leading-relaxed prose prose-invert prose-sm max-w-none">@(Infrastructure.MarkdownRenderer.ToHtml(msg.Explanation))</div>
                                 }
 
                                 @if (!string.IsNullOrEmpty(msg.Summary) || !string.IsNullOrEmpty(msg.RiskLevel) || (msg.Findings?.Count > 0) || (msg.RecommendedActions?.Count > 0))
@@ -130,16 +155,20 @@
                                     <div class="border border-gray-800 rounded-lg p-3 bg-gray-900/40 space-y-2">
                                         @if (!string.IsNullOrEmpty(msg.Summary))
                                         {
-                                            <div class="text-sm text-gray-200 prose prose-invert prose-sm max-w-none">@(Infrastructure.MarkdownRenderer.ToHtml(msg.Summary))</div>
+                                            <div
+                                                class="text-sm text-gray-200 prose prose-invert prose-sm max-w-none">@(Infrastructure.MarkdownRenderer.ToHtml(msg.Summary))</div>
                                         }
                                         @if (!string.IsNullOrEmpty(msg.RiskLevel))
                                         {
-                                            <div class="text-xs"><span class="@RiskLevelClasses(msg.RiskLevel)">@msg.RiskLevel</span></div>
+                                            <div class="text-xs"><span
+                                                    class="@RiskLevelClasses(msg.RiskLevel)">@msg.RiskLevel</span></div>
                                         }
                                         @if (msg.Findings?.Count > 0)
                                         {
                                             <div>
-                                                <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Findings</div>
+                                                <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">
+                                                    Findings
+                                                </div>
                                                 @foreach (var finding in msg.Findings)
                                                 {
                                                     <div class="text-xs text-gray-300">• @finding</div>
@@ -149,7 +178,9 @@
                                         @if (msg.RecommendedActions?.Count > 0)
                                         {
                                             <div>
-                                                <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Recommended Actions</div>
+                                                <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">
+                                                    Recommended Actions
+                                                </div>
                                                 @foreach (var action in msg.RecommendedActions)
                                                 {
                                                     <div class="text-xs text-gray-300">• @action</div>
@@ -163,9 +194,12 @@
                                 {
                                     @foreach (var (qr, ri) in msg.Results.Where(r => r.Rows.Count > 0).Select((r, i) => (r, i)))
                                     {
-                                        <div class="border border-gray-800/60 rounded-lg overflow-hidden bg-gray-950/30">
-                                            <div class="px-3 py-2 border-b border-gray-800/60 flex items-center justify-between">
-                                                <span class="text-xs font-medium text-gray-300">@(!string.IsNullOrEmpty(qr.Label) ? qr.Label : $"Result {ri + 1}")</span>
+                                        <div
+                                            class="border border-gray-800/60 rounded-lg overflow-hidden bg-gray-950/30">
+                                            <div
+                                                class="px-3 py-2 border-b border-gray-800/60 flex items-center justify-between">
+                                                <span
+                                                    class="text-xs font-medium text-gray-300">@(!string.IsNullOrEmpty(qr.Label) ? qr.Label : $"Result {ri + 1}")</span>
                                                 <span class="text-[10px] text-gray-600">@qr.RowCount rows</span>
                                             </div>
                                             @if (qr.ChartType != "none")
@@ -176,8 +210,9 @@
                                                         {
                                                             var chartType = ct;
                                                             var result = qr;
-                                                            <button @onclick="() => ChangeResultChartType(result, chartType)"
-                                                                    class="px-2 py-0.5 text-[10px] rounded border transition-colors @(qr.ChartType == ct ? "bg-emerald-600/20 border-emerald-500/40 text-emerald-300" : "border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600")">
+                                                            <button
+                                                                @onclick="() => ChangeResultChartType(result, chartType)"
+                                                                class="px-2 py-0.5 text-[10px] rounded border transition-colors @(qr.ChartType == ct ? "bg-emerald-600/20 border-emerald-500/40 text-emerald-300" : "border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600")">
                                                                 @ct
                                                             </button>
                                                         }
@@ -188,9 +223,16 @@
                                                         if (pieSeries.Count > 0)
                                                         {
                                                             var seriesType = qr.ChartType is "donut" or "doughnut" ? SeriesType.Donut : SeriesType.Pie;
-                                                            <ApexChart TItem="ChartDataPoint" Options="GetPieApexOptions()" Width="@("100%")" Height="280" @key="@($"apex-mr-{idx}-{ri}-{qr.ChartType}")">
-                                                                <ApexPointSeries TItem="ChartDataPoint" Items="pieSeries[0].Points" Name="@pieSeries[0].Name"
-                                                                                 XValue="@(e => e.Label)" YValue="@(e => e.Value)" SeriesType="@seriesType" />
+                                                            <ApexChart TItem="ChartDataPoint"
+                                                                       Options="GetPieApexOptions()" Width="@("100%")"
+                                                                       Height="280"
+                                                                       @key="@($"apex-mr-{idx}-{ri}-{qr.ChartType}")">
+                                                                <ApexPointSeries TItem="ChartDataPoint"
+                                                                                 Items="pieSeries[0].Points"
+                                                                                 Name="@pieSeries[0].Name"
+                                                                                 XValue="@(e => e.Label)"
+                                                                                 YValue="@(e => e.Value)"
+                                                                                 SeriesType="@seriesType"/>
                                                             </ApexChart>
                                                         }
                                                     }
@@ -199,20 +241,33 @@
                                                         var radialSeries = GetPieSeries(qr);
                                                         if (radialSeries.Count > 0)
                                                         {
-                                                            <ApexChart TItem="ChartDataPoint" Options="GetRadialApexOptions()" Width="@("100%")" Height="280" @key="@($"apex-mr-{idx}-{ri}-{qr.ChartType}")">
-                                                                <ApexPointSeries TItem="ChartDataPoint" Items="radialSeries[0].Points" Name="@radialSeries[0].Name"
-                                                                                 XValue="@(e => e.Label)" YValue="@(e => e.Value)" SeriesType="SeriesType.RadialBar" />
+                                                            <ApexChart TItem="ChartDataPoint"
+                                                                       Options="GetRadialApexOptions()"
+                                                                       Width="@("100%")" Height="280"
+                                                                       @key="@($"apex-mr-{idx}-{ri}-{qr.ChartType}")">
+                                                                <ApexPointSeries TItem="ChartDataPoint"
+                                                                                 Items="radialSeries[0].Points"
+                                                                                 Name="@radialSeries[0].Name"
+                                                                                 XValue="@(e => e.Label)"
+                                                                                 YValue="@(e => e.Value)"
+                                                                                 SeriesType="SeriesType.RadialBar"/>
                                                             </ApexChart>
                                                         }
                                                     }
                                                     else
                                                     {
                                                         var series = GetChartSeries(qr);
-                                                        <ApexChart TItem="ChartDataPoint" Options="GetApexOptions(qr.ChartType)" Width="@("100%")" Height="280" @key="@($"apex-mr-{idx}-{ri}-{qr.ChartType}")">
+                                                        <ApexChart TItem="ChartDataPoint"
+                                                                   Options="GetApexOptions(qr.ChartType)"
+                                                                   Width="@("100%")" Height="280"
+                                                                   @key="@($"apex-mr-{idx}-{ri}-{qr.ChartType}")">
                                                             @foreach (var s in series)
                                                             {
-                                                                <ApexPointSeries TItem="ChartDataPoint" Items="s.Points" Name="@s.Name"
-                                                                                 XValue="@(e => e.Label)" YValue="@(e => e.Value)" SeriesType="@MapSeriesType(qr.ChartType)" />
+                                                                <ApexPointSeries TItem="ChartDataPoint" Items="s.Points"
+                                                                                 Name="@s.Name"
+                                                                                 XValue="@(e => e.Label)"
+                                                                                 YValue="@(e => e.Value)"
+                                                                                 SeriesType="@MapSeriesType(qr.ChartType)"/>
                                                             }
                                                         </ApexChart>
                                                     }
@@ -238,11 +293,15 @@
                                         @if (msg.ChartType is "scatter")
                                         {
                                             var scatterSeries = GetScatterSeries(msg);
-                                            <ApexChart TItem="ScatterPoint" Options="GetScatterApexOptions()" Width="@("100%")" Height="320" @key="@($"apex-{idx}-{msg.ChartType}")">
+                                            <ApexChart TItem="ScatterPoint" Options="GetScatterApexOptions()"
+                                                       Width="@("100%")" Height="320"
+                                                       @key="@($"apex-{idx}-{msg.ChartType}")">
                                                 @foreach (var s in scatterSeries)
                                                 {
-                                                    <ApexPointSeries TItem="ScatterPoint" Items="s.Points" Name="@s.Name"
-                                                                     XValue="@(e => e.X)" YValue="@(e => e.Y)" SeriesType="SeriesType.Scatter" />
+                                                    <ApexPointSeries TItem="ScatterPoint" Items="s.Points"
+                                                                     Name="@s.Name"
+                                                                     XValue="@(e => e.X)" YValue="@(e => e.Y)"
+                                                                     SeriesType="SeriesType.Scatter"/>
                                                 }
                                             </ApexChart>
                                         }
@@ -252,9 +311,13 @@
                                             @if (pieSeries.Count > 0)
                                             {
                                                 var seriesType = msg.ChartType is "donut" or "doughnut" ? SeriesType.Donut : SeriesType.Pie;
-                                                <ApexChart TItem="ChartDataPoint" Options="GetPieApexOptions()" Width="@("100%")" Height="320" @key="@($"apex-{idx}-{msg.ChartType}")">
-                                                    <ApexPointSeries TItem="ChartDataPoint" Items="pieSeries[0].Points" Name="@pieSeries[0].Name"
-                                                                     XValue="@(e => e.Label)" YValue="@(e => e.Value)" SeriesType="@seriesType" />
+                                                <ApexChart TItem="ChartDataPoint" Options="GetPieApexOptions()"
+                                                           Width="@("100%")" Height="320"
+                                                           @key="@($"apex-{idx}-{msg.ChartType}")">
+                                                    <ApexPointSeries TItem="ChartDataPoint" Items="pieSeries[0].Points"
+                                                                     Name="@pieSeries[0].Name"
+                                                                     XValue="@(e => e.Label)" YValue="@(e => e.Value)"
+                                                                     SeriesType="@seriesType"/>
                                                 </ApexChart>
                                             }
                                         }
@@ -263,31 +326,44 @@
                                             var radialSeries = GetPieSeries(msg);
                                             @if (radialSeries.Count > 0)
                                             {
-                                                <ApexChart TItem="ChartDataPoint" Options="GetRadialApexOptions()" Width="@("100%")" Height="320" @key="@($"apex-{idx}-{msg.ChartType}")">
-                                                    <ApexPointSeries TItem="ChartDataPoint" Items="radialSeries[0].Points" Name="@radialSeries[0].Name"
-                                                                     XValue="@(e => e.Label)" YValue="@(e => e.Value)" SeriesType="SeriesType.RadialBar" />
+                                                <ApexChart TItem="ChartDataPoint" Options="GetRadialApexOptions()"
+                                                           Width="@("100%")" Height="320"
+                                                           @key="@($"apex-{idx}-{msg.ChartType}")">
+                                                    <ApexPointSeries TItem="ChartDataPoint"
+                                                                     Items="radialSeries[0].Points"
+                                                                     Name="@radialSeries[0].Name"
+                                                                     XValue="@(e => e.Label)" YValue="@(e => e.Value)"
+                                                                     SeriesType="SeriesType.RadialBar"/>
                                                 </ApexChart>
                                             }
                                         }
                                         else if (msg.ChartType is "radar")
                                         {
                                             var radarSeries = GetChartSeries(msg);
-                                            <ApexChart TItem="ChartDataPoint" Options="GetRadarApexOptions()" Width="@("100%")" Height="320" @key="@($"apex-{idx}-{msg.ChartType}")">
+                                            <ApexChart TItem="ChartDataPoint" Options="GetRadarApexOptions()"
+                                                       Width="@("100%")" Height="320"
+                                                       @key="@($"apex-{idx}-{msg.ChartType}")">
                                                 @foreach (var s in radarSeries)
                                                 {
-                                                    <ApexPointSeries TItem="ChartDataPoint" Items="s.Points" Name="@s.Name"
-                                                                     XValue="@(e => e.Label)" YValue="@(e => e.Value)" SeriesType="SeriesType.Radar" />
+                                                    <ApexPointSeries TItem="ChartDataPoint" Items="s.Points"
+                                                                     Name="@s.Name"
+                                                                     XValue="@(e => e.Label)" YValue="@(e => e.Value)"
+                                                                     SeriesType="SeriesType.Radar"/>
                                                 }
                                             </ApexChart>
                                         }
                                         else if (msg.ChartType is "heatmap")
                                         {
                                             var heatSeries = GetChartSeries(msg);
-                                            <ApexChart TItem="ChartDataPoint" Options="GetApexOptions(msg.ChartType)" Width="@("100%")" Height="320" @key="@($"apex-{idx}-{msg.ChartType}")">
+                                            <ApexChart TItem="ChartDataPoint" Options="GetApexOptions(msg.ChartType)"
+                                                       Width="@("100%")" Height="320"
+                                                       @key="@($"apex-{idx}-{msg.ChartType}")">
                                                 @foreach (var s in heatSeries)
                                                 {
-                                                    <ApexPointSeries TItem="ChartDataPoint" Items="s.Points" Name="@s.Name"
-                                                                     XValue="@(e => e.Label)" YValue="@(e => e.Value)" SeriesType="SeriesType.Heatmap" />
+                                                    <ApexPointSeries TItem="ChartDataPoint" Items="s.Points"
+                                                                     Name="@s.Name"
+                                                                     XValue="@(e => e.Label)" YValue="@(e => e.Value)"
+                                                                     SeriesType="SeriesType.Heatmap"/>
                                                 }
                                             </ApexChart>
                                         }
@@ -296,20 +372,28 @@
                                             var treeSeries = GetPieSeries(msg);
                                             @if (treeSeries.Count > 0)
                                             {
-                                                <ApexChart TItem="ChartDataPoint" Options="GetApexOptions(msg.ChartType)" Width="@("100%")" Height="320" @key="@($"apex-{idx}-{msg.ChartType}")">
-                                                    <ApexPointSeries TItem="ChartDataPoint" Items="treeSeries[0].Points" Name="@treeSeries[0].Name"
-                                                                     XValue="@(e => e.Label)" YValue="@(e => e.Value)" SeriesType="SeriesType.Treemap" />
+                                                <ApexChart TItem="ChartDataPoint"
+                                                           Options="GetApexOptions(msg.ChartType)" Width="@("100%")"
+                                                           Height="320" @key="@($"apex-{idx}-{msg.ChartType}")">
+                                                    <ApexPointSeries TItem="ChartDataPoint" Items="treeSeries[0].Points"
+                                                                     Name="@treeSeries[0].Name"
+                                                                     XValue="@(e => e.Label)" YValue="@(e => e.Value)"
+                                                                     SeriesType="SeriesType.Treemap"/>
                                                 </ApexChart>
                                             }
                                         }
                                         else
                                         {
                                             var displaySeries = GetChartSeries(msg);
-                                            <ApexChart TItem="ChartDataPoint" Options="GetApexOptions(msg.ChartType)" Width="@("100%")" Height="320" @key="@($"apex-{idx}-{msg.ChartType}")">
+                                            <ApexChart TItem="ChartDataPoint" Options="GetApexOptions(msg.ChartType)"
+                                                       Width="@("100%")" Height="320"
+                                                       @key="@($"apex-{idx}-{msg.ChartType}")">
                                                 @foreach (var s in displaySeries)
                                                 {
-                                                    <ApexPointSeries TItem="ChartDataPoint" Items="s.Points" Name="@s.Name"
-                                                                     XValue="@(e => e.Label)" YValue="@(e => e.Value)" SeriesType="@MapSeriesType(msg.ChartType)" />
+                                                    <ApexPointSeries TItem="ChartDataPoint" Items="s.Points"
+                                                                     Name="@s.Name"
+                                                                     XValue="@(e => e.Label)" YValue="@(e => e.Value)"
+                                                                     SeriesType="@MapSeriesType(msg.ChartType)"/>
                                                 }
                                             </ApexChart>
                                         }
@@ -322,57 +406,68 @@
                                         <span>@((msg.InputTokens + msg.OutputTokens).ToString("N0")) tokens</span>
                                     }
                                 </div>
-
+                                
+                                @if (HasSqlContent(msg))
                                 {
-                                    @if (HasSqlContent(msg))
-                                    {
-                                        <details class="border border-gray-800/60 rounded-lg overflow-hidden">
-                                            <summary class="px-3 py-2 text-xs text-gray-400 cursor-pointer hover:text-gray-300 select-none bg-gray-900/40">
-                                                SQL@(msg.Results.Count > 1 ? $" · {msg.Results.Count} queries" : "")
-                                            </summary>
-                                            @if (msg.Results.Count > 1)
-                                            {
-                                                <div class="divide-y divide-gray-800/40">
-                                                    @foreach (var (qr, ri) in msg.Results.Where(r => !string.IsNullOrWhiteSpace(r.Sql)).Select((r, i) => (r, i)))
-                                                    {
-                                                        <div>
-                                                            <div class="px-3 py-1 text-[10px] text-gray-500 bg-gray-900/50">@(!string.IsNullOrEmpty(qr.Label) ? qr.Label : $"Query {ri + 1}")</div>
-                                                            <pre class="px-3 py-2 text-xs text-emerald-300 font-mono whitespace-pre-wrap bg-gray-950">@qr.Sql</pre>
-                                                        </div>
-                                                    }
-                                                </div>
-                                            }
-                                            else
-                                            {
-                                                <pre class="p-3 text-xs text-emerald-300 font-mono whitespace-pre-wrap bg-gray-950">@msg.Sql</pre>
-                                            }
-                                        </details>
-                                    }
-
-                                    @if (HasReasoningContent(msg))
-                                    {
-                                        <details class="border border-gray-800/60 rounded-lg overflow-hidden">
-                                            <summary class="px-3 py-2 text-xs text-gray-400 cursor-pointer hover:text-gray-300 select-none bg-gray-900/40">Reasoning</summary>
-                                            <div class="p-3 text-xs text-gray-400 italic whitespace-pre-wrap bg-gray-950/40">@msg.Thinking</div>
-                                        </details>
-                                    }
-
-                                    @if (msg.StreamEvents?.Count > 0)
-                                    {
-                                        <details class="border border-gray-800/60 rounded-lg overflow-hidden">
-                                            <summary class="px-3 py-2 text-xs text-gray-400 cursor-pointer hover:text-gray-300 select-none bg-gray-900/40">Agent timeline · @msg.StreamEvents.Count steps</summary>
-                                            <div class="p-2.5 space-y-1 bg-gray-950/40">
-                                                @foreach (var evt in msg.StreamEvents)
+                                    <details class="border border-gray-800/60 rounded-lg overflow-hidden">
+                                        <summary
+                                            class="px-3 py-2 text-xs text-gray-400 cursor-pointer hover:text-gray-300 select-none bg-gray-900/40">
+                                            SQL@(msg.Results.Count > 1 ? $" · {msg.Results.Count} queries" : "")
+                                        </summary>
+                                        @if (msg.Results.Count > 1)
+                                        {
+                                            <div class="divide-y divide-gray-800/40">
+                                                @foreach (var (qr, ri) in msg.Results.Where(r => !string.IsNullOrWhiteSpace(r.Sql)).Select((r, i) => (r, i)))
                                                 {
-                                                    <div class="flex items-start gap-2 text-xs">
-                                                        <span class="shrink-0 @StreamEventDotClass(evt.Type) w-1.5 h-1.5 rounded-full mt-1"></span>
-                                                        <span class="@StreamEventTextClass(evt.Type)">@evt.Message</span>
+                                                    <div>
+                                                        <div
+                                                            class="px-3 py-1 text-[10px] text-gray-500 bg-gray-900/50">@(!string.IsNullOrEmpty(qr.Label) ? qr.Label : $"Query {ri + 1}")</div>
+                                                        <pre
+                                                            class="px-3 py-2 text-xs text-emerald-300 font-mono whitespace-pre-wrap bg-gray-950">@qr.Sql</pre>
                                                     </div>
                                                 }
                                             </div>
-                                        </details>
-                                    }
+                                        }
+                                        else
+                                        {
+                                            <pre
+                                                class="p-3 text-xs text-emerald-300 font-mono whitespace-pre-wrap bg-gray-950">@msg.Sql</pre>
+                                        }
+                                    </details>
                                 }
+
+                                @if (HasReasoningContent(msg))
+                                {
+                                    <details class="border border-gray-800/60 rounded-lg overflow-hidden">
+                                        <summary
+                                            class="px-3 py-2 text-xs text-gray-400 cursor-pointer hover:text-gray-300 select-none bg-gray-900/40">
+                                            Reasoning
+                                        </summary>
+                                        <div
+                                            class="p-3 text-xs text-gray-400 italic whitespace-pre-wrap bg-gray-950/40">@msg.Thinking</div>
+                                    </details>
+                                }
+
+                                @if (msg.StreamEvents?.Count > 0)
+                                {
+                                    <details class="border border-gray-800/60 rounded-lg overflow-hidden">
+                                        <summary
+                                            class="px-3 py-2 text-xs text-gray-400 cursor-pointer hover:text-gray-300 select-none bg-gray-900/40">
+                                            Agent timeline · @msg.StreamEvents.Count steps
+                                        </summary>
+                                        <div class="p-2.5 space-y-1 bg-gray-950/40">
+                                            @foreach (var evt in msg.StreamEvents)
+                                            {
+                                                <div class="flex items-start gap-2 text-xs">
+                                                    <span
+                                                        class="shrink-0 @StreamEventDotClass(evt.Type) w-1.5 h-1.5 rounded-full mt-1"></span>
+                                                    <span class="@StreamEventTextClass(evt.Type)">@evt.Message</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    </details>
+                                }
+
                             </div>
                         }
                     }
@@ -384,9 +479,12 @@
                             {
                                 <div class="border border-gray-800/60 rounded-lg overflow-hidden bg-gray-900/30">
                                     <div class="px-3 py-1.5 border-b border-gray-800/60 flex items-center gap-2">
-                                        <svg class="w-3 h-3 animate-spin text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24">
-                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                        <svg class="w-3 h-3 animate-spin text-emerald-400 shrink-0" fill="none"
+                                             viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                                    stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor"
+                                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
                                         </svg>
                                         <span class="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Agent Timeline</span>
                                     </div>
@@ -394,14 +492,19 @@
                                         @foreach (var evt in _pendingMessage.StreamEvents)
                                         {
                                             <div class="flex items-start gap-2 text-xs">
-                                                <span class="shrink-0 mt-0.5 @StreamEventDotClass(evt.Type) w-1.5 h-1.5 rounded-full"></span>
+                                                <span
+                                                    class="shrink-0 mt-0.5 @StreamEventDotClass(evt.Type) w-1.5 h-1.5 rounded-full"></span>
                                                 <div class="min-w-0">
                                                     <span class="@StreamEventTextClass(evt.Type)">@evt.Message</span>
                                                     @if (!string.IsNullOrEmpty(evt.Sql))
                                                     {
                                                         <details class="mt-1">
-                                                            <summary class="text-gray-600 cursor-pointer hover:text-gray-500">View SQL</summary>
-                                                            <pre class="mt-1 p-2 text-[10px] bg-gray-950 text-emerald-300 rounded font-mono whitespace-pre-wrap border border-gray-800">@evt.Sql</pre>
+                                                            <summary
+                                                                class="text-gray-600 cursor-pointer hover:text-gray-500">
+                                                                View SQL
+                                                            </summary>
+                                                            <pre
+                                                                class="mt-1 p-2 text-[10px] bg-gray-950 text-emerald-300 rounded font-mono whitespace-pre-wrap border border-gray-800">@evt.Sql</pre>
                                                         </details>
                                                     }
                                                 </div>
@@ -414,8 +517,10 @@
                             {
                                 <div class="flex items-center gap-2 text-xs text-gray-500">
                                     <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                                stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor"
+                                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
                                     </svg>
                                     Running query...
                                 </div>
@@ -427,12 +532,15 @@
                 <!-- Input -->
                 <div class="border-t border-gray-800 p-3">
                     <form @onsubmit="Send" @onsubmit:preventDefault class="space-y-2">
-                        <textarea @bind="input" @bind:event="oninput" rows="3" placeholder="Ask about your data... e.g. Top 10 merchants by volume this week"
+                        <textarea @bind="input" @bind:event="oninput" rows="3"
+                                  placeholder="Ask about your data... e.g. Top 10 merchants by volume this week"
                                   disabled="@loading"
                                   class="w-full px-3 py-2.5 bg-gray-900 border border-gray-800 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 disabled:opacity-50 resize-y min-h-[2.75rem] max-h-56"></textarea>
                         <div class="flex items-center justify-between gap-2">
-                            <span class="text-[10px] text-gray-600">Tip: use line breaks for context-rich prompts.</span>
-                            <button type="submit" disabled="@(loading || string.IsNullOrWhiteSpace(input) || string.IsNullOrEmpty(database))"
+                            <span
+                                class="text-[10px] text-gray-600">Tip: use line breaks for context-rich prompts.</span>
+                            <button type="submit"
+                                    disabled="@(loading || string.IsNullOrWhiteSpace(input) || string.IsNullOrEmpty(database))"
                                     class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-800 disabled:text-gray-600 text-white text-sm font-medium rounded-lg transition-colors">
                                 Ask
                             </button>
@@ -454,6 +562,7 @@
 </div>
 
 @code {
+
     [SupplyParameterFromQuery(Name = "id")]
     public string? ConversationIdParam { get; set; }
 
@@ -483,6 +592,7 @@
     private const string TabTable = "table";
     private const string TabSql = "sql";
     private const string TabReasoning = "reasoning";
+
     private ChatMessage? SelectedAssistantMessage =>
         selectedAssistantIdx is int idx &&
         idx >= 0 &&
@@ -508,7 +618,13 @@
         if (_shouldScrollToBottom)
         {
             _shouldScrollToBottom = false;
-            try { await JS.InvokeVoidAsync("chartInterop.scrollToBottom", messagesContainer); } catch { }
+            try
+            {
+                await JS.InvokeVoidAsync("chartInterop.scrollToBottom", messagesContainer);
+            }
+            catch
+            {
+            }
         }
     }
 
@@ -546,14 +662,30 @@
     private async Task OnDatabaseChanged(ChangeEventArgs e)
     {
         database = e.Value?.ToString() ?? database;
-        try { await Cache.SetAsync(DbPrefKey, database, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) }); } catch { /* best-effort */ }
+        try
+        {
+            await Cache.SetAsync(DbPrefKey, database, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) });
+        }
+        catch
+        {
+            /* best-effort */
+        }
+
         await RefreshDatabaseContext();
     }
 
     private async Task OnModeChanged(ChangeEventArgs e)
     {
         mode = e.Value?.ToString() is "fraud" ? "fraud" : "general";
-        try { await Cache.SetAsync(ModePrefKey, mode, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) }); } catch { /* best-effort */ }
+        try
+        {
+            await Cache.SetAsync(ModePrefKey, mode, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) });
+        }
+        catch
+        {
+            /* best-effort */
+        }
+
         BuildQuickAskSuggestions();
     }
 
@@ -570,8 +702,24 @@
         activeConversationId = conv.Id;
         database = conv.Database;
         mode = conv.Mode is "fraud" ? "fraud" : "general";
-        try { await Cache.SetAsync(DbPrefKey, database, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) }); } catch { /* best-effort */ }
-        try { await Cache.SetAsync(ModePrefKey, mode, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) }); } catch { /* best-effort */ }
+        try
+        {
+            await Cache.SetAsync(DbPrefKey, database, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) });
+        }
+        catch
+        {
+            /* best-effort */
+        }
+
+        try
+        {
+            await Cache.SetAsync(ModePrefKey, mode, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) });
+        }
+        catch
+        {
+            /* best-effort */
+        }
+
         await RefreshDatabaseContext();
         messages = (conv.Messages ?? []).Select(m =>
         {
@@ -598,6 +746,7 @@
                 NormalizeAssistantMessage(assistant);
                 return assistant;
             }
+
             return new ChatMessage { Role = m.Role ?? "user", Content = m.Content };
         }).ToList();
         SelectLatestAssistantMessage();
@@ -703,7 +852,11 @@
                 try
                 {
                     var job = await JobStore.GetAsync(jobId);
-                    if (job == null) { StopPolling(jobId); break; }
+                    if (job == null)
+                    {
+                        StopPolling(jobId);
+                        break;
+                    }
 
                     if (_pendingMessage != null && job.StreamEvents.Count > (_pendingMessage.StreamEvents?.Count ?? 0))
                     {
@@ -947,6 +1100,7 @@
     // ── ApexCharts helpers ──────────────────────────────────────────────────
 
     private record ChartDataPoint(string Label, decimal Value);
+
     private record ScatterPoint(decimal X, decimal Y);
 
     private static List<(string Name, List<ChartDataPoint> Points)> GetChartSeries(ChatMessage msg)
@@ -1001,6 +1155,7 @@
             {
                 var valueCol = numericCols[0];
                 var xLabelCols = labelCols.Take(labelCols.Count - 1).ToList();
+
                 string GetXLabel(Dictionary<string, string> row) =>
                     string.Join(" ", xLabelCols
                         .Select(c => row.GetValueOrDefault(c) ?? "")
@@ -1042,7 +1197,8 @@
     private static bool IsIdentifierColumn(string columnName)
     {
         var lower = columnName.ToLowerInvariant().Replace("_", " ").Replace("-", " ");
-        string[] identifierPatterns = [
+        string[] identifierPatterns =
+        [
             "phone", "mobile", "msisdn", "cell",
             "id", "uuid", "guid",
             "account number", "account no",
@@ -1169,13 +1325,16 @@
                     Style = new AxisLabelStyle { Colors = new Color("#6b7280"), FontSize = "10px" }
                 }
             },
-            Yaxis = [new YAxis
-            {
-                Labels = new YAxisLabels
+            Yaxis =
+            [
+                new YAxis
                 {
-                    Style = new AxisLabelStyle { Colors = new Color("#6b7280"), FontSize = "10px" }
+                    Labels = new YAxisLabels
+                    {
+                        Style = new AxisLabelStyle { Colors = new Color("#6b7280"), FontSize = "10px" }
+                    }
                 }
-            }],
+            ],
             Legend = new Legend
             {
                 Labels = new LegendLabels { Colors = new Color("#9ca3af") }
@@ -1205,13 +1364,16 @@
                 Style = new AxisLabelStyle { Colors = new Color("#6b7280"), FontSize = "10px" }
             }
         },
-        Yaxis = [new YAxis
-        {
-            Labels = new YAxisLabels
+        Yaxis =
+        [
+            new YAxis
             {
-                Style = new AxisLabelStyle { Colors = new Color("#6b7280"), FontSize = "10px" }
+                Labels = new YAxisLabels
+                {
+                    Style = new AxisLabelStyle { Colors = new Color("#6b7280"), FontSize = "10px" }
+                }
             }
-        }],
+        ],
         Tooltip = new Tooltip { Theme = Mode.Dark },
         DataLabels = new DataLabels { Enabled = false }
     };
@@ -1356,6 +1518,7 @@
             if (num > 999)
                 return num.ToString("N0");
         }
+
         return value;
     }
 
@@ -1440,4 +1603,5 @@
         result.ChartType = chartType;
         StateHasChanged();
     }
+
 }
