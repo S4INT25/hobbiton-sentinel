@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Sentinel.Admin.Auth;
 using Sentinel.Admin.Models;
@@ -12,37 +11,34 @@ public static class AdminApiEndpoints
 {
     public static void MapAdminApi(this WebApplication app)
     {
-        // ── Login form handler (outside /api group — no auth required, sets cookie) ──
         app.MapPost("/admin/auth/signin", async (
             HttpContext ctx,
             IUserStore userStore,
             IAuditLogStore audit) =>
         {
             var form = await ctx.Request.ReadFormAsync();
-            var username = form["username"].FirstOrDefault() ?? "";
+            var identifier = form["username"].FirstOrDefault() ?? "";
             var password = form["password"].FirstOrDefault() ?? "";
             var returnUrl = form["returnUrl"].FirstOrDefault() ?? "/admin";
             if (!returnUrl.StartsWith("/")) returnUrl = "/admin";
 
-            var user = await userStore.GetByUsernameAsync(username);
+            // Allow login with email or username
+            var user = identifier.Contains('@')
+                ? await userStore.GetByEmailAsync(identifier)
+                : await userStore.GetByUsernameAsync(identifier);
+
             if (user == null || !user.IsActive || !BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
             {
                 await audit.LogAsync(new AuditLog
                 {
                     Action = "login_failed", ResourceType = "auth",
-                    ResourceId = username, Username = username,
+                    ResourceId = identifier, Username = identifier,
                     IpAddress = ctx.Connection.RemoteIpAddress?.ToString() ?? ""
                 });
                 return Results.Redirect("/admin/login?error=invalid");
             }
 
-            var claims = new List<Claim>
-            {
-                new(ClaimTypes.NameIdentifier, user.Id),
-                new(ClaimTypes.Name, user.Username),
-                new(ClaimTypes.Role, user.Role),
-                new("display_name", user.DisplayName)
-            };
+            var claims = BuildClaims(user);
             await ctx.SignInAsync(AuthConstants.Scheme,
                 new ClaimsPrincipal(new ClaimsIdentity(claims, AuthConstants.Scheme)));
             await userStore.UpdateLastLoginAsync(user.Id);
@@ -56,9 +52,65 @@ public static class AdminApiEndpoints
             return Results.Redirect(returnUrl);
         }).AllowAnonymous().DisableAntiforgery();
 
-        var api = app.MapGroup("/api").RequireAuthorization(AuthConstants.Policy);
+        app.MapPost("/admin/auth/signup", async (
+            HttpContext ctx,
+            IUserStore userStore,
+            IAuditLogStore audit) =>
+        {
+            var form = await ctx.Request.ReadFormAsync();
+            var email = (form["email"].FirstOrDefault() ?? "").Trim().ToLowerInvariant();
+            var displayName = (form["displayName"].FirstOrDefault() ?? "").Trim();
+            var password = form["password"].FirstOrDefault() ?? "";
+            var confirm = form["confirmPassword"].FirstOrDefault() ?? "";
 
-        // ── Rules ──
+            if (!email.EndsWith("@hobbiton.co.zm"))
+                return Results.Redirect("/admin/signup?error=domain");
+
+            if (password.Length < 8)
+                return Results.Redirect("/admin/signup?error=password");
+
+            if (password != confirm)
+                return Results.Redirect("/admin/signup?error=mismatch");
+
+            var existing = await userStore.GetByEmailAsync(email);
+            if (existing != null)
+                return Results.Redirect("/admin/signup?error=exists");
+
+            var username = email[..email.IndexOf('@')];
+            // Ensure username is unique
+            var takenUsernames = (await userStore.GetAllAsync()).Select(u => u.Username)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var finalUsername = username;
+            var suffix = 1;
+            while (takenUsernames.Contains(finalUsername))
+                finalUsername = $"{username}{suffix++}";
+
+            var user = new AdminUser
+            {
+                Username = finalUsername,
+                Email = email,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
+                DisplayName = string.IsNullOrWhiteSpace(displayName) ? finalUsername : displayName,
+                Role = AuthConstants.AnalystRole,
+                IsActive = true
+            };
+
+            await userStore.SaveAsync(user);
+            await audit.LogAsync(new AuditLog
+            {
+                UserId = user.Id, Username = user.Username,
+                Action = "signup", ResourceType = "auth", ResourceId = user.Id,
+                IpAddress = ctx.Connection.RemoteIpAddress?.ToString() ?? ""
+            });
+
+            var claims = BuildClaims(user);
+            await ctx.SignInAsync(AuthConstants.Scheme,
+                new ClaimsPrincipal(new ClaimsIdentity(claims, AuthConstants.Scheme)));
+
+            return Results.Redirect("/admin");
+        }).AllowAnonymous().DisableAntiforgery();
+
+        var api = app.MapGroup("/api").RequireAuthorization(AuthConstants.Policy);
         api.MapGet("/rules", async (IFeedbackRuleStore store) =>
             Results.Ok(await store.GetAllRulesAsync()));
 
@@ -87,8 +139,7 @@ public static class AdminApiEndpoints
             await AuditAction(audit, ctx, "delete", "rule", id);
             return Results.NoContent();
         });
-
-        // ── Runs ──
+        
         api.MapGet("/runs", async (IRunLogStore store, int? limit, int? offset) =>
             Results.Ok(await store.GetRecentRunsAsync(limit ?? 50, offset ?? 0)));
 
@@ -99,11 +150,11 @@ public static class AdminApiEndpoints
             return Results.Ok(new { summary, logs });
         });
 
-        api.MapPost("/runs/trigger", async ( IAuditLogStore audit, HttpContext ctx) =>
+        api.MapPost("/runs/trigger", async (IAuditLogStore audit, HttpContext ctx) =>
         {
             var username = ctx.User.Identity?.Name ?? "unknown";
-            Hangfire.BackgroundJob.Enqueue<Jobs.SentinelJob>(
-                j => j.RunAsync(new Sentinel.Agent.FraudAgentRunRequest { TriggeredBy = $"manual:{username}" }));
+            Hangfire.BackgroundJob.Enqueue<Jobs.SentinelJob>(j =>
+                j.RunAsync(new Sentinel.Agent.FraudAgentRunRequest { TriggeredBy = $"manual:{username}" }));
             await AuditAction(audit, ctx, "trigger_run", "run", "", $"Manual trigger by {username}");
             return Results.Accepted();
         });
@@ -118,13 +169,13 @@ public static class AdminApiEndpoints
                 var state = await runTracker.GetAsync(runId);
                 if (state is null) return Results.NotFound();
             }
+
             await runTracker.MarkStoppedAsync(runId);
             var username = ctx.User.Identity?.Name ?? "unknown";
             await AuditAction(audit, ctx, "stop_run", "run", runId, $"Stopped by {username}");
             return Results.Ok(new { stopped = true });
         });
-
-        // ── Cases ──
+        
         api.MapGet("/cases", async (Memory.ICaseStore store) =>
             Results.Ok(await store.GetOpenCasesAsync()));
 
@@ -142,15 +193,22 @@ public static class AdminApiEndpoints
                         req.CreateRule.CreatedBy = ctx.User.Identity?.Name ?? "unknown";
                         await ruleStore.SaveAsync(req.CreateRule);
                     }
+
                     break;
                 case "escalate":
                     var c = await caseStore.GetCaseAsync(id);
-                    if (c != null) { c.Severity = "critical"; await caseStore.SaveCaseAsync(c); }
+                    if (c != null)
+                    {
+                        c.Severity = "critical";
+                        await caseStore.SaveCaseAsync(c);
+                    }
+
                     break;
                 case "resolve":
                     await caseStore.ResolveCaseAsync(id, req.Reason ?? "Manually resolved");
                     break;
             }
+
             await AuditAction(audit, ctx, $"case_{req.Action}", "case", id, req.Reason);
             return Results.Ok();
         });
@@ -186,14 +244,17 @@ public static class AdminApiEndpoints
 
         // ── Audit ──
         api.MapGet("/audit", async (IAuditLogStore store, int? limit, int? offset,
-            string? userId, string? action, string? resourceType) =>
+                string? userId, string? action, string? resourceType) =>
             Results.Ok(await store.GetRecentAsync(limit ?? 100, offset ?? 0, userId, action, resourceType)));
 
         // ── Auth ──
         api.MapPost("/auth/login", async (LoginRequest req, IUserStore userStore,
             IAuditLogStore audit, HttpContext ctx) =>
         {
-            var user = await userStore.GetByUsernameAsync(req.Username);
+            var user = req.Username.Contains('@')
+                ? await userStore.GetByEmailAsync(req.Username)
+                : await userStore.GetByUsernameAsync(req.Username);
+
             if (user == null || !user.IsActive || !BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
             {
                 await AuditAction(audit, ctx, "login_failed", "auth", req.Username);
@@ -201,18 +262,9 @@ public static class AdminApiEndpoints
             }
 
             await userStore.UpdateLastLoginAsync(user.Id);
-
-            var claims = new List<Claim>
-            {
-                new(ClaimTypes.NameIdentifier, user.Id),
-                new(ClaimTypes.Name, user.Username),
-                new(ClaimTypes.Role, user.Role),
-                new("display_name", user.DisplayName)
-            };
-            var identity = new ClaimsIdentity(claims, AuthConstants.Scheme);
-            var principal = new ClaimsPrincipal(identity);
-
-            await ctx.SignInAsync(AuthConstants.Scheme, principal);
+            var claims = BuildClaims(user);
+            await ctx.SignInAsync(AuthConstants.Scheme,
+                new ClaimsPrincipal(new ClaimsIdentity(claims, AuthConstants.Scheme)));
             await AuditAction(audit, ctx, "login", "auth", user.Id);
             return Results.Ok(new { user.Id, user.Username, user.Role, user.DisplayName });
         }).AllowAnonymous();
@@ -261,17 +313,18 @@ public static class AdminApiEndpoints
             return conversation is null ? Results.NotFound() : Results.Ok(conversation);
         });
 
-        analytics.MapPost("/conversations", async (CreateConversationRequest req, IAnalyticsChatStore store, HttpContext ctx) =>
-        {
-            var userId = ctx.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "default";
-            var conversation = new AnalyticsConversation
+        analytics.MapPost("/conversations",
+            async (CreateConversationRequest req, IAnalyticsChatStore store, HttpContext ctx) =>
             {
-                Database = req.Database,
-                UserId = userId
-            };
-            await store.SaveConversationAsync(conversation);
-            return Results.Ok(conversation);
-        });
+                var userId = ctx.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "default";
+                var conversation = new AnalyticsConversation
+                {
+                    Database = req.Database,
+                    UserId = userId
+                };
+                await store.SaveConversationAsync(conversation);
+                return Results.Ok(conversation);
+            });
 
         analytics.MapDelete("/conversations/{id}", async (string id, IAnalyticsChatStore store, HttpContext ctx) =>
         {
@@ -424,6 +477,14 @@ public static class AdminApiEndpoints
         });
     }
 
+    private static List<Claim> BuildClaims(AdminUser user) =>
+    [
+        new(ClaimTypes.NameIdentifier, user.Id),
+        new(ClaimTypes.Name, user.Username),
+        new(ClaimTypes.Role, user.Role),
+        new("display_name", user.DisplayName)
+    ];
+
     private static string GenerateTitle(string message)
     {
         var title = message.Trim();
@@ -449,7 +510,11 @@ public static class AdminApiEndpoints
 }
 
 public record LoginRequest(string Username, string Password);
+
 public record CreateUserRequest(string Username, string Password, string Role, string DisplayName, string? Email);
+
 public record CaseFeedbackRequest(string Action, string? Reason, FeedbackRule? CreateRule);
+
 public record AnalyticsAskRequest(string Prompt, string? Database, string? ConversationId = null);
+
 public record CreateConversationRequest(string Database);

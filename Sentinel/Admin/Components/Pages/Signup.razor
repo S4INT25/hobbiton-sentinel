@@ -1,0 +1,78 @@
+@page "/admin/signup"
+@layout EmptyLayout
+@attribute [AllowAnonymous]
+
+@code {
+    [SupplyParameterFromQuery(Name = "error")]
+    public string? ErrorParam { get; set; }
+}
+
+<PageTitle>Sign up — Sentinel</PageTitle>
+
+<div class="h-full flex items-center justify-center">
+    <div class="w-full max-w-sm px-6">
+        <div class="text-center mb-8">
+            <img src="https://hobbiton.tech/assets/logo2-7db998ca.png" alt="Hobbiton logo" class="w-50 h-24 mx-auto mb-3 rounded-lg object-contain" />
+            <h1 class="text-lg font-semibold text-white">Sentinel</h1>
+            <p class="text-sm text-gray-500 mt-1">Create your account</p>
+        </div>
+
+        @if (ErrorParam == "domain")
+        {
+            <div class="mb-4 p-3 rounded-md bg-rose-500/10 border border-rose-500/20 text-sm text-rose-400">
+                Only <span class="font-medium">hobbiton.co.zm</span> email addresses are allowed.
+            </div>
+        }
+        else if (ErrorParam == "exists")
+        {
+            <div class="mb-4 p-3 rounded-md bg-rose-500/10 border border-rose-500/20 text-sm text-rose-400">
+                An account with this email already exists.
+            </div>
+        }
+        else if (ErrorParam == "password")
+        {
+            <div class="mb-4 p-3 rounded-md bg-rose-500/10 border border-rose-500/20 text-sm text-rose-400">
+                Password must be at least 8 characters.
+            </div>
+        }
+        else if (ErrorParam == "mismatch")
+        {
+            <div class="mb-4 p-3 rounded-md bg-rose-500/10 border border-rose-500/20 text-sm text-rose-400">
+                Passwords do not match.
+            </div>
+        }
+
+        <form action="/admin/auth/signup" method="post" class="space-y-4">
+            <div>
+                <label class="block text-xs font-medium text-gray-400 mb-1.5">Work email</label>
+                <input type="email" name="email" required autocomplete="email" autofocus
+                       placeholder="you@hobbiton.co.zm"
+                       class="w-full px-3 py-2 bg-gray-900 border border-gray-800 rounded-md text-sm text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20" />
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-400 mb-1.5">Display name</label>
+                <input type="text" name="displayName" required autocomplete="name"
+                       class="w-full px-3 py-2 bg-gray-900 border border-gray-800 rounded-md text-sm text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20" />
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-400 mb-1.5">Password</label>
+                <input type="password" name="password" required autocomplete="new-password"
+                       class="w-full px-3 py-2 bg-gray-900 border border-gray-800 rounded-md text-sm text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20" />
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-400 mb-1.5">Confirm password</label>
+                <input type="password" name="confirmPassword" required autocomplete="new-password"
+                       class="w-full px-3 py-2 bg-gray-900 border border-gray-800 rounded-md text-sm text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20" />
+            </div>
+            <button type="submit"
+                    class="w-full py-2 px-4 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-md transition-colors">
+                Create account
+            </button>
+        </form>
+
+        <p class="mt-6 text-center text-xs text-gray-500">
+            Already have an account?
+            <a href="/admin/login" class="text-emerald-400 hover:text-emerald-300">Sign in</a>
+        </p>
+    </div>
+</div>

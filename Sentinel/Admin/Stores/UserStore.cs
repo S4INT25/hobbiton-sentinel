@@ -38,6 +38,10 @@ public class UserStore(IFusionCache cache) : IUserStore
         await PersistAsync(users);
     }
 
+    public async Task<AdminUser?> GetByEmailAsync(string email) =>
+        (await LoadAsync()).FirstOrDefault(u =>
+            u.Email != null && u.Email.Equals(email, StringComparison.OrdinalIgnoreCase));
+
     public async Task UpdateLastLoginAsync(string id)
     {
         var users = await LoadAsync();

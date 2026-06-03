@@ -10,4 +10,5 @@ public interface IUserStore
     Task SaveAsync(AdminUser user);
     Task DeleteAsync(string id);
     Task UpdateLastLoginAsync(string id);
+    Task<AdminUser?> GetByEmailAsync(string email);
 }

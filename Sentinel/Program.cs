@@ -11,7 +11,6 @@ using System.ClientModel;
 using Sentinel.Admin;
 using Sentinel.Admin.Auth;
 using Sentinel.Admin.Data;
-using Sentinel.Admin.Services;
 using Sentinel.Admin.Stores;
 using Sentinel.Agent;
 using ApexCharts;
@@ -20,9 +19,6 @@ using Sentinel.Jobs;
 using Sentinel.Memory;
 using ZiggyCreatures.Caching.Fusion;
 using ZiggyCreatures.Caching.Fusion.Serialization.SystemTextJson;
-
-// Npgsql: treat all DateTime as UTC (models use Unspecified kind)
-AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Warning()
@@ -40,14 +36,14 @@ try
         .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true)
         .AddEnvironmentVariables();
 
-    builder.Host.UseSerilog((ctx, services, cfg) =>
+    builder.Host.UseSerilog((ctx, _, cfg) =>
     {
         var seqUrl = ctx.Configuration["Seq:Url"] ?? "http://localhost:5341";
         var seqKey = ctx.Configuration["Seq:ApiKey"];
 
         cfg
             .MinimumLevel.Debug()
-            .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+            .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
             .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
             .MinimumLevel.Override("Hangfire", LogEventLevel.Information)
             .MinimumLevel.Override("MailKit", LogEventLevel.Warning)
@@ -61,10 +57,8 @@ try
     });
 
     var redisConnectionString = builder.Configuration["Redis:ConnectionString"];
-    var clickHouseHostRaw = builder.Configuration["ClickHouse:Host"];
     var postgresConnectionString = builder.Configuration.GetConnectionString("Sentinel");
     var usePostgresStores = !string.IsNullOrWhiteSpace(postgresConnectionString);
-    var useClickHouseStores = !usePostgresStores && !string.IsNullOrWhiteSpace(clickHouseHostRaw);
     var useRedisInfrastructure = !string.IsNullOrWhiteSpace(redisConnectionString);
 
     builder.Services.AddSingleton(_ =>
@@ -94,47 +88,19 @@ try
             options => options.UseNpgsql(postgresConnectionString),
             ServiceLifetime.Scoped);
 
-        // Also register ClickHouse context if configured, so migration service can read from it
-        if (!string.IsNullOrWhiteSpace(clickHouseHostRaw))
-        {
-            var chHost = new Uri(clickHouseHostRaw!);
-            var chUser = builder.Configuration["ClickHouse:User"] ?? "default";
-            var chPass = builder.Configuration["ClickHouse:Password"] ?? "";
-            var chConnectionString =
-                $"Host={chHost.Host};Port={chHost.Port};Database=sentinel;Username={chUser};Password={chPass}";
-            builder.Services.AddDbContextFactory<SentinelClickHouseContext>(
-                options => options.UseClickHouse(chConnectionString), ServiceLifetime.Singleton);
-        }
-
         builder.Services.AddScoped<IRunLogStore, PostgresRunLogStore>();
         builder.Services.AddScoped<IAuditLogStore, PostgresAuditLogStore>();
         builder.Services.AddScoped<IFraudPatternStore, PostgresFraudPatternStore>();
         builder.Services.AddScoped<IEvidenceSourceStore, PostgresEvidenceSourceStore>();
         builder.Services.AddScoped<IWorkflowStore, PostgresWorkflowStore>();
-        builder.Services.AddHostedService<ClickHouseToPostgresMigrationService>();
     }
-    else if (!useClickHouseStores)
+    else
     {
         builder.Services.AddSingleton<IRunLogStore, InMemoryRunLogStore>();
         builder.Services.AddSingleton<IAuditLogStore, InMemoryAuditLogStore>();
         builder.Services.AddSingleton<IFraudPatternStore, InMemoryFraudPatternStore>();
         builder.Services.AddSingleton<IEvidenceSourceStore, InMemoryEvidenceSourceStore>();
         builder.Services.AddSingleton<IWorkflowStore, InMemoryWorkflowStore>();
-    }
-    else
-    {
-        // ClickHouse EF Core — run logs + audit (constructed from ClickHouse config section)
-        var chHost = new Uri(clickHouseHostRaw!);
-        var chUser = builder.Configuration["ClickHouse:User"] ?? "default";
-        var chPass = builder.Configuration["ClickHouse:Password"] ?? "";
-        var chConnectionString =
-            $"Host={chHost.Host};Port={chHost.Port};Database=sentinel;Username={chUser};Password={chPass}";
-        builder.Services.AddDbContextFactory<SentinelClickHouseContext>(options => options.UseClickHouse(chConnectionString), ServiceLifetime.Singleton);
-        builder.Services.AddScoped<IRunLogStore, RunLogStore>();
-        builder.Services.AddScoped<IAuditLogStore, AuditLogStore>();
-        builder.Services.AddScoped<IFraudPatternStore, ClickHouseFraudPatternStore>();
-        builder.Services.AddScoped<IEvidenceSourceStore, ClickHouseEvidenceSourceStore>();
-        builder.Services.AddScoped<IWorkflowStore, ClickHouseWorkflowStore>();
     }
 
     if (useRedisInfrastructure)
@@ -215,12 +181,6 @@ try
         var pgFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<SentinelDbContext>>();
         await using var pgDb = await pgFactory.CreateDbContextAsync();
         await pgDb.Database.MigrateAsync();
-    }
-    else if (useClickHouseStores)
-    {
-        var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<SentinelClickHouseContext>>();
-        await using var db = await factory.CreateDbContextAsync();
-        await db.Database.MigrateAsync();
     }
 
     var patternStore = scope.ServiceProvider.GetRequiredService<IFraudPatternStore>();
