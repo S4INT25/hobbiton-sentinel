@@ -87,7 +87,7 @@ public class ClickHouseEvidenceSourceStore(
     public async Task UpsertAsync(EvidenceSource source)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        var now = DateTime.UtcNow;
+        var now = DateTimeOffset.UtcNow;
         source.UpdatedAt = now;
         if (source.CreatedAt == default) source.CreatedAt = now;
 

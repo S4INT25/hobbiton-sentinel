@@ -11,7 +11,7 @@ public class FraudPatternEntity
     /// <summary>Optional workflow scope. Null/empty = global (available to all workflows).</summary>
     public string? WorkflowId { get; set; }
 
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     public string CreatedBy { get; set; } = "system";
 }

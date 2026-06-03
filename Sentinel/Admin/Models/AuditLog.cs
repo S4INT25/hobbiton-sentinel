@@ -14,5 +14,5 @@ public class AuditLog
     [Column("resource_id")] public string ResourceId { get; set; } = "";
     [Column("details")] public string Details { get; set; } = "";
     [Column("ip_address")] public string IpAddress { get; set; } = "";
-    [Column("timestamp")] public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    [Column("timestamp")] public DateTimeOffset Timestamp { get; set; } = DateTimeOffset.UtcNow;
 }

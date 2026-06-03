@@ -218,32 +218,6 @@
                                                     }
                                                 </div>
                                             }
-                                            <details class="border-t border-gray-800/40">
-                                                <summary class="px-3 py-1.5 text-[10px] text-gray-500 cursor-pointer hover:text-gray-400 select-none">Table · @qr.RowCount rows</summary>
-                                                <div class="overflow-x-auto">
-                                                    <table class="w-full text-xs">
-                                                        <thead class="bg-gray-900/70">
-                                                            <tr>
-                                                                @foreach (var col in qr.Columns)
-                                                                {
-                                                                    <th class="text-left px-3 py-1.5 font-medium text-gray-500 border-b border-gray-800 whitespace-nowrap">@HumanizeColumn(col)</th>
-                                                                }
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody class="divide-y divide-gray-800/50">
-                                                            @foreach (var row in qr.Rows)
-                                                            {
-                                                                <tr class="hover:bg-gray-900/30">
-                                                                    @foreach (var col in qr.Columns)
-                                                                    {
-                                                                        <td class="px-3 py-1.5 text-gray-300 font-mono whitespace-nowrap">@FormatCell(row.GetValueOrDefault(col), col)</td>
-                                                                    }
-                                                                </tr>
-                                                            }
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </details>
                                         </div>
                                     }
                                 }
@@ -343,49 +317,12 @@
                                 }
 
                                 <div class="flex items-center gap-3 text-[10px] text-gray-600">
-                                    @if (msg.RowCount > 0)
-                                    {
-                                        <span>@msg.RowCount rows</span>
-                                    }
                                     @if (msg.InputTokens + msg.OutputTokens > 0)
                                     {
                                         <span>@((msg.InputTokens + msg.OutputTokens).ToString("N0")) tokens</span>
                                     }
                                 </div>
 
-                                @if (HasTableContent(msg) && msg.Results.Count <= 1)
-                                {
-                                    <details class="border border-gray-800/60 rounded-lg overflow-hidden">
-                                        <summary class="px-3 py-2 text-xs text-gray-400 cursor-pointer hover:text-gray-300 select-none bg-gray-900/40">
-                                            Table · @msg.RowCount rows
-                                        </summary>
-                                        <div class="overflow-x-auto">
-                                            <table class="w-full text-xs">
-                                                <thead class="bg-gray-900/70 sticky top-0">
-                                                    <tr>
-                                                        @foreach (var col in msg.Columns!)
-                                                        {
-                                                            <th class="text-left px-3 py-1.5 font-medium text-gray-500 border-b border-gray-800 whitespace-nowrap">@HumanizeColumn(col)</th>
-                                                        }
-                                                    </tr>
-                                                </thead>
-                                                <tbody class="divide-y divide-gray-800/50">
-                                                    @foreach (var row in msg.Rows!)
-                                                    {
-                                                        <tr class="hover:bg-gray-900/30">
-                                                            @foreach (var col in msg.Columns!)
-                                                            {
-                                                                <td class="px-3 py-1.5 text-gray-300 font-mono whitespace-nowrap">@FormatCell(row.GetValueOrDefault(col), col)</td>
-                                                            }
-                                                        </tr>
-                                                    }
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </details>
-                                }
-
-                                @if (debugMode)
                                 {
                                     @if (HasSqlContent(msg))
                                     {

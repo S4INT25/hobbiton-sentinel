@@ -17,8 +17,8 @@ public class WorkflowDefinition
     public string SystemPrompt { get; set; } = "";
 
     public bool IsDeleted { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     public string CreatedBy { get; set; } = "system";
 }
 

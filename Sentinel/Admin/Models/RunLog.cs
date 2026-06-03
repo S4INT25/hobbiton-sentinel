@@ -11,6 +11,6 @@ public class RunLog
     [Column("tool_name")] public string ToolName { get; set; } = "";
     [Column("args")] public string Args { get; set; } = "";
     [Column("result")] public string Result { get; set; } = "";
-    [Column("started_at")] public DateTime StartedAt { get; set; }
+    [Column("started_at")] public DateTimeOffset StartedAt { get; set; }
     [Column("duration_ms")] public uint DurationMs { get; set; }
 }

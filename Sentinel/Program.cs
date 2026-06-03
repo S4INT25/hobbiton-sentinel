@@ -11,6 +11,7 @@ using System.ClientModel;
 using Sentinel.Admin;
 using Sentinel.Admin.Auth;
 using Sentinel.Admin.Data;
+using Sentinel.Admin.Services;
 using Sentinel.Admin.Stores;
 using Sentinel.Agent;
 using ApexCharts;
@@ -19,6 +20,9 @@ using Sentinel.Jobs;
 using Sentinel.Memory;
 using ZiggyCreatures.Caching.Fusion;
 using ZiggyCreatures.Caching.Fusion.Serialization.SystemTextJson;
+
+// Npgsql: treat all DateTime as UTC (models use Unspecified kind)
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Warning()
@@ -58,7 +62,9 @@ try
 
     var redisConnectionString = builder.Configuration["Redis:ConnectionString"];
     var clickHouseHostRaw = builder.Configuration["ClickHouse:Host"];
-    var useClickHouseStores = !string.IsNullOrWhiteSpace(clickHouseHostRaw);
+    var postgresConnectionString = builder.Configuration.GetConnectionString("Sentinel");
+    var usePostgresStores = !string.IsNullOrWhiteSpace(postgresConnectionString);
+    var useClickHouseStores = !usePostgresStores && !string.IsNullOrWhiteSpace(clickHouseHostRaw);
     var useRedisInfrastructure = !string.IsNullOrWhiteSpace(redisConnectionString);
 
     builder.Services.AddSingleton(_ =>
@@ -82,7 +88,32 @@ try
     builder.Services.AddSingleton<IAnalyticsJobStore, AnalyticsJobStore>();
     builder.Services.AddSingleton<IActiveRunTracker, ActiveRunTracker>();
 
-    if (!useClickHouseStores)
+    if (usePostgresStores)
+    {
+        builder.Services.AddDbContextFactory<SentinelDbContext>(
+            options => options.UseNpgsql(postgresConnectionString),
+            ServiceLifetime.Scoped);
+
+        // Also register ClickHouse context if configured, so migration service can read from it
+        if (!string.IsNullOrWhiteSpace(clickHouseHostRaw))
+        {
+            var chHost = new Uri(clickHouseHostRaw!);
+            var chUser = builder.Configuration["ClickHouse:User"] ?? "default";
+            var chPass = builder.Configuration["ClickHouse:Password"] ?? "";
+            var chConnectionString =
+                $"Host={chHost.Host};Port={chHost.Port};Database=sentinel;Username={chUser};Password={chPass}";
+            builder.Services.AddDbContextFactory<SentinelClickHouseContext>(
+                options => options.UseClickHouse(chConnectionString), ServiceLifetime.Singleton);
+        }
+
+        builder.Services.AddScoped<IRunLogStore, PostgresRunLogStore>();
+        builder.Services.AddScoped<IAuditLogStore, PostgresAuditLogStore>();
+        builder.Services.AddScoped<IFraudPatternStore, PostgresFraudPatternStore>();
+        builder.Services.AddScoped<IEvidenceSourceStore, PostgresEvidenceSourceStore>();
+        builder.Services.AddScoped<IWorkflowStore, PostgresWorkflowStore>();
+        builder.Services.AddHostedService<ClickHouseToPostgresMigrationService>();
+    }
+    else if (!useClickHouseStores)
     {
         builder.Services.AddSingleton<IRunLogStore, InMemoryRunLogStore>();
         builder.Services.AddSingleton<IAuditLogStore, InMemoryAuditLogStore>();
@@ -104,7 +135,6 @@ try
         builder.Services.AddScoped<IFraudPatternStore, ClickHouseFraudPatternStore>();
         builder.Services.AddScoped<IEvidenceSourceStore, ClickHouseEvidenceSourceStore>();
         builder.Services.AddScoped<IWorkflowStore, ClickHouseWorkflowStore>();
-
     }
 
     if (useRedisInfrastructure)
@@ -180,7 +210,13 @@ try
 
 
     using var scope = app.Services.CreateScope();
-    if (useClickHouseStores)
+    if (usePostgresStores)
+    {
+        var pgFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<SentinelDbContext>>();
+        await using var pgDb = await pgFactory.CreateDbContextAsync();
+        await pgDb.Database.MigrateAsync();
+    }
+    else if (useClickHouseStores)
     {
         var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<SentinelClickHouseContext>>();
         await using var db = await factory.CreateDbContextAsync();

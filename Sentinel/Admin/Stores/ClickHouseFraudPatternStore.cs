@@ -90,7 +90,7 @@ public class ClickHouseFraudPatternStore(
     public async Task UpsertAsync(FraudPatternEntity pattern)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        var now = DateTime.UtcNow;
+        var now = DateTimeOffset.UtcNow;
         pattern.UpdatedAt = now;
         if (pattern.CreatedAt == default) pattern.CreatedAt = now;
 

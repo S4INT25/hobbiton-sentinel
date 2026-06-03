@@ -375,7 +375,9 @@
             var activeState = activeRuns.FirstOrDefault(a =>
                 a.TriggeredBy.Equals($"workflow:{wf.Id}", StringComparison.OrdinalIgnoreCase));
             var isRunning = activeState is { Status: "running" or "queued" } || lastRun?.Status == "running";
-            var lastRunAt = activeState?.StartedAtUtc ?? lastRun?.StartedAt;
+            var lastRunAt = activeState != null
+                ? new DateTimeOffset(activeState.StartedAtUtc, TimeSpan.Zero)
+                : lastRun?.StartedAt;
             var lastRunStatus = activeState?.Status ?? lastRun?.Status;
 
             DateTime? nextRun = null;
@@ -776,10 +778,10 @@
         return $"{d.TotalHours:F0}h {d.Minutes}m";
     }
 
-    private static string FormatRelativeTime(DateTime? utcTime)
+    private static string FormatRelativeTime(DateTimeOffset? utcTime)
     {
         if (utcTime == null) return "Never";
-        var diff = DateTime.UtcNow - utcTime.Value;
+        var diff = DateTimeOffset.UtcNow - utcTime.Value;
         if (diff.TotalSeconds < 0) // Future
         {
             var future = -diff;
@@ -797,7 +799,7 @@
 
     private class WorkflowRunState
     {
-        public DateTime? LastRunAt { get; set; }
+        public DateTimeOffset? LastRunAt { get; set; }
         public string? LastRunStatus { get; set; }
         public TimeSpan? LastRunDuration { get; set; }
         public DateTime? NextRunAt { get; set; }

@@ -17,6 +17,9 @@ services:
       DigitalOcean__InferenceEndpoint: ${DO_INFERENCE_ENDPOINT:-https://inference.do-ai.run/v1}
       DigitalOcean__ModelName: ${DO_MODEL_NAME:-llama3-3-70b-instruct}
 
+      # PostgreSQL
+      ConnectionStrings__Sentinel: Host=postgres;Database=sentinel;Username=sentinel;Password=${POSTGRES_PASSWORD}
+
       # ClickHouse
       ClickHouse__Host: ${CLICKHOUSE_HOST}
       ClickHouse__User: ${CLICKHOUSE_USER}
@@ -53,12 +56,30 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     logging:
       driver: loki
       options:
         loki-url: "http://102.23.122.169:3100/loki/api/v1/push"
         loki-external-labels: "job=sentinel,env=prod"
         loki-batch-size: "400"
+
+  postgres:
+    image: postgres:18-alpine
+    container_name: sentinel-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sentinel
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U sentinel -d sentinel" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   seq:
     image: datalust/seq:latest
@@ -88,6 +109,8 @@ services:
       retries: 5
 
 volumes:
+  postgres-data:
+    driver: local
   redis-data:
     driver: local
   seq-data:

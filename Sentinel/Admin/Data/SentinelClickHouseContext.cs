@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Sentinel.Admin.Models;
 
 namespace Sentinel.Admin.Data;
@@ -13,24 +14,33 @@ public class SentinelClickHouseContext(DbContextOptions<SentinelClickHouseContex
     public DbSet<EvidenceSource> EvidenceSources => Set<EvidenceSource>();
     public DbSet<WorkflowDefinition> Workflows => Set<WorkflowDefinition>();
 
+    // ClickHouse stores datetimes as DateTime (no timezone). Convert to/from DateTimeOffset treating all values as UTC.
+    private static readonly ValueConverter<DateTimeOffset, DateTime> DateTimeOffsetConverter = new(
+        dto => dto.UtcDateTime,
+        dt => new DateTimeOffset(dt, TimeSpan.Zero));
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<RunLog>(e =>
         {
             e.HasNoKey();
             e.ToTable("run_logs");
+            e.Property(r => r.StartedAt).HasConversion(DateTimeOffsetConverter);
         });
 
         modelBuilder.Entity<RunSummary>(e =>
         {
             e.HasNoKey();
             e.ToTable("run_summaries");
+            e.Property(r => r.StartedAt).HasConversion(DateTimeOffsetConverter);
+            e.Property(r => r.FinishedAt).HasConversion(DateTimeOffsetConverter);
         });
 
         modelBuilder.Entity<AuditLog>(e =>
         {
             e.HasKey(a => a.Id);
             e.ToTable("audit_logs");
+            e.Property(a => a.Timestamp).HasConversion(DateTimeOffsetConverter);
         });
 
         modelBuilder.Entity<FraudPatternEntity>(e =>
@@ -43,8 +53,8 @@ public class SentinelClickHouseContext(DbContextOptions<SentinelClickHouseContex
             e.Property(p => p.Category).HasColumnName("category");
             e.Property(p => p.Enabled).HasColumnName("enabled");
             e.Property(p => p.WorkflowId).HasColumnName("workflow_id");
-            e.Property(p => p.CreatedAt).HasColumnName("created_at");
-            e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
+            e.Property(p => p.CreatedAt).HasColumnName("created_at").HasConversion(DateTimeOffsetConverter);
+            e.Property(p => p.UpdatedAt).HasColumnName("updated_at").HasConversion(DateTimeOffsetConverter);
             e.Property(p => p.CreatedBy).HasColumnName("created_by");
         });
 
@@ -63,8 +73,8 @@ public class SentinelClickHouseContext(DbContextOptions<SentinelClickHouseContex
             e.Property(s => s.Notes).HasColumnName("notes");
             e.Property(s => s.WorkflowId).HasColumnName("workflow_id");
             e.Property(s => s.Enabled).HasColumnName("enabled");
-            e.Property(s => s.CreatedAt).HasColumnName("created_at");
-            e.Property(s => s.UpdatedAt).HasColumnName("updated_at");
+            e.Property(s => s.CreatedAt).HasColumnName("created_at").HasConversion(DateTimeOffsetConverter);
+            e.Property(s => s.UpdatedAt).HasColumnName("updated_at").HasConversion(DateTimeOffsetConverter);
             e.Property(s => s.CreatedBy).HasColumnName("created_by");
         });
 
@@ -84,8 +94,8 @@ public class SentinelClickHouseContext(DbContextOptions<SentinelClickHouseContex
             e.Property(w => w.CustomPrompt).HasColumnName("custom_prompt");
             e.Property(w => w.SystemPrompt).HasColumnName("system_prompt");
             e.Property(w => w.IsDeleted).HasColumnName("is_deleted");
-            e.Property(w => w.CreatedAt).HasColumnName("created_at");
-            e.Property(w => w.UpdatedAt).HasColumnName("updated_at");
+            e.Property(w => w.CreatedAt).HasColumnName("created_at").HasConversion(DateTimeOffsetConverter);
+            e.Property(w => w.UpdatedAt).HasColumnName("updated_at").HasConversion(DateTimeOffsetConverter);
             e.Property(w => w.CreatedBy).HasColumnName("created_by");
         });
     }

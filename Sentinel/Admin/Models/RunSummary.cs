@@ -7,8 +7,8 @@ namespace Sentinel.Admin.Models;
 public class RunSummary
 {
     [Column("run_id")] public string RunId { get; set; } = "";
-    [Column("started_at")] public DateTime StartedAt { get; set; }
-    [Column("finished_at")] public DateTime FinishedAt { get; set; }
+    [Column("started_at")] public DateTimeOffset StartedAt { get; set; }
+    [Column("finished_at")] public DateTimeOffset FinishedAt { get; set; }
     [Column("iterations")] public ushort Iterations { get; set; }
     [Column("input_tokens")] public uint InputTokens { get; set; }
     [Column("output_tokens")] public uint OutputTokens { get; set; }
