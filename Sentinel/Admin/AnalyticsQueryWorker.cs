@@ -99,7 +99,9 @@ public class AnalyticsQueryWorker(
                 conversation.Mode = string.IsNullOrWhiteSpace(job.Mode) ? conversation.Mode : job.Mode;
             }
 
-            conversation.Messages.Add(new ChatEntry { Role = "user", Content = job.Prompt });
+            var latestUserMessage = conversation.Messages.LastOrDefault(m => m.Role == "user");
+            if (!string.Equals(latestUserMessage?.Content, job.Prompt, StringComparison.Ordinal))
+                conversation.Messages.Add(new ChatEntry { Role = "user", Content = job.Prompt });
             conversation.Messages.Add(new ChatEntry { Role = "assistant", Content = job.Prompt, Response = result });
 
             if (conversation.Title == "New Conversation" && conversation.Messages.Count >= 2)
@@ -114,6 +116,32 @@ public class AnalyticsQueryWorker(
             job.CompletedAt = DateTime.UtcNow;
             job.Error = ex.Message;
             await jobStore.UpdateAsync(job);
+
+            if (!string.IsNullOrWhiteSpace(job.ConversationId))
+            {
+                var conversation = await chatStore.GetConversationAsync(job.UserId, job.ConversationId)
+                    ?? new AnalyticsConversation
+                    {
+                        Id = job.ConversationId,
+                        Database = job.Database,
+                        Mode = string.IsNullOrWhiteSpace(job.Mode) ? "general" : job.Mode,
+                        UserId = job.UserId,
+                        Title = GenerateTitle(job.Prompt)
+                    };
+
+                var latestUserMessage = conversation.Messages.LastOrDefault(m => m.Role == "user");
+                if (!string.Equals(latestUserMessage?.Content, job.Prompt, StringComparison.Ordinal))
+                    conversation.Messages.Add(new ChatEntry { Role = "user", Content = job.Prompt });
+
+                conversation.Messages.Add(new ChatEntry
+                {
+                    Role = "assistant",
+                    Content = job.Prompt,
+                    Response = new AnalyticsResponse { Success = false, Error = ex.Message }
+                });
+                await chatStore.SaveConversationAsync(conversation);
+            }
+
             logger.LogError(ex, "Job {JobId} failed", jobId);
         }
     }

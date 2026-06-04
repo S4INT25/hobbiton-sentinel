@@ -658,7 +658,13 @@
 
         // Restore active conversation from URL query param (persists across browser refresh)
         if (!string.IsNullOrEmpty(ConversationIdParam))
+        {
             await LoadConversation(ConversationIdParam, updateUrl: false);
+        }
+        else
+        {
+            await ResumeRunningConversationAsync();
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -877,6 +883,12 @@
                 await LoadConversations();
             }
 
+            if (!string.IsNullOrEmpty(conversationId))
+            {
+                Navigation.NavigateTo($"/admin/chat?id={conversationId}", replace: true);
+                await AppendUserMessageAsync(conversationId, prompt);
+            }
+
             var job = new AnalyticsQueryJob
             {
                 ConversationId = conversationId,
@@ -898,6 +910,29 @@
             SelectLatestAssistantMessage();
             loading = false;
         }
+    }
+
+    private async Task AppendUserMessageAsync(string conversationId, string prompt)
+    {
+        var conversation = await ChatStore.GetConversationAsync(userId, conversationId);
+        if (conversation == null)
+            return;
+
+        conversation.Database = database;
+        conversation.Mode = mode;
+        conversation.Messages.Add(new ChatEntry { Role = "user", Content = prompt });
+        await ChatStore.SaveConversationAsync(conversation);
+    }
+
+    private async Task ResumeRunningConversationAsync()
+    {
+        var runningJob = (await JobStore.GetUserJobsAsync(userId))
+            .Where(j => j.Status == "pending" || j.Status == "running")
+            .OrderByDescending(j => j.SubmittedAt)
+            .FirstOrDefault();
+
+        if (!string.IsNullOrWhiteSpace(runningJob?.ConversationId))
+            await LoadConversation(runningJob.ConversationId);
     }
 
     private async Task OnComposerKeyDown(KeyboardEventArgs e)
