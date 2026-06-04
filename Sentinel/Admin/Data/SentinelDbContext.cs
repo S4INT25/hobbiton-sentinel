@@ -11,6 +11,7 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
     public DbSet<FraudPatternEntity> FraudPatterns   => Set<FraudPatternEntity>();
     public DbSet<EvidenceSource>     EvidenceSources => Set<EvidenceSource>();
     public DbSet<WorkflowDefinition> Workflows       => Set<WorkflowDefinition>();
+    public DbSet<AgentMemory>        AgentMemories   => Set<AgentMemory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -121,6 +122,22 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
             e.Property(w => w.UpdatedAt).HasColumnName("updated_at");
             e.Property(w => w.CreatedBy).HasColumnName("created_by");
             e.HasIndex(w => w.Enabled);
+        });
+
+        modelBuilder.Entity<AgentMemory>(e =>
+        {
+            e.HasKey(m => m.Id);
+            e.ToTable("agent_memories");
+            e.Property(m => m.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            e.Property(m => m.Term).HasColumnName("term").HasMaxLength(200);
+            e.Property(m => m.Definition).HasColumnName("definition");
+            e.Property(m => m.Database).HasColumnName("database").HasMaxLength(100);
+            e.Property(m => m.Enabled).HasColumnName("enabled");
+            e.Property(m => m.CreatedBy).HasColumnName("created_by").HasMaxLength(200);
+            e.Property(m => m.CreatedAt).HasColumnName("created_at");
+            e.Property(m => m.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(m => m.Enabled);
+            e.HasIndex(m => m.Term);
         });
     }
 }

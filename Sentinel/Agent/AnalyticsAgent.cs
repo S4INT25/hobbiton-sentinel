@@ -1,8 +1,10 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using OpenAI;
 using OpenAI.Chat;
 using Sentinel.Admin;
+using Sentinel.Admin.Models;
 using Sentinel.Infrastructure;
 
 namespace Sentinel.Agent;
@@ -28,6 +30,7 @@ public class AnalyticsAgent(
         List<ChatEntry>? history = null,
         string mode = "general",
         Func<AnalyticsStreamEvent, Task>? onEvent = null,
+        IEnumerable<AgentMemory>? memories = null,
         CancellationToken cancellationToken = default)
     {
         var modelName = config["DigitalOcean:ModelName"]!;
@@ -35,7 +38,7 @@ public class AnalyticsAgent(
         var isInteractive = !string.Equals(mode, "autonomous", StringComparison.OrdinalIgnoreCase);
 
         var allowInteractiveReportSending = !isInteractive || HasExplicitEmailIntent(prompt);
-        var systemPrompt = BuildSystemPrompt(database, schema, isInteractive, allowInteractiveReportSending);
+        var systemPrompt = BuildSystemPrompt(database, schema, isInteractive, allowInteractiveReportSending, memories);
         var messages = new List<ChatMessage> { new SystemChatMessage(systemPrompt) };
 
         if (history is { Count: > 0 })
@@ -395,7 +398,7 @@ public class AnalyticsAgent(
     }
     
 
-    private static string BuildSystemPrompt(string database, string schema, bool isInteractive, bool allowInteractiveReportSending)
+    private static string BuildSystemPrompt(string database, string schema, bool isInteractive, bool allowInteractiveReportSending, IEnumerable<AgentMemory>? memories = null)
     {
         var reportPolicyBlock = isInteractive
             ? (allowInteractiveReportSending
@@ -448,6 +451,8 @@ public class AnalyticsAgent(
               Keep it scannable — busy executives should grasp the key points in 10 seconds.
               """;
 
+        var memoriesBlock = BuildMemoriesBlock(memories);
+
         return $$"""
                  You are an intelligent analytics agent with full access to ClickHouse databases.
                  You investigate questions by querying data, analysing results, and presenting findings clearly.
@@ -485,6 +490,7 @@ public class AnalyticsAgent(
                  
                  ## Currency
                  All amounts are Zambian Kwacha (ZMW). Use "K" prefix in explanations (e.g. K 1,250.00). Never use $.
+                 {{memoriesBlock}}
                  {{interactiveBlock}}
                  {{reportPolicyBlock}}
                  
@@ -492,6 +498,19 @@ public class AnalyticsAgent(
                  After your tool calls complete, write a clear, insightful final response. Reference specific numbers.
                  Be concise but substantive. Don't repeat the query — focus on what the data means.
                  """;
+    }
+
+    private static string BuildMemoriesBlock(IEnumerable<AgentMemory>? memories)
+    {
+        var list = memories?.ToList();
+        if (list is not { Count: > 0 }) return "";
+
+        var sb = new StringBuilder("\n## Business Definitions\n");
+        sb.AppendLine("The following terms and calculations have been defined by your organization.");
+        sb.AppendLine("Use these definitions exactly when answering questions that involve these metrics:\n");
+        foreach (var m in list)
+            sb.AppendLine($"**{m.Term}**: {m.Definition}");
+        return sb.ToString();
     }
 
     private static bool HasExplicitEmailIntent(string prompt)

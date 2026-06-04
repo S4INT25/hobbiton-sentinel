@@ -1,0 +1,204 @@
+@page "/admin/knowledge"
+@using Sentinel.Admin.Models
+@inject IAgentMemoryStore MemoryStore
+@inject IAuditLogStore AuditStore
+@inject AuthenticationStateProvider AuthStateProvider
+@attribute [Authorize(Policy = AuthConstants.AdminOnlyPolicy)]
+
+<PageTitle>Knowledge Base — Sentinel</PageTitle>
+
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-lg font-semibold text-white">Agent Knowledge Base</h1>
+            <p class="text-xs text-gray-500 mt-0.5">Define business terms and calculation rules the agent will use when answering questions</p>
+        </div>
+        <button @onclick="ShowAddForm" class="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-all duration-200">
+            Add Definition
+        </button>
+    </div>
+
+    @if (_memories.Count == 0 && !_showForm)
+    {
+        <div class="border border-dashed border-gray-700 rounded-lg p-8 text-center">
+            <div class="text-2xl mb-2">🧠</div>
+            <p class="text-sm text-gray-400">No definitions yet.</p>
+            <p class="text-xs text-gray-600 mt-1">Add terms like "Revenue", "Active Merchant", or "Churn Rate" and tell the agent exactly how to calculate them.</p>
+        </div>
+    }
+
+    @if (_showForm)
+    {
+        <div class="border border-gray-700 rounded-lg p-4 bg-gray-900/60 space-y-3 animate-in">
+            <h2 class="text-sm font-medium text-white">@(_editMemory.Id == 0 ? "New Definition" : "Edit Definition")</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Term <span class="text-red-400">*</span></label>
+                    <input @bind="_editMemory.Term"
+                           class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-emerald-500 focus:outline-none transition-colors"
+                           placeholder="e.g. Revenue" />
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Database Scope</label>
+                    <select @bind="_editMemory.Database"
+                            class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none transition-colors">
+                        <option value="">All databases</option>
+                        <option value="inshuwa">Inshuwa (Insurance)</option>
+                        <option value="lipila_blaze">Lipila Blaze</option>
+                        <option value="bnpl">BNPL</option>
+                        <option value="patumba_app">Patumba App</option>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-400 mb-1">Definition / Calculation Rule <span class="text-red-400">*</span></label>
+                <textarea @bind="_editMemory.Definition" rows="5"
+                          class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-emerald-500 focus:outline-none transition-colors leading-relaxed"
+                          placeholder="Explain exactly how this metric is calculated. E.g.: Revenue is the SUM of the `amount` column in public_transactions WHERE status = 'completed' AND transaction_type IN ('payment', 'topup'). Exclude refunds (transaction_type = 'refund')."></textarea>
+            </div>
+            <div class="flex items-center gap-2">
+                <input type="checkbox" id="chk-enabled" @bind="_editMemory.Enabled" class="accent-emerald-500" />
+                <label for="chk-enabled" class="text-xs text-gray-400">Enabled (agent will use this definition)</label>
+            </div>
+            @if (!string.IsNullOrEmpty(_formError))
+            {
+                <p class="text-xs text-red-400">@_formError</p>
+            }
+            <div class="flex items-center gap-2 pt-1">
+                <button @onclick="SaveAsync" disabled="@_saving"
+                        class="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-md transition-all">
+                    @(_saving ? "Saving…" : "Save")
+                </button>
+                <button @onclick="CancelForm" class="px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white transition-colors">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    }
+
+    @if (_memories.Count > 0)
+    {
+        <div class="space-y-2">
+            @foreach (var m in _memories)
+            {
+                <div class="border border-gray-800 rounded-lg p-4 bg-gray-900/40 hover:border-gray-700 transition-colors">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="text-sm font-semibold text-white">@m.Term</span>
+                                @if (!m.Enabled)
+                                {
+                                    <span class="px-1.5 py-0.5 text-xs rounded bg-gray-800 text-gray-500">Disabled</span>
+                                }
+                                @if (!string.IsNullOrEmpty(m.Database))
+                                {
+                                    <span class="px-1.5 py-0.5 text-xs rounded bg-blue-900/60 text-blue-300">@m.Database</span>
+                                }
+                                else
+                                {
+                                    <span class="px-1.5 py-0.5 text-xs rounded bg-gray-800 text-gray-500">All databases</span>
+                                }
+                            </div>
+                            <p class="mt-1.5 text-xs text-gray-400 leading-relaxed whitespace-pre-wrap">@m.Definition</p>
+                            <p class="mt-2 text-xs text-gray-600">
+                                Updated @m.UpdatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm")
+                                @if (!string.IsNullOrEmpty(m.CreatedBy)) { <span> · @m.CreatedBy</span> }
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-1 shrink-0">
+                            <button @onclick="() => EditMemory(m)"
+                                    class="p-1.5 text-gray-500 hover:text-white rounded transition-colors" title="Edit">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                </svg>
+                            </button>
+                            <button @onclick="() => DeleteAsync(m)"
+                                    class="p-1.5 text-gray-500 hover:text-red-400 rounded transition-colors" title="Delete">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<AgentMemory> _memories = [];
+    private AgentMemory _editMemory = new();
+    private bool _showForm;
+    private bool _saving;
+    private string? _formError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _memories = await MemoryStore.GetAllAsync();
+    }
+
+    private void ShowAddForm()
+    {
+        _editMemory = new AgentMemory { Enabled = true };
+        _formError = null;
+        _showForm = true;
+    }
+
+    private void EditMemory(AgentMemory m)
+    {
+        _editMemory = new AgentMemory
+        {
+            Id = m.Id,
+            Term = m.Term,
+            Definition = m.Definition,
+            Database = m.Database,
+            Enabled = m.Enabled,
+            CreatedBy = m.CreatedBy,
+            CreatedAt = m.CreatedAt
+        };
+        _formError = null;
+        _showForm = true;
+    }
+
+    private void CancelForm()
+    {
+        _showForm = false;
+        _formError = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        _formError = null;
+        if (string.IsNullOrWhiteSpace(_editMemory.Term))
+        {
+            _formError = "Term is required.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_editMemory.Definition))
+        {
+            _formError = "Definition is required.";
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+            _editMemory.CreatedBy = auth.User.Identity?.Name ?? "admin";
+            await MemoryStore.SaveAsync(_editMemory);
+            _memories = await MemoryStore.GetAllAsync();
+            _showForm = false;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeleteAsync(AgentMemory m)
+    {
+        await MemoryStore.DeleteAsync(m.Id);
+        _memories = await MemoryStore.GetAllAsync();
+    }
+}

@@ -1,369 +1,341 @@
 @page "/admin/present"
 @layout EmptyLayout
-@inject IPresentationStore PresentationStore
+@inject IAnalyticsChatStore ChatStore
 @inject AuthenticationStateProvider AuthState
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @attribute [Authorize(Policy = AuthConstants.Policy)]
-@implements IAsyncDisposable
 
 @using Sentinel.Admin.Auth
-@using Sentinel.Admin.Models
 @using Sentinel.Admin.Stores
 @using Sentinel.Agent
 @using ApexCharts
 
 <PageTitle>Present — Sentinel</PageTitle>
 
-<div class="fixed inset-0 bg-gray-950 text-white flex flex-col select-none" @onkeydown="OnKeyDown" tabindex="0" @ref="rootEl">
+<div class="fixed inset-0 bg-gray-950 text-white flex flex-col overflow-hidden">
     <!-- Top bar -->
-    <div class="flex items-center justify-between px-6 py-3 border-b border-gray-800/60 bg-gray-950/80 backdrop-blur shrink-0 z-20">
+    <div class="flex items-center justify-between px-6 py-3 border-b border-gray-800/60 shrink-0 print:hidden">
         <div class="flex items-center gap-3">
-            <span class="text-xs font-semibold tracking-widest text-emerald-400 uppercase">Sentinel</span>
-            <span class="text-gray-700 text-sm">·</span>
-            <span class="text-sm text-gray-300">@deck?.Title</span>
+            <img src="https://hobbiton.tech/assets/logo2-7db998ca.png" alt="Sentinel" class="h-5 w-5 rounded" />
+            <span class="text-sm font-semibold text-white">Sentinel Insights</span>
+            @if (!string.IsNullOrEmpty(conversationTitle))
+            {
+                <span class="text-gray-600">·</span>
+                <span class="text-sm text-gray-400">@conversationTitle</span>
+            }
+            @if (!string.IsNullOrEmpty(productLabel))
+            {
+                <span class="text-[10px] px-2 py-0.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">@productLabel</span>
+            }
         </div>
-        <div class="flex items-center gap-3">
-            @if (activeTab == TabSlides && deck?.Slides.Count > 0)
-            {
-                <span class="text-xs text-gray-500 tabular-nums">@(currentSlideIndex + 1) / @deck.Slides.Count</span>
-            }
-            <button @onclick="() => activeTab = (activeTab == TabSlides ? TabLive : TabSlides)"
-                    class="px-3 py-1.5 text-xs rounded border transition-colors @(activeTab == TabLive ? "bg-emerald-600/20 border-emerald-500/40 text-emerald-300" : "border-gray-700 text-gray-400 hover:text-gray-200")">
-                @(activeTab == TabSlides ? "Live Q&A" : "Slides")
+        <div class="flex items-center gap-2">
+            <button @onclick="PrintPage"
+                    class="px-3 py-1.5 text-xs rounded border border-gray-700 text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors">
+                Print / Save PDF
             </button>
-            @if (activeTab == TabSlides)
-            {
-                <button @onclick="() => showEditPanel = !showEditPanel"
-                        class="px-3 py-1.5 text-xs rounded border transition-colors @(showEditPanel ? "bg-gray-700 border-gray-600 text-gray-200" : "border-gray-700 text-gray-400 hover:text-gray-200")">
-                    Edit
-                </button>
-            }
-            <a href="/admin/chat"
-               class="px-3 py-1.5 text-xs rounded border border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-600 transition-colors">
-                Exit
+            <a href="@(string.IsNullOrEmpty(convId) ? "/admin/chat" : $"/admin/chat?id={convId}")"
+               class="px-3 py-1.5 text-xs rounded border border-gray-700 text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors">
+                ← Back to Chat
             </a>
         </div>
     </div>
 
-    <!-- Body -->
-    <div class="flex flex-1 min-h-0">
-
-        @if (activeTab == TabSlides)
+    <!-- Report body -->
+    <div class="flex-1 overflow-y-auto" id="report-body">
+        @if (loading)
         {
-            <!-- Edit panel -->
-            @if (showEditPanel)
-            {
-                <div class="w-64 border-r border-gray-800 flex flex-col shrink-0 overflow-y-auto bg-gray-900/40">
-                    <div class="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
-                        <span class="text-xs font-medium text-gray-400 uppercase tracking-wider">Slides (@(deck?.Slides.Count ?? 0))</span>
+            <div class="flex items-center justify-center h-full">
+                <div class="flex items-center gap-3 text-gray-500">
+                    <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    <span class="text-sm">Loading insights...</span>
+                </div>
+            </div>
+        }
+        else if (insights.Count == 0)
+        {
+            <div class="flex flex-col items-center justify-center h-full gap-4 text-center px-8">
+                <div class="text-3xl">💬</div>
+                <h2 class="text-lg font-semibold text-gray-300">No insights to present</h2>
+                <p class="text-sm text-gray-500 max-w-sm">
+                    Run some queries in <a href="/admin/chat" class="text-emerald-400 hover:underline">Chat</a> first,
+                    then come back here to present the results.
+                </p>
+            </div>
+        }
+        else
+        {
+            <div class="max-w-4xl mx-auto px-6 py-10 space-y-10 print:max-w-none print:px-8">
+
+                <!-- Report header -->
+                <div class="border-b border-gray-800 pb-6">
+                    <div class="text-[10px] uppercase tracking-widest text-emerald-400/80 font-medium mb-1">Sentinel Analytics Report</div>
+                    <h1 class="text-2xl font-bold text-white">@conversationTitle</h1>
+                    <div class="flex items-center gap-3 mt-2 text-xs text-gray-500">
+                        @if (!string.IsNullOrEmpty(productLabel))
+                        {
+                            <span>@productLabel</span>
+                            <span>·</span>
+                        }
+                        <span>@DateTime.Now.ToString("dd MMMM yyyy, HH:mm")</span>
+                        <span>·</span>
+                        <span>@insights.Count insight@(insights.Count == 1 ? "" : "s")</span>
                     </div>
-                    @if (deck?.Slides.Count > 0)
-                    {
-                        <div class="p-2 space-y-1">
-                            @foreach (var (slide, i) in (deck?.Slides ?? []).Select((s, i) => (s, i)))
+                </div>
+
+                @foreach (var (item, i) in insights.Select((x, i) => (x, i)))
+                {
+                    <section class="space-y-5">
+                        <!-- Section header -->
+                        <div class="flex items-start gap-3">
+                            <div class="shrink-0 w-7 h-7 rounded-full bg-emerald-600/20 border border-emerald-500/30 flex items-center justify-center text-[11px] font-semibold text-emerald-400">
+                                @(i + 1)
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm text-gray-400 italic">@item.UserPrompt</p>
+                            </div>
+                        </div>
+
+                        <div class="pl-10 space-y-4">
+
+                            <!-- Risk badge -->
+                            @if (!string.IsNullOrEmpty(item.RiskLevel))
                             {
-                                var slideIndex = i;
-                                <div class="group relative rounded-lg p-2.5 cursor-pointer transition-colors @(slideIndex == currentSlideIndex ? "bg-emerald-600/15 border border-emerald-500/30" : "hover:bg-gray-800/60 border border-transparent")"
-                                     @onclick="() => GoToSlide(slideIndex)">
-                                    <div class="text-xs font-medium text-gray-200 truncate pr-6">@slide.Title</div>
-                                    @if (!string.IsNullOrEmpty(slide.Database))
-                                    {
-                                        <div class="text-[10px] text-gray-500 mt-0.5">@slide.Database</div>
-                                    }
-                                    <div class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button @onclick:stopPropagation="true" @onclick="() => MoveSlide(slide.Id, -1)"
-                                                class="p-0.5 hover:text-gray-200 text-gray-500" title="Move up">↑</button>
-                                        <button @onclick:stopPropagation="true" @onclick="() => MoveSlide(slide.Id, 1)"
-                                                class="p-0.5 hover:text-gray-200 text-gray-500" title="Move down">↓</button>
-                                        <button @onclick:stopPropagation="true" @onclick="() => RemoveSlide(slide.Id)"
-                                                class="p-0.5 hover:text-rose-400 text-gray-500" title="Remove">✕</button>
-                                    </div>
+                                <div>
+                                    <span class="@RiskLevelClasses(item.RiskLevel)">@item.RiskLevel Risk</span>
                                 </div>
                             }
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="p-4 text-center text-xs text-gray-600">
-                            <p>No slides yet.</p>
-                            <p class="mt-1">Pin chat results from the <a href="/admin/chat" class="text-emerald-500 hover:underline">Chat</a> page.</p>
-                        </div>
-                    }
-                </div>
-            }
 
-            <!-- Slide content area -->
-            <div class="flex-1 flex flex-col min-w-0 relative">
-                @if (deck?.Slides.Count > 0)
-                {
-                    var slide = deck.Slides[currentSlideIndex];
-                    <div class="flex-1 overflow-y-auto p-8 space-y-6">
-
-                        <!-- Slide header -->
-                        <div>
-                            @if (!string.IsNullOrEmpty(slide.Database))
+                            <!-- Charts (multi-result) -->
+                            @if (item.Results.Count > 1)
                             {
-                                <div class="text-[10px] uppercase tracking-widest text-emerald-400/70 font-medium mb-1">@slide.Database</div>
-                            }
-                            <h1 class="text-2xl font-semibold text-white leading-tight">@slide.Title</h1>
-                            @if (!string.IsNullOrEmpty(slide.UserPrompt) && slide.UserPrompt != slide.Title)
-                            {
-                                <p class="text-sm text-gray-500 mt-1">@slide.UserPrompt</p>
-                            }
-                        </div>
-
-                        <!-- Risk badge -->
-                        @if (!string.IsNullOrEmpty(slide.RiskLevel))
-                        {
-                            <div>
-                                <span class="@RiskLevelClasses(slide.RiskLevel) text-sm px-3 py-1">@slide.RiskLevel Risk</span>
-                            </div>
-                        }
-
-                        <!-- Chart (multi-result) -->
-                        @if (slide.Results.Count > 1)
-                        {
-                            @foreach (var (qr, ri) in slide.Results.Where(r => r.Rows.Count > 0).Select((r, i) => (r, i)))
-                            {
-                                <div class="border border-gray-800/60 rounded-xl overflow-hidden bg-gray-900/30">
-                                    <div class="px-4 py-2.5 border-b border-gray-800/60 flex items-center justify-between">
-                                        <span class="text-sm font-medium text-gray-200">@(!string.IsNullOrEmpty(qr.Label) ? qr.Label : $"Result {ri + 1}")</span>
-                                        <span class="text-xs text-gray-600">@qr.RowCount rows</span>
+                                @foreach (var (qr, ri) in item.Results.Where(r => r.Rows.Count > 0).Select((r, i2) => (r, i2)))
+                                {
+                                    <div class="border border-gray-800 rounded-xl overflow-hidden bg-gray-900/30">
+                                        <div class="px-4 py-2.5 border-b border-gray-800 flex items-center justify-between">
+                                            <span class="text-sm font-medium text-gray-200">@(!string.IsNullOrEmpty(qr.Label) ? qr.Label : $"Result {ri + 1}")</span>
+                                            <span class="text-xs text-gray-600">@qr.RowCount rows</span>
+                                        </div>
+                                        @if (qr.ChartType != "none")
+                                        {
+                                            <div class="p-4">
+                                                @ChartFragment(qr.Columns, qr.Rows, qr.ChartType, $"c-{i}-mr-{ri}")
+                                            </div>
+                                        }
+                                        else if (qr.Rows.Count > 0)
+                                        {
+                                            <div class="overflow-x-auto">
+                                                @TableFragment(qr.Columns, qr.Rows)
+                                            </div>
+                                        }
                                     </div>
-                                    @if (qr.ChartType != "none")
+                                }
+                            }
+                            else if (HasChartData(item))
+                            {
+                                <div class="border border-gray-800 rounded-xl p-4 bg-gray-900/30">
+                                    @ChartFragment(item.Columns, item.Rows, item.ChartType, $"c-{i}")
+                                </div>
+                            }
+                            else if (item.Columns.Count > 0 && item.Rows.Count > 0)
+                            {
+                                <div class="border border-gray-800 rounded-xl overflow-hidden">
+                                    @TableFragment(item.Columns, item.Rows)
+                                </div>
+                            }
+
+                            <!-- Key stats grid (findings + actions) -->
+                            @if (item.Findings.Count > 0 || item.RecommendedActions.Count > 0)
+                            {
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    @if (item.Findings.Count > 0)
                                     {
-                                        <div class="p-4">
-                                            @RenderChart(qr, $"pres-mr-{currentSlideIndex}-{ri}-{qr.ChartType}", 380)
+                                        <div class="border border-gray-800 rounded-xl p-4 bg-gray-900/20 space-y-2">
+                                            <div class="text-[10px] uppercase tracking-widest text-gray-500 font-medium">Key Findings</div>
+                                            @foreach (var f in item.Findings)
+                                            {
+                                                <div class="flex items-start gap-2 text-sm text-gray-300">
+                                                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                                                    @f
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                    @if (item.RecommendedActions.Count > 0)
+                                    {
+                                        <div class="border border-gray-800 rounded-xl p-4 bg-gray-900/20 space-y-2">
+                                            <div class="text-[10px] uppercase tracking-widest text-gray-500 font-medium">Recommended Actions</div>
+                                            @foreach (var a in item.RecommendedActions)
+                                            {
+                                                <div class="flex items-start gap-2 text-sm text-gray-300">
+                                                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0"></span>
+                                                    @a
+                                                </div>
+                                            }
                                         </div>
                                     }
                                 </div>
                             }
-                        }
-                        else if (HasChartContent(slide))
-                        {
-                            <div class="border border-gray-800/60 rounded-xl p-4 bg-gray-900/30">
-                                @RenderSlideChart(slide, $"pres-{currentSlideIndex}-{slide.ChartType}", 400)
-                            </div>
-                        }
 
-                        <!-- Findings -->
-                        @if (slide.Findings.Count > 0 || slide.RecommendedActions.Count > 0)
-                        {
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                @if (slide.Findings.Count > 0)
-                                {
-                                    <div class="border border-gray-800 rounded-xl p-4 bg-gray-900/30 space-y-2">
-                                        <div class="text-[10px] uppercase tracking-widest text-gray-500 font-medium">Findings</div>
-                                        @foreach (var f in slide.Findings)
-                                        {
-                                            <div class="flex items-start gap-2 text-sm text-gray-300">
-                                                <span class="mt-1.5 w-1 h-1 rounded-full bg-emerald-500 shrink-0"></span>
-                                                @f
-                                            </div>
-                                        }
-                                    </div>
-                                }
-                                @if (slide.RecommendedActions.Count > 0)
-                                {
-                                    <div class="border border-gray-800 rounded-xl p-4 bg-gray-900/30 space-y-2">
-                                        <div class="text-[10px] uppercase tracking-widest text-gray-500 font-medium">Recommended Actions</div>
-                                        @foreach (var a in slide.RecommendedActions)
-                                        {
-                                            <div class="flex items-start gap-2 text-sm text-gray-300">
-                                                <span class="mt-1.5 w-1 h-1 rounded-full bg-blue-400 shrink-0"></span>
-                                                @a
-                                            </div>
-                                        }
-                                    </div>
-                                }
-                            </div>
-                        }
-
-                        <!-- Summary / Explanation -->
-                        @if (!string.IsNullOrEmpty(slide.Summary))
-                        {
-                            <div class="border border-gray-800 rounded-xl p-5 bg-gray-900/30">
-                                <div class="text-[10px] uppercase tracking-widest text-gray-500 font-medium mb-2">Summary</div>
-                                <div class="text-gray-200 text-sm leading-relaxed prose prose-invert prose-sm max-w-none">@(Infrastructure.MarkdownRenderer.ToHtml(slide.Summary))</div>
-                            </div>
-                        }
-                        @if (!string.IsNullOrEmpty(slide.Explanation) && slide.Explanation != slide.Summary)
-                        {
-                            <div class="text-gray-400 text-sm leading-relaxed prose prose-invert prose-sm max-w-none">@(Infrastructure.MarkdownRenderer.ToHtml(slide.Explanation))</div>
-                        }
-
-                    </div>
-
-                    <!-- Bottom nav -->
-                    <div class="shrink-0 border-t border-gray-800/60 px-6 py-4 flex items-center justify-between bg-gray-950/60">
-                        <button @onclick="PrevSlide" disabled="@(currentSlideIndex == 0)"
-                                class="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-700 text-sm text-gray-300 hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                            </svg>
-                            Previous
-                        </button>
-                        <div class="flex gap-1.5">
-                            @for (var di = 0; di < deck.Slides.Count; di++)
+                            <!-- Summary -->
+                            @if (!string.IsNullOrEmpty(item.Summary))
                             {
-                                var dotIndex = di;
-                                <button @onclick="() => GoToSlide(dotIndex)"
-                                        class="rounded-full transition-all @(dotIndex == currentSlideIndex ? "w-2.5 h-2.5 bg-emerald-400" : "w-2 h-2 bg-gray-700 hover:bg-gray-500")"></button>
+                                <div class="border border-gray-800 rounded-xl p-5 bg-gray-900/20">
+                                    <div class="text-[10px] uppercase tracking-widest text-gray-500 font-medium mb-2">Summary</div>
+                                    <div class="text-gray-200 text-sm leading-relaxed prose prose-invert prose-sm max-w-none">@(Infrastructure.MarkdownRenderer.ToHtml(item.Summary))</div>
+                                </div>
+                            }
+
+                            @if (!string.IsNullOrEmpty(item.Explanation))
+                            {
+                                <div class="text-gray-400 text-sm leading-relaxed prose prose-invert prose-sm max-w-none">@(Infrastructure.MarkdownRenderer.ToHtml(item.Explanation))</div>
                             }
                         </div>
-                        <button @onclick="NextSlide" disabled="@(currentSlideIndex >= deck.Slides.Count - 1)"
-                                class="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-700 text-sm text-gray-300 hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                            Next
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                            </svg>
-                        </button>
-                    </div>
+
+                        @if (i < insights.Count - 1)
+                        {
+                            <div class="border-t border-gray-800/60 pt-2"></div>
+                        }
+                    </section>
                 }
-                else
-                {
-                    <div class="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8">
-                        <div class="text-4xl">📊</div>
-                        <h2 class="text-xl font-semibold text-gray-300">No slides yet</h2>
-                        <p class="text-sm text-gray-500 max-w-sm">
-                            Go to <a href="/admin/chat" class="text-emerald-400 hover:underline">Chat</a> and pin
-                            assistant responses to your presentation using the pin button on each result.
-                        </p>
-                    </div>
-                }
+
+                <!-- Footer -->
+                <div class="border-t border-gray-800 pt-6 text-center text-xs text-gray-600">
+                    Generated by Sentinel · @DateTime.Now.ToString("dd MMMM yyyy HH:mm") · Beta — values may be inaccurate
+                </div>
             </div>
         }
-
-        @if (activeTab == TabLive)
-        {
-            <div class="flex-1 flex flex-col min-h-0 min-w-0">
-                <iframe src="/admin/chat?present=1" class="flex-1 border-0" title="Live Q&A"></iframe>
-            </div>
-        }
-
     </div>
-
-    @if (toastMessage is not null)
-    {
-        <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm shadow-xl animate-fade-in">
-            @toastMessage
-        </div>
-    }
 </div>
 
 @code {
-    private const string TabSlides = "slides";
-    private const string TabLive = "live";
+    [SupplyParameterFromQuery(Name = "conv")]
+    public string? convId { get; set; }
 
-    private PresentationDeck? deck;
+    private record InsightItem(
+        string UserPrompt,
+        string? Explanation,
+        string? Summary,
+        string? RiskLevel,
+        List<string> Findings,
+        List<string> RecommendedActions,
+        string ChartType,
+        List<string> Columns,
+        List<Dictionary<string, string>> Rows,
+        List<QueryResult> Results
+    );
+
+    private string conversationTitle = "Insights Report";
+    private string productLabel = "";
+    private List<InsightItem> insights = [];
+    private bool loading = true;
     private string userId = "default";
-    private int currentSlideIndex;
-    private string activeTab = TabSlides;
-    private bool showEditPanel;
-    private string? toastMessage;
-    private ElementReference rootEl;
-    private DotNetObjectReference<Index>? _dotnetRef;
 
     protected override async Task OnInitializedAsync()
     {
         var authState = await AuthState.GetAuthenticationStateAsync();
         userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "default";
-        deck = await PresentationStore.GetOrCreateDeckAsync(userId);
+        await LoadInsights();
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    private async Task LoadInsights()
     {
-        if (firstRender)
+        loading = true;
+
+        if (string.IsNullOrEmpty(convId))
         {
-            _dotnetRef = DotNetObjectReference.Create(this);
-            try { await JS.InvokeVoidAsync("presentInterop.init", rootEl); } catch { /* best effort */ }
+            // Load the most recently updated conversation
+            var list = await ChatStore.ListConversationsAsync(userId);
+            convId = list.FirstOrDefault()?.Id;
         }
-    }
 
-    private void GoToSlide(int index)
-    {
-        if (deck is null) return;
-        currentSlideIndex = Math.Clamp(index, 0, Math.Max(0, deck.Slides.Count - 1));
-    }
-
-    private void PrevSlide() => GoToSlide(currentSlideIndex - 1);
-    private void NextSlide() => GoToSlide(currentSlideIndex + 1);
-
-    private void OnKeyDown(KeyboardEventArgs e)
-    {
-        if (activeTab != TabSlides) return;
-        switch (e.Key)
+        if (!string.IsNullOrEmpty(convId))
         {
-            case "ArrowRight":
-            case " ":
-                NextSlide();
-                break;
-            case "ArrowLeft":
-                PrevSlide();
-                break;
-        }
-    }
-
-    private async Task RemoveSlide(string slideId)
-    {
-        if (deck is null) return;
-        var wasCurrentOrLater = deck.Slides.FindIndex(s => s.Id == slideId) <= currentSlideIndex;
-        deck = await PresentationStore.RemoveSlideAsync(userId, slideId);
-        if (wasCurrentOrLater && currentSlideIndex > 0)
-            currentSlideIndex--;
-        currentSlideIndex = Math.Clamp(currentSlideIndex, 0, Math.Max(0, deck.Slides.Count - 1));
-    }
-
-    private async Task MoveSlide(string slideId, int direction)
-    {
-        if (deck is null) return;
-        var oldIdx = deck.Slides.FindIndex(s => s.Id == slideId);
-        deck = await PresentationStore.MoveSlideAsync(userId, slideId, direction);
-        if (oldIdx == currentSlideIndex)
-            currentSlideIndex = Math.Clamp(oldIdx + direction, 0, Math.Max(0, deck.Slides.Count - 1));
-    }
-
-    private static bool HasChartContent(PresentationSlide slide) =>
-        slide.Columns.Count >= 2 && slide.Rows.Count > 0 && slide.ChartType != "none";
-
-    private RenderFragment RenderChart(QueryResult qr, string key, int height) => builder =>
-    {
-        if (qr.ChartType is "pie" or "donut" or "doughnut")
-        {
-            var pieSeries = GetPieSeries(qr.Columns, qr.Rows);
-            if (pieSeries.Count > 0)
+            var conv = await ChatStore.GetConversationAsync(userId, convId);
+            if (conv is not null)
             {
-                builder.OpenComponent<ApexChart<ChartDataPoint>>(0);
-                builder.SetKey(key);
-                builder.AddAttribute(1, "Options", GetPieApexOptions());
-                builder.AddAttribute(2, "Width", "100%");
-                builder.AddAttribute(3, "Height", height);
-                builder.AddAttribute(4, "ChildContent", (RenderFragment)(b2 =>
+                conversationTitle = conv.Title;
+                productLabel = GetProductLabel(conv.Database);
+
+                string? lastUserPrompt = null;
+                foreach (var msg in conv.Messages ?? [])
                 {
-                    b2.OpenComponent<ApexPointSeries<ChartDataPoint>>(0);
-                    b2.AddAttribute(1, "Items", pieSeries[0].Points);
-                    b2.AddAttribute(2, "Name", pieSeries[0].Name);
-                    b2.AddAttribute(3, "XValue", (Func<ChartDataPoint, object?>)(e => e.Label));
-                    b2.AddAttribute(4, "YValue", (Func<ChartDataPoint, decimal?>)(e => e.Value));
-                    var seriesType = qr.ChartType is "donut" or "doughnut" ? SeriesType.Donut : SeriesType.Pie;
-                    b2.AddAttribute(5, "SeriesType", seriesType);
-                    b2.CloseComponent();
-                }));
-                builder.CloseComponent();
+                    if (msg.Role == "user")
+                    {
+                        lastUserPrompt = msg.Content;
+                    }
+                    else if (msg.Role == "assistant" && msg.Response is { } r)
+                    {
+                        // Skip pure error responses
+                        if (!string.IsNullOrEmpty(r.Error) &&
+                            string.IsNullOrEmpty(r.Explanation) &&
+                            string.IsNullOrEmpty(r.Summary))
+                            continue;
+
+                        insights.Add(new InsightItem(
+                            UserPrompt: lastUserPrompt ?? "",
+                            Explanation: r.Explanation,
+                            Summary: r.Summary,
+                            RiskLevel: r.RiskLevel,
+                            Findings: r.Findings ?? [],
+                            RecommendedActions: r.RecommendedActions ?? [],
+                            ChartType: r.ChartType ?? "none",
+                            Columns: r.Columns ?? [],
+                            Rows: r.Rows ?? [],
+                            Results: r.Results ?? []
+                        ));
+                    }
+                }
             }
+        }
+
+        loading = false;
+    }
+
+    private static bool HasChartData(InsightItem item) =>
+        item.ChartType != "none" && item.Columns.Count >= 2 && item.Rows.Count > 0;
+
+    private RenderFragment ChartFragment(List<string> columns, List<Dictionary<string, string>> rows, string chartType, string key) => builder =>
+    {
+        if (columns.Count < 2 || rows.Count == 0) return;
+
+        if (chartType is "pie" or "donut" or "doughnut")
+        {
+            var pieSeries = GetPieSeries(columns, rows);
+            if (pieSeries.Count == 0) return;
+            builder.OpenComponent<ApexChart<ChartDataPoint>>(0);
+            builder.SetKey(key);
+            builder.AddAttribute(1, "Options", GetPieApexOptions());
+            builder.AddAttribute(2, "Width", "100%");
+            builder.AddAttribute(3, "Height", 320);
+            builder.AddAttribute(4, "ChildContent", (RenderFragment)(b2 =>
+            {
+                b2.OpenComponent<ApexPointSeries<ChartDataPoint>>(0);
+                b2.AddAttribute(1, "Items", pieSeries[0].Points);
+                b2.AddAttribute(2, "Name", pieSeries[0].Name);
+                b2.AddAttribute(3, "XValue", (Func<ChartDataPoint, object?>)(e => e.Label));
+                b2.AddAttribute(4, "YValue", (Func<ChartDataPoint, decimal?>)(e => e.Value));
+                var st = chartType is "donut" or "doughnut" ? SeriesType.Donut : SeriesType.Pie;
+                b2.AddAttribute(5, "SeriesType", st);
+                b2.CloseComponent();
+            }));
+            builder.CloseComponent();
         }
         else
         {
-            var series = GetChartSeries(qr.Columns, qr.Rows);
+            var series = GetChartSeries(columns, rows);
+            if (series.Count == 0) return;
             builder.OpenComponent<ApexChart<ChartDataPoint>>(0);
             builder.SetKey(key);
-            builder.AddAttribute(1, "Options", GetApexOptions(qr.ChartType));
+            builder.AddAttribute(1, "Options", GetApexOptions(chartType));
             builder.AddAttribute(2, "Width", "100%");
-            builder.AddAttribute(3, "Height", height);
+            builder.AddAttribute(3, "Height", 320);
             builder.AddAttribute(4, "ChildContent", (RenderFragment)(b2 =>
             {
-                var st = MapSeriesType(qr.ChartType);
+                var st = MapSeriesType(chartType);
                 foreach (var s in series)
                 {
                     b2.OpenComponent<ApexPointSeries<ChartDataPoint>>(0);
@@ -379,77 +351,70 @@
         }
     };
 
-    private RenderFragment RenderSlideChart(PresentationSlide slide, string key, int height) => builder =>
+    private static RenderFragment TableFragment(List<string> columns, List<Dictionary<string, string>> rows) => builder =>
     {
-        if (slide.ChartType is "pie" or "donut" or "doughnut")
+        var rowsToShow = rows.Take(20).ToList();
+        builder.OpenElement(0, "table");
+        builder.AddAttribute(1, "class", "w-full text-xs");
+        builder.OpenElement(2, "thead");
+        builder.OpenElement(3, "tr");
+        foreach (var col in columns)
         {
-            var pieSeries = GetPieSeries(slide.Columns, slide.Rows);
-            if (pieSeries.Count > 0)
+            builder.OpenElement(4, "th");
+            builder.AddAttribute(5, "class", "px-3 py-2 text-left text-[10px] font-medium text-gray-500 uppercase bg-gray-900/50");
+            builder.AddContent(6, HumanizeColumn(col));
+            builder.CloseElement();
+        }
+        builder.CloseElement(); // tr
+        builder.CloseElement(); // thead
+        builder.OpenElement(7, "tbody");
+        foreach (var row in rowsToShow)
+        {
+            builder.OpenElement(8, "tr");
+            builder.AddAttribute(9, "class", "border-t border-gray-800/60");
+            foreach (var col in columns)
             {
-                builder.OpenComponent<ApexChart<ChartDataPoint>>(0);
-                builder.SetKey(key);
-                builder.AddAttribute(1, "Options", GetPieApexOptions());
-                builder.AddAttribute(2, "Width", "100%");
-                builder.AddAttribute(3, "Height", height);
-                builder.AddAttribute(4, "ChildContent", (RenderFragment)(b2 =>
-                {
-                    b2.OpenComponent<ApexPointSeries<ChartDataPoint>>(0);
-                    b2.AddAttribute(1, "Items", pieSeries[0].Points);
-                    b2.AddAttribute(2, "Name", pieSeries[0].Name);
-                    b2.AddAttribute(3, "XValue", (Func<ChartDataPoint, object?>)(e => e.Label));
-                    b2.AddAttribute(4, "YValue", (Func<ChartDataPoint, decimal?>)(e => e.Value));
-                    var seriesType = slide.ChartType is "donut" or "doughnut" ? SeriesType.Donut : SeriesType.Pie;
-                    b2.AddAttribute(5, "SeriesType", seriesType);
-                    b2.CloseComponent();
-                }));
-                builder.CloseComponent();
+                builder.OpenElement(10, "td");
+                builder.AddAttribute(11, "class", "px-3 py-2 text-gray-300");
+                builder.AddContent(12, row.GetValueOrDefault(col) ?? "");
+                builder.CloseElement();
             }
+            builder.CloseElement(); // tr
         }
-        else
+        if (rows.Count > 20)
         {
-            var series = GetChartSeries(slide.Columns, slide.Rows);
-            builder.OpenComponent<ApexChart<ChartDataPoint>>(0);
-            builder.SetKey(key);
-            builder.AddAttribute(1, "Options", GetApexOptions(slide.ChartType));
-            builder.AddAttribute(2, "Width", "100%");
-            builder.AddAttribute(3, "Height", height);
-            builder.AddAttribute(4, "ChildContent", (RenderFragment)(b2 =>
-            {
-                var st = MapSeriesType(slide.ChartType);
-                foreach (var s in series)
-                {
-                    b2.OpenComponent<ApexPointSeries<ChartDataPoint>>(0);
-                    b2.AddAttribute(1, "Items", s.Points);
-                    b2.AddAttribute(2, "Name", s.Name);
-                    b2.AddAttribute(3, "XValue", (Func<ChartDataPoint, object?>)(e => e.Label));
-                    b2.AddAttribute(4, "YValue", (Func<ChartDataPoint, decimal?>)(e => e.Value));
-                    b2.AddAttribute(5, "SeriesType", st);
-                    b2.CloseComponent();
-                }
-            }));
-            builder.CloseComponent();
+            builder.OpenElement(13, "tr");
+            builder.OpenElement(14, "td");
+            builder.AddAttribute(15, "colspan", columns.Count.ToString());
+            builder.AddAttribute(16, "class", "px-3 py-2 text-center text-xs text-gray-600 border-t border-gray-800/60");
+            builder.AddContent(17, $"… and {rows.Count - 20} more rows");
+            builder.CloseElement();
+            builder.CloseElement();
         }
+        builder.CloseElement(); // tbody
+        builder.CloseElement(); // table
     };
 
-    // Chart helpers (adapted from Analytics/Index.razor)
+    private async Task PrintPage()
+    {
+        try { await JS.InvokeVoidAsync("window.print"); } catch { }
+    }
+
+    // Chart helpers
     private sealed record ChartDataPoint(string Label, decimal Value);
     private sealed record ChartSeries(string Name, List<ChartDataPoint> Points);
 
-    private static List<ChartSeries> GetChartSeries(List<string> columns, List<Dictionary<string, string>> rows)
-    {
-        if (columns.Count < 2 || rows.Count == 0) return [];
-        return columns.Skip(1).Select(col => new ChartSeries(col,
+    private static List<ChartSeries> GetChartSeries(List<string> columns, List<Dictionary<string, string>> rows) =>
+        columns.Skip(1).Select(col => new ChartSeries(col,
             rows.Select(r =>
             {
                 decimal.TryParse(r.GetValueOrDefault(col), System.Globalization.NumberStyles.Any,
                     System.Globalization.CultureInfo.InvariantCulture, out var v);
                 return new ChartDataPoint(r.GetValueOrDefault(columns[0]) ?? "", v);
             }).ToList())).ToList();
-    }
 
     private static List<ChartSeries> GetPieSeries(List<string> columns, List<Dictionary<string, string>> rows)
     {
-        if (columns.Count < 2 || rows.Count == 0) return [];
         var col = columns[1];
         return [new ChartSeries(col, rows.Select(r =>
         {
@@ -459,17 +424,12 @@
         }).ToList())];
     }
 
-    private static ApexChartOptions<ChartDataPoint> GetApexOptions(string? chartType)
+    private static ApexChartOptions<ChartDataPoint> GetApexOptions(string? chartType) => new()
     {
-        var opts = new ApexChartOptions<ChartDataPoint>
-        {
-            Theme = new Theme { Mode = Mode.Dark, Palette = PaletteType.Palette1 },
-            Chart = new Chart { Background = "transparent", Toolbar = new Toolbar { Show = false } }
-        };
-        if (chartType is "area")
-            opts.Stroke = new Stroke { Curve = Curve.Smooth };
-        return opts;
-    }
+        Theme = new Theme { Mode = Mode.Dark, Palette = PaletteType.Palette1 },
+        Chart = new Chart { Background = "transparent", Toolbar = new Toolbar { Show = false } },
+        Stroke = chartType is "area" ? new Stroke { Curve = Curve.Smooth } : null
+    };
 
     private static ApexChartOptions<ChartDataPoint> GetPieApexOptions() => new()
     {
@@ -491,29 +451,27 @@
 
     private static string RiskLevelClasses(string? riskLevel) => (riskLevel ?? "").ToLowerInvariant() switch
     {
-        "critical" => "inline-flex px-3 py-1 rounded-lg font-medium bg-rose-500/20 text-rose-300 border border-rose-500/30",
-        "high" => "inline-flex px-3 py-1 rounded-lg font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30",
-        "medium" => "inline-flex px-3 py-1 rounded-lg font-medium bg-blue-500/20 text-blue-300 border border-blue-500/30",
-        _ => "inline-flex px-3 py-1 rounded-lg font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+        "critical" => "inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-500/20 text-rose-300 border border-rose-500/30",
+        "high" => "inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30",
+        "medium" => "inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-300 border border-blue-500/30",
+        _ => "inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
     };
 
-    private CancellationTokenSource? _toastCts;
-
-    private async Task ShowToast(string msg)
+    private static string GetProductLabel(string db) => db switch
     {
-        _toastCts?.Cancel();
-        _toastCts = new CancellationTokenSource();
-        toastMessage = msg;
-        StateHasChanged();
-        try { await Task.Delay(2500, _toastCts.Token); } catch { return; }
-        toastMessage = null;
-        StateHasChanged();
-    }
+        "inshuwa" => "Insurer",
+        "lipila_blaze" => "Lipila",
+        "bnpl" => "BNPL",
+        "patumba_app" => "Patumba",
+        _ => db
+    };
 
-    public async ValueTask DisposeAsync()
+    private static string HumanizeColumn(string col)
     {
-        _toastCts?.Cancel();
-        _dotnetRef?.Dispose();
-        await ValueTask.CompletedTask;
+        if (string.IsNullOrWhiteSpace(col)) return col;
+        if (col.Contains('_'))
+            return string.Join(" ", col.Split('_', StringSplitOptions.RemoveEmptyEntries)
+                .Select(w => char.ToUpper(w[0]) + w[1..]));
+        return System.Text.RegularExpressions.Regex.Replace(col, "([a-z])([A-Z])", "$1 $2");
     }
 }

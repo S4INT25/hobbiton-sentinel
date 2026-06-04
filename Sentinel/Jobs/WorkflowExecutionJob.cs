@@ -12,6 +12,7 @@ public class WorkflowExecutionJob(
     IRunLogStore runLogStore,
     IActiveRunTracker runTracker,
     AnalyticsAgent analyticsAgent,
+    IAgentMemoryStore agentMemoryStore,
     IBackgroundJobClient backgroundJobs,
     ILogger<WorkflowExecutionJob> logger)
 {
@@ -87,7 +88,8 @@ public class WorkflowExecutionJob(
         var status = "error";
         try
         {
-            result = await analyticsAgent.AskAsync(prompt, database, mode: "autonomous");
+            var memories = await agentMemoryStore.GetEnabledAsync(database);
+            result = await analyticsAgent.AskAsync(prompt, database, mode: "autonomous", memories: memories);
             status = result.Success ? "completed" : "error";
 
             if (!result.Success)
