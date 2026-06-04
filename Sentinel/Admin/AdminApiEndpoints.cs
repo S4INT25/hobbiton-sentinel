@@ -49,6 +49,13 @@ public static class AdminApiEndpoints
                 IpAddress = ctx.Connection.RemoteIpAddress?.ToString() ?? ""
             });
 
+            if (string.Equals(returnUrl, "/admin", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(user.Role, AuthConstants.AdminRole, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(user.Role, AuthConstants.DeveloperRole, StringComparison.OrdinalIgnoreCase))
+            {
+                returnUrl = "/admin/chat";
+            }
+
             return Results.Redirect(returnUrl);
         }).AllowAnonymous().DisableAntiforgery();
 
@@ -355,8 +362,8 @@ public static class AdminApiEndpoints
                             ?? (ctx.Request.HasFormContentType
                                 ? (await ctx.Request.ReadFormAsync())["returnUrl"].FirstOrDefault()
                                 : null)
-                            ?? "/admin";
-            if (!returnUrl.StartsWith("/")) returnUrl = "/admin";
+                            ?? "/admin/chat";
+            if (!returnUrl.StartsWith("/")) returnUrl = "/admin/chat";
 
             await AuditAction(audit, ctx, "logout", "auth", ctx.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "");
             await ctx.SignOutAsync(AuthConstants.Scheme);

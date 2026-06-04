@@ -8,6 +8,14 @@
 
     [SupplyParameterFromQuery(Name = "reset")]
     public string? ResetParam { get; set; }
+
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    public string? ReturnUrlParam { get; set; }
+
+    private string SafeReturnUrl =>
+        !string.IsNullOrWhiteSpace(ReturnUrlParam) && ReturnUrlParam.StartsWith("/")
+            ? ReturnUrlParam
+            : "/admin/chat";
 }
 
 <PageTitle>Sign in — Sentinel</PageTitle>
@@ -36,7 +44,7 @@
         @* Native HTML form POST — bypasses Blazor's interactive circuit entirely.
            The /admin/auth/signin endpoint handles SignInAsync and redirects. *@
         <form action="/admin/auth/signin" method="post" class="space-y-4">
-            <input type="hidden" name="returnUrl" value="/admin" />
+            <input type="hidden" name="returnUrl" value="@SafeReturnUrl" />
             <div>
                 <label class="block text-xs font-medium text-gray-400 mb-1.5">Email or username</label>
                 <input type="text" name="username" required autocomplete="username" autofocus

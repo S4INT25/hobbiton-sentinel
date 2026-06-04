@@ -149,6 +149,7 @@ try
         {
             options.LoginPath = "/admin/login";
             options.LogoutPath = "/admin/logout";
+            options.AccessDeniedPath = "/admin/chat";
             options.Cookie.Name = "sentinel_auth";
             options.Cookie.HttpOnly = true;
             options.Cookie.SameSite = SameSiteMode.Strict;
