@@ -102,6 +102,7 @@ try
         builder.Services.AddSingleton<IFraudPatternStore, InMemoryFraudPatternStore>();
         builder.Services.AddSingleton<IEvidenceSourceStore, InMemoryEvidenceSourceStore>();
         builder.Services.AddSingleton<IWorkflowStore, InMemoryWorkflowStore>();
+        builder.Services.AddSingleton<IAgentMemoryStore, InMemoryAgentMemoryStore>();
     }
 
     if (useRedisInfrastructure)

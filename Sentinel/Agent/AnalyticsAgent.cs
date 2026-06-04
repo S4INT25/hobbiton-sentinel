@@ -5,6 +5,7 @@ using OpenAI;
 using OpenAI.Chat;
 using Sentinel.Admin;
 using Sentinel.Admin.Models;
+using Sentinel.Admin.Stores;
 using Sentinel.Infrastructure;
 
 namespace Sentinel.Agent;
@@ -18,6 +19,7 @@ public class AnalyticsAgent(
     ClickHouseClient ch,
     SchemaLoader schemaLoader,
     EmailClient emailClient,
+    IAgentMemoryStore memoryStore,
     IConfiguration config,
     ILogger<AnalyticsAgent> logger)
 {
@@ -203,6 +205,7 @@ public class AnalyticsAgent(
                 "describe_table" => await HandleDescribeTable(root),
                 "emit_chart" => HandleEmitChart(root, chartResults, onEvent).Result,
                 "send_report" => await HandleSendReport(root, isInteractive, allowInteractiveReportSending, onEvent, response),
+                "save_memory" => await HandleSaveMemory(root, database, onEvent),
                 "ask_user" => HandleAskUser(root, isInteractive),
                 _ => $"Unknown tool: {toolCall.FunctionName}"
             };
@@ -386,6 +389,54 @@ public class AnalyticsAgent(
         return result;
     }
 
+    private async Task<string> HandleSaveMemory(
+        JsonElement root,
+        string defaultDatabase,
+        Func<AnalyticsStreamEvent, Task>? onEvent)
+    {
+        var term = root.TryGetProperty("term", out var termEl) ? termEl.GetString() : null;
+        var definition = root.TryGetProperty("definition", out var defEl) ? defEl.GetString() : null;
+        var database = root.TryGetProperty("database", out var dbEl) ? dbEl.GetString() : null;
+
+        if (string.IsNullOrWhiteSpace(term) || string.IsNullOrWhiteSpace(definition))
+            return "Both term and definition are required.";
+
+        term = term.Trim();
+        definition = definition.Trim();
+
+        database = string.IsNullOrWhiteSpace(database) || database.Equals("all", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : database.Trim();
+
+        // If caller passes "current", scope to active DB.
+        if (string.Equals(database, "current", StringComparison.OrdinalIgnoreCase))
+            database = defaultDatabase;
+
+        var all = await memoryStore.GetAllAsync();
+        var existing = all.FirstOrDefault(m =>
+            string.Equals(m.Term, term, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(m.Database ?? "", database ?? "", StringComparison.OrdinalIgnoreCase));
+
+        var memory = existing ?? new AgentMemory
+        {
+            Term = term,
+            Database = database,
+            Enabled = true,
+            CreatedBy = "agent:auto"
+        };
+
+        memory.Term = term;
+        memory.Definition = definition;
+        memory.Database = database;
+
+        await memoryStore.SaveAsync(memory);
+        await Emit(onEvent, "memory_saved", $"Saved memory: {term}");
+
+        return existing == null
+            ? $"Memory saved for '{term}'."
+            : $"Memory updated for '{term}'.";
+    }
+
     private static string HandleAskUser(JsonElement root, bool isInteractive)
     {
         if (!isInteractive)
@@ -458,6 +509,7 @@ public class AnalyticsAgent(
                  You investigate questions by querying data, analysing results, and presenting findings clearly.
                  
                  You have tools: run_sql, get_schema, describe_table, emit_chart, send_report, ask_user.
+                 You can also use save_memory to store durable business definitions for future analyses.
                  
                  ## How to work
                  1. Think about what data you need to answer the question
@@ -471,6 +523,11 @@ public class AnalyticsAgent(
                  - Structure reports however makes most sense for the content — no fixed template
                  - If you find something interesting while investigating, follow up on it
                  - You can run multiple rounds of queries if initial results lead to follow-up questions
+                  
+                 ## Memory
+                 - If the user gives a durable metric/term definition (or asks you to remember one), call `save_memory`.
+                 - Save only reusable business knowledge, not temporary one-off context.
+                 - Keep terms short and definitions precise.
                  
                  ## Primary database: `{{database}}`
                  {{schema}}

@@ -164,6 +164,35 @@ public static class AnalyticsAgentTools
         ),
 
         ChatTool.CreateFunctionTool(
+            functionName: "save_memory",
+            functionDescription: """
+                Save a durable business definition to the agent knowledge base.
+                Use this when the user explicitly defines a metric/term or asks you to remember a rule for future analysis.
+                Do NOT save transient one-off preferences or temporary run context.
+                """,
+            functionParameters: BinaryData.FromString("""
+                {
+                    "type": "object",
+                    "properties": {
+                        "term": {
+                            "type": "string",
+                            "description": "Business term name, e.g. 'Revenue'"
+                        },
+                        "definition": {
+                            "type": "string",
+                            "description": "Precise rule/definition the agent should reuse in future answers"
+                        },
+                        "database": {
+                            "type": "string",
+                            "description": "Optional database scope. Omit or empty to apply to all databases."
+                        }
+                    },
+                    "required": ["term", "definition"]
+                }
+                """)
+        ),
+
+        ChatTool.CreateFunctionTool(
             functionName: "ask_user",
             functionDescription: """
                 Ask the user a clarifying question when you need more information to proceed.
