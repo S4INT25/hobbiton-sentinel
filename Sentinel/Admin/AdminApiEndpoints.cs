@@ -19,8 +19,8 @@ public static class AdminApiEndpoints
             var form = await ctx.Request.ReadFormAsync();
             var identifier = form["username"].FirstOrDefault() ?? "";
             var password = form["password"].FirstOrDefault() ?? "";
-            var returnUrl = form["returnUrl"].FirstOrDefault() ?? "/admin";
-            if (!returnUrl.StartsWith("/")) returnUrl = "/admin";
+            var returnUrl = form["returnUrl"].FirstOrDefault() ?? "/admin/chat";
+            if (!returnUrl.StartsWith("/")) returnUrl = "/admin/chat";
 
             // Allow login with email or username
             var user = identifier.Contains('@')
@@ -107,7 +107,7 @@ public static class AdminApiEndpoints
             await ctx.SignInAsync(AuthConstants.Scheme,
                 new ClaimsPrincipal(new ClaimsIdentity(claims, AuthConstants.Scheme)));
 
-            return Results.Redirect("/admin");
+            return Results.Redirect("/admin/chat");
         }).AllowAnonymous().DisableAntiforgery();
 
         // ── Forgot password ──

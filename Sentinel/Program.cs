@@ -160,6 +160,8 @@ try
     builder.Services.AddAuthorization(options =>
     {
         options.AddPolicy(AuthConstants.AdminOnlyPolicy, p => p.RequireRole(AuthConstants.AdminRole));
+        options.AddPolicy(AuthConstants.AdminOrDeveloperPolicy, p =>
+            p.RequireRole(AuthConstants.AdminRole, AuthConstants.DeveloperRole));
         options.AddPolicy(AuthConstants.Policy, p =>
             p.RequireRole(AuthConstants.AdminRole, AuthConstants.AnalystRole, AuthConstants.DeveloperRole));
     });
@@ -209,7 +211,7 @@ try
     app.UseAuthorization();
     app.UseStaticFiles();
     app.UseAntiforgery();
-    app.MapGet("/", () => Results.Redirect("/admin"));
+    app.MapGet("/", () => Results.Redirect("/admin/chat"));
     app.MapRazorComponents<Sentinel.Admin.Components.App>()
         .AddInteractiveServerRenderMode();
 

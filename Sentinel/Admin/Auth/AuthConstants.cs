@@ -11,4 +11,5 @@ public static class AuthConstants
     public const string DeveloperRole = "developer";
     public const string Policy = "SentinelAdminPolicy";
     public const string AdminOnlyPolicy = "SentinelAdminOnly";
+    public const string AdminOrDeveloperPolicy = "SentinelAdminOrDeveloper";
 }
