@@ -80,6 +80,7 @@ try
     builder.Services.AddSingleton<ISystemPromptStore, SystemPromptStore>();
     builder.Services.AddSingleton<IAnalyticsChatStore, AnalyticsChatStore>();
     builder.Services.AddSingleton<IAnalyticsJobStore, AnalyticsJobStore>();
+    builder.Services.AddSingleton<IPresentationStore, PresentationStore>();
     builder.Services.AddSingleton<IActiveRunTracker, ActiveRunTracker>();
 
     if (usePostgresStores)
