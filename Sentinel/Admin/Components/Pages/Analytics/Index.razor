@@ -108,7 +108,8 @@
                    title="View insights as presentation">
                     <span class="flex items-center gap-1.5">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
                         </svg>
                         Present
                     </span>
@@ -132,10 +133,12 @@
 
         @if (showBetaDisclaimer)
         {
-            <div class="mx-4 mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
+            <div
+                class="mx-4 mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
                 <div class="flex items-start justify-between gap-3">
                     <p>
-                        <span class="font-semibold">Beta disclaimer:</span> this assistant is still in beta and may produce inaccurate information or wrong values when context is incomplete.
+                        <span class="font-semibold">Beta disclaimer:</span> this assistant is still in beta and may
+                        produce inaccurate information or wrong values when context is incomplete.
                     </p>
                     <button @onclick="DismissBetaDisclaimer"
                             class="shrink-0 text-amber-300 hover:text-amber-100 transition-colors"
@@ -433,7 +436,7 @@
                                         <span>@((msg.InputTokens + msg.OutputTokens).ToString("N0")) tokens</span>
                                     }
                                 </div>
-                                
+
                                 @if (debugMode && HasSqlContent(msg))
                                 {
                                     <details class="border border-gray-800/60 rounded-lg overflow-hidden">
@@ -506,12 +509,18 @@
                             {
                                 <div class="border border-emerald-500/20 rounded-lg bg-emerald-500/5 px-3 py-2">
                                     <div class="flex items-start gap-2">
-                                        <svg class="w-3.5 h-3.5 mt-0.5 text-emerald-400 shrink-0 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                        <svg class="w-3.5 h-3.5 mt-0.5 text-emerald-400 shrink-0 animate-pulse"
+                                             fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                  d="M13 10V3L4 14h7v7l9-11h-7z"/>
                                         </svg>
                                         <div class="min-w-0">
-                                            <div class="text-[10px] uppercase tracking-wider text-emerald-300/80 font-medium">LLM thinking</div>
-                                            <div class="text-xs text-emerald-100/90">@GetPendingThinkingText(_pendingMessage)</div>
+                                            <div
+                                                class="text-[10px] uppercase tracking-wider text-emerald-300/80 font-medium">
+                                                LLM thinking
+                                            </div>
+                                            <div
+                                                class="text-xs text-emerald-100/90">@GetPendingThinkingText(_pendingMessage)</div>
                                         </div>
                                     </div>
                                 </div>
@@ -555,6 +564,16 @@
                                     </div>
                                 </div>
                             }
+                            else if (!string.IsNullOrEmpty(_streamingText))
+                            {
+                                <div class="border border-gray-800/60 rounded-xl p-4 bg-gray-900/35 space-y-1">
+                                    <div
+                                        class="text-sm text-gray-300 leading-relaxed prose prose-invert prose-sm max-w-none">
+                                        @(Infrastructure.MarkdownRenderer.ToHtml(_streamingText))<span
+                                            class="inline-block w-0.5 h-4 bg-emerald-400 animate-pulse ml-0.5 align-middle"></span>
+                                    </div>
+                                </div>
+                            }
                             else
                             {
                                 <div class="flex items-center gap-2 text-xs text-gray-500">
@@ -583,7 +602,8 @@
                         }
                     </div>
                     <form @onsubmit="Send" @onsubmit:preventDefault class="space-y-2">
-                        <div class="rounded-2xl border border-gray-700/80 bg-gray-900/80 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] focus-within:border-emerald-500/50 focus-within:shadow-[0_0_0_2px_rgba(16,185,129,0.15)] transition-all">
+                        <div
+                            class="rounded-2xl border border-gray-700/80 bg-gray-900/80 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] focus-within:border-emerald-500/50 focus-within:shadow-[0_0_0_2px_rgba(16,185,129,0.15)] transition-all">
                             <textarea @bind="input" @bind:event="oninput" rows="3"
                                       @onkeydown="OnComposerKeyDown"
                                       placeholder="Message Sentinel..."
@@ -596,7 +616,8 @@
                                         class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-gray-900 hover:bg-gray-200 disabled:bg-gray-800 disabled:text-gray-500 transition-colors"
                                         title="Send">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h13m-6-7l7 7-7 7" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M5 12h13m-6-7l7 7-7 7"/>
                                     </svg>
                                 </button>
                             </div>
@@ -628,6 +649,7 @@
     private string userId = "default";
     private bool _shouldScrollToBottom;
     private ChatMessage? _pendingMessage;
+    private string _streamingText = "";
     private bool showHistoryMobile;
     private bool showHistoryPanel = true;
     private bool showBetaDisclaimer = true;
@@ -969,7 +991,7 @@
             StreamEvents = [new AnalyticsStreamEvent { Type = "thinking", Message = "Analysing your question…", Attempt = 1 }]
         };
 
-        var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
+        var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(150));
         activePolls[jobId] = timer;
 
         _ = Task.Run(async () =>
@@ -978,6 +1000,15 @@
             {
                 try
                 {
+                    // Update streaming text from live worker state (no cache round-trip)
+                    var liveText = Worker.GetLiveText(jobId);
+                    if (liveText != null && liveText != _streamingText)
+                    {
+                        _streamingText = liveText;
+                        _shouldScrollToBottom = true;
+                        await InvokeAsync(StateHasChanged);
+                    }
+
                     var job = await JobStore.GetAsync(jobId);
                     if (job == null)
                     {
@@ -1024,6 +1055,7 @@
                         }
 
                         _pendingMessage = null;
+                        _streamingText = "";
                         loading = false;
                         _shouldScrollToBottom = true;
                         await InvokeAsync(StateHasChanged);
@@ -1033,6 +1065,7 @@
                     {
                         StopPolling(jobId);
                         _pendingMessage = null;
+                        _streamingText = "";
                         var assistant = new ChatMessage { Role = "assistant", Error = job.Error ?? "Query failed", StreamEvents = job.StreamEvents };
                         NormalizeAssistantMessage(assistant);
                         messages.Add(assistant);
@@ -1047,6 +1080,7 @@
                 {
                     StopPolling(jobId);
                     _pendingMessage = null;
+                    _streamingText = "";
                     loading = false;
                     await InvokeAsync(StateHasChanged);
                     break;

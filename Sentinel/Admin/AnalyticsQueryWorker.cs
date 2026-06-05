@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Sentinel.Admin.Stores;
 using Sentinel.Agent;
@@ -12,6 +13,12 @@ public class AnalyticsQueryWorker(
 {
     private readonly Channel<string> _channel = Channel.CreateUnbounded<string>(
         new UnboundedChannelOptions { SingleReader = true });
+
+    // In-memory live streaming text per job — not persisted, just for real-time UI updates
+    private readonly ConcurrentDictionary<string, string> _liveText = new();
+
+    public string? GetLiveText(string jobId) =>
+        _liveText.TryGetValue(jobId, out var t) ? t : null;
 
     public async ValueTask EnqueueAsync(string jobId)
     {
@@ -73,10 +80,17 @@ public class AnalyticsQueryWorker(
                 memories: memories,
                 onEvent: async evt =>
                 {
+                    if (evt.Type == "token")
+                    {
+                        // Token events update live text only — no cache write per token
+                        _liveText[jobId] = evt.Message;
+                        return;
+                    }
                     job.StreamEvents.Add(evt);
                     await jobStore.UpdateAsync(job);
                 });
 
+            _liveText.TryRemove(jobId, out _);
             job.Status = "completed";
             job.CompletedAt = DateTime.UtcNow;
             job.Result = result;
@@ -112,6 +126,7 @@ public class AnalyticsQueryWorker(
         }
         catch (Exception ex)
         {
+            _liveText.TryRemove(jobId, out _);
             job.Status = "failed";
             job.CompletedAt = DateTime.UtcNow;
             job.Error = ex.Message;

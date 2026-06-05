@@ -26,6 +26,13 @@ public class AnalyticsAgent(
     private const int MaxHistoryExchanges = 10;
     private const int MaxIterations = 15;
 
+    private sealed class ToolCallBuilder
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public StringBuilder Args { get; } = new();
+    }
+
     public async Task<AnalyticsResponse> AskAsync(
         string prompt,
         string database = "lipila_blaze",
@@ -85,10 +92,44 @@ public class AnalyticsAgent(
 
             foreach (var tool in tools) options.Tools.Add(tool);
 
-            ChatCompletion completion;
+            // Streaming accumulation
+            var streamTextSb = new StringBuilder();
+            var tcBuilders = new Dictionary<int, ToolCallBuilder>();
+            ChatFinishReason? finishReason = null;
+            int iterInput = 0, iterOutput = 0;
+
             try
             {
-                completion = (await chatClient.CompleteChatAsync(messages, options, cancellationToken)).Value;
+                await foreach (var update in chatClient.CompleteChatStreamingAsync(messages, options, cancellationToken))
+                {
+                    foreach (var part in update.ContentUpdate)
+                    {
+                        if (part.Kind == ChatMessageContentPartKind.Text && !string.IsNullOrEmpty(part.Text))
+                        {
+                            streamTextSb.Append(part.Text);
+                            await Emit(onEvent, "token", streamTextSb.ToString());
+                        }
+                    }
+
+                    foreach (var tc in update.ToolCallUpdates)
+                    {
+                        if (!tcBuilders.TryGetValue(tc.Index, out var b))
+                        {
+                            b = new ToolCallBuilder();
+                            tcBuilders[tc.Index] = b;
+                        }
+                        if (!string.IsNullOrEmpty(tc.ToolCallId)) b.Id = tc.ToolCallId;
+                        if (!string.IsNullOrEmpty(tc.FunctionName)) b.Name = tc.FunctionName;
+                        if (tc.FunctionArgumentsUpdate != null) b.Args.Append(tc.FunctionArgumentsUpdate);
+                    }
+
+                    if (update.FinishReason.HasValue) finishReason = update.FinishReason;
+                    if (update.Usage != null)
+                    {
+                        iterInput = update.Usage.InputTokenCount;
+                        iterOutput = update.Usage.OutputTokenCount;
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -102,30 +143,33 @@ public class AnalyticsAgent(
                 };
             }
 
-            messages.Add(new AssistantChatMessage(completion));
-            totalInput += completion.Usage?.InputTokenCount ?? 0;
-            totalOutput += completion.Usage?.OutputTokenCount ?? 0;
+            totalInput += iterInput;
+            totalOutput += iterOutput;
+
+            var textContent = streamTextSb.ToString();
+            var streamedToolCalls = tcBuilders.OrderBy(x => x.Key)
+                .Select(x => ChatToolCall.CreateFunctionToolCall(x.Value.Id, x.Value.Name, BinaryData.FromString(x.Value.Args.ToString())))
+                .ToList();
+
+            // Reconstruct assistant message for conversation history
+            if (streamedToolCalls.Count > 0)
+                messages.Add(new AssistantChatMessage(streamedToolCalls));
+            else
+                messages.Add(new AssistantChatMessage(textContent));
 
             logger.LogInformation("[Analytics] Iteration {N}: finish={Reason} tools={Tools} tokens in={In} out={Out}",
-                iteration, completion.FinishReason, completion.ToolCalls.Count, totalInput, totalOutput);
+                iteration, finishReason, streamedToolCalls.Count, totalInput, totalOutput);
 
-            // Extract any text content from the response
-            var textContent = string.Concat((completion.Content ?? [])
-                .Where(p => p.Kind == ChatMessageContentPartKind.Text)
-                .Select(p => p.Text));
-
-            if (completion.FinishReason == ChatFinishReason.Stop)
+            if (finishReason == ChatFinishReason.Stop)
             {
-                // Agent is done — extract final explanation
                 if (!string.IsNullOrWhiteSpace(textContent))
                     response.Explanation = textContent;
-
                 break;
             }
 
-            if (completion.FinishReason == ChatFinishReason.ToolCalls)
+            if (finishReason == ChatFinishReason.ToolCalls)
             {
-                foreach (var toolCall in completion.ToolCalls)
+                foreach (var toolCall in streamedToolCalls)
                 {
                     var args = toolCall.FunctionArguments.ToString();
                     logger.LogInformation("[Analytics] Tool: {Tool} args={Args}",
