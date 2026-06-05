@@ -145,29 +145,37 @@ public class WorkflowExecutionJob(
                 throw new InvalidOperationException(
                     $"Workflow {workflow.Id} analysis failed: {result.Error ?? "unknown error"}");
 
-            // ── Fallback: agent finished but never called send_report ──────────────
+            // Fallback: the agent finished a real analysis but forgot to call send_report.
+            // Only email when there is genuine content — NEVER send a placeholder. If the run
+            // produced nothing usable, fail it so it surfaces in the Runs UI (and Hangfire retries)
+            // instead of emailing noise.
             if (!result.ReportSent)
             {
-                logger.LogWarning(
-                    "Workflow {WorkflowId} run {RunId}: agent did not call send_report — sending fallback email",
-                    workflow.Id, runId);
+                var explanation = result.Explanation?.Trim() ?? "";
+                var hasRealContent = explanation.Length >= 40; // guard against "Done."-type stubs
+
+                if (!hasRealContent)
+                {
+                    status = "error";
+                    throw new InvalidOperationException(
+                        $"Workflow {workflow.Id} run {runId} produced no report — the agent did not call " +
+                        "send_report and returned no substantive content. No email sent.");
+                }
 
                 var fallbackSubject = !string.IsNullOrWhiteSpace(workflow.EmailSubject)
                     ? workflow.EmailSubject
                     : $"{workflow.Name} — Scheduled Report";
 
-                var fallbackBody = !string.IsNullOrWhiteSpace(result.Explanation)
-                    ? result.Explanation
-                    : "The scheduled report ran but produced no explanation. Please review the workflow configuration.";
+                logger.LogWarning(
+                    "Workflow {WorkflowId} run {RunId}: agent did not call send_report — emailing its analysis as a fallback",
+                    workflow.Id, runId);
 
-                await emailClient.SendAsync(fallbackSubject, fallbackBody, "watching",
-                    recipients?.ToList());
+                await emailClient.SendAsync(fallbackSubject, explanation, "watching", recipients?.ToList());
 
                 result.ReportSent   = true;
                 result.EmailSubject = fallbackSubject;
-                result.EmailBody    = fallbackBody;
+                result.EmailBody    = explanation;
             }
-            // ─────────────────────────────────────────────────────────────────────
 
             logger.LogInformation(
                 "Workflow {WorkflowId} run {RunId} completed. ReportSent={Sent} Subject={Subject}",
