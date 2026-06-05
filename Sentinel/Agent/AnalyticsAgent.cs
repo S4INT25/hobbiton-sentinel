@@ -31,7 +31,9 @@ public class AnalyticsAgent(
     {
         public string Id { get; set; } = "";
         public string Name { get; set; } = "";
-        public StringBuilder Args { get; } = new();
+        // Accumulate raw UTF-8 bytes and decode once at the end. Decoding each streamed
+        // chunk separately corrupts any multi-byte character split across a chunk boundary.
+        public List<byte> ArgBytes { get; } = [];
     }
 
     public async Task<AnalyticsResponse> AskAsync(
@@ -122,7 +124,7 @@ public class AnalyticsAgent(
                         }
                         if (!string.IsNullOrEmpty(tc.ToolCallId)) b.Id = tc.ToolCallId;
                         if (!string.IsNullOrEmpty(tc.FunctionName)) b.Name = tc.FunctionName;
-                        if (tc.FunctionArgumentsUpdate != null) b.Args.Append(tc.FunctionArgumentsUpdate);
+                        if (tc.FunctionArgumentsUpdate != null) b.ArgBytes.AddRange(tc.FunctionArgumentsUpdate.ToArray());
                     }
 
                     if (update.FinishReason.HasValue) finishReason = update.FinishReason;
@@ -150,7 +152,7 @@ public class AnalyticsAgent(
 
             var textContent = streamTextSb.ToString();
             var streamedToolCalls = tcBuilders.OrderBy(x => x.Key)
-                .Select(x => ChatToolCall.CreateFunctionToolCall(x.Value.Id, x.Value.Name, BinaryData.FromString(x.Value.Args.ToString())))
+                .Select(x => ChatToolCall.CreateFunctionToolCall(x.Value.Id, x.Value.Name, BinaryData.FromBytes(x.Value.ArgBytes.ToArray())))
                 .ToList();
 
             // Reconstruct assistant message for conversation history
@@ -260,28 +262,131 @@ public class AnalyticsAgent(
         AnalyticsResponse response,
         List<QueryResult> chartResults)
     {
+        var rawArgs = toolCall.FunctionArguments?.ToString() ?? "{}";
+
+        // The model does not always emit valid JSON (stray backslashes, raw newlines, trailing
+        // commas). Parse tolerantly; if it's truly unrecoverable, tell the model how to fix it
+        // and let the agent loop retry rather than throwing the run away.
+        JsonDocument doc;
         try
         {
-            using var doc = JsonDocument.Parse(toolCall.FunctionArguments.ToString());
-            var root = doc.RootElement;
+            doc = ParseToolArgs(rawArgs);
+        }
+        catch (JsonException ex)
+        {
+            logger.LogWarning("[Analytics] Tool {Tool} sent invalid JSON args ({Length} bytes): {Snippet}",
+                toolCall.FunctionName, rawArgs.Length,
+                rawArgs.Length > 600 ? rawArgs[..600] + "…" : rawArgs);
+            return $"Your `{toolCall.FunctionName}` arguments were not valid JSON ({ex.Message}). " +
+                   "Re-issue the tool call with strictly valid JSON: escape every backslash as \\\\, " +
+                   "escape newlines inside string values as \\n, and do not wrap the JSON in markdown fences.";
+        }
 
-            return toolCall.FunctionName switch
+        try
+        {
+            using (doc)
             {
-                "run_sql" => await HandleRunSql(root, database, onEvent, chartResults),
-                "get_schema" => await HandleGetSchema(root),
-                "describe_table" => await HandleDescribeTable(root),
-                "emit_chart" => HandleEmitChart(root, chartResults, onEvent).Result,
-                "send_report" => await HandleSendReport(root, isInteractive, allowInteractiveReportSending, onEvent, response),
-                "save_memory" => await HandleSaveMemory(root, database, onEvent),
-                "ask_user" => HandleAskUser(root, isInteractive),
-                _ => $"Unknown tool: {toolCall.FunctionName}"
-            };
+                var root = doc.RootElement;
+
+                return toolCall.FunctionName switch
+                {
+                    "run_sql" => await HandleRunSql(root, database, onEvent, chartResults),
+                    "get_schema" => await HandleGetSchema(root),
+                    "describe_table" => await HandleDescribeTable(root),
+                    "emit_chart" => HandleEmitChart(root, chartResults, onEvent).Result,
+                    "send_report" => await HandleSendReport(root, isInteractive, allowInteractiveReportSending, onEvent, response),
+                    "save_memory" => await HandleSaveMemory(root, database, onEvent),
+                    "ask_user" => HandleAskUser(root, isInteractive),
+                    _ => $"Unknown tool: {toolCall.FunctionName}"
+                };
+            }
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "[Analytics] Tool {Tool} failed", toolCall.FunctionName);
             return $"Tool error: {ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// Parse tool-call arguments tolerantly. Tries strict JSON first (allowing trailing commas
+    /// and comments), then a repaired version that fixes the most common LLM mistakes — lone
+    /// backslashes and raw control characters inside string values.
+    /// </summary>
+    private static JsonDocument ParseToolArgs(string raw)
+    {
+        var options = new JsonDocumentOptions
+        {
+            AllowTrailingCommas = true,
+            CommentHandling = JsonCommentHandling.Skip
+        };
+
+        if (string.IsNullOrWhiteSpace(raw))
+            return JsonDocument.Parse("{}", options);
+
+        try
+        {
+            return JsonDocument.Parse(raw, options);
+        }
+        catch (JsonException)
+        {
+            // One repair attempt; if it still fails the exception propagates to the caller.
+            return JsonDocument.Parse(RepairLooseJson(raw), options);
+        }
+    }
+
+    /// <summary>
+    /// Escapes lone backslashes and raw control characters that appear inside JSON string
+    /// values — the most frequent reason model-generated tool arguments fail to parse
+    /// (e.g. SQL <c>LIKE '%\_%'</c>, regexes, or multi-line report bodies).
+    /// </summary>
+    private static string RepairLooseJson(string raw)
+    {
+        var sb = new StringBuilder(raw.Length + 16);
+        var inString = false;
+
+        for (var i = 0; i < raw.Length; i++)
+        {
+            var c = raw[i];
+
+            if (!inString)
+            {
+                if (c == '"') inString = true;
+                sb.Append(c);
+                continue;
+            }
+
+            switch (c)
+            {
+                case '"':
+                    inString = false;
+                    sb.Append(c);
+                    break;
+                case '\\':
+                    var next = i + 1 < raw.Length ? raw[i + 1] : '\0';
+                    if (next is '"' or '\\' or '/' or 'b' or 'f' or 'n' or 'r' or 't' or 'u')
+                    {
+                        sb.Append(c).Append(next); // already a valid escape
+                        i++;
+                    }
+                    else
+                    {
+                        sb.Append('\\').Append('\\'); // lone backslash → escape it
+                    }
+                    break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\t': sb.Append("\\t"); break;
+                case '\b': sb.Append("\\b"); break;
+                case '\f': sb.Append("\\f"); break;
+                default:
+                    if (c < 0x20) sb.Append("\\u").Append(((int)c).ToString("x4"));
+                    else sb.Append(c);
+                    break;
+            }
+        }
+
+        return sb.ToString();
     }
 
     private async Task<string> HandleRunSql(

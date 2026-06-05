@@ -9,6 +9,7 @@
 @inject IBackgroundJobClient BackgroundJobs
 @inject SchemaLoader SchemaLoader
 @attribute [Authorize(Policy = AuthConstants.AdminOnlyPolicy)]
+@implements IDisposable
 
 <PageTitle>Workflows — Sentinel</PageTitle>
 
@@ -66,7 +67,7 @@
                         <option value="every-2-hours">Every 2 hours</option>
                         <option value="daily">Every day</option>
                         <option value="weekly">Every week</option>
-                        <option value="custom-date">Custom date/time</option>
+                        <option value="custom-date">Once (on a date)</option>
                     </select>
                 </div>
                 <div>
@@ -80,8 +81,12 @@
                 </div>
                 <div>
                     <label class="block text-xs text-gray-400 mb-1">Cron Expression</label>
-                    <input @bind="editWorkflow.CronExpression" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-emerald-500 focus:outline-none transition-colors font-mono text-xs" placeholder="0 */2 * * *" />
+                    <input value="@editWorkflow.CronExpression" @onchange="OnEditCronChanged" class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-emerald-500 focus:outline-none transition-colors font-mono text-xs" placeholder="0 */2 * * *" />
                 </div>
+            </div>
+            <div class="flex items-center gap-1.5 text-[11px] text-gray-500">
+                <svg class="w-3 h-3 shrink-0 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span>@EditSchedulePreview</span>
             </div>
             @if (editSchedulePreset == "custom-date")
             {
@@ -159,7 +164,7 @@
                         <div class="flex items-center gap-2 flex-wrap">
                             <span class="text-sm font-medium text-white">@workflow.Name</span>
                             <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">@workflow.ActionType</span>
-                            <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-500/10 text-gray-300 border border-gray-600 font-mono">@workflow.CronExpression</span>
+                            <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-500/10 text-gray-300 border border-gray-600" title="@workflow.CronExpression">@DescribeSchedule(workflow.CronExpression)</span>
                             <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-500/10 text-gray-300 border border-gray-600">@DisplayTimeZone(workflow.TimeZoneId)</span>
                             @if (state.IsRunning)
                             {
@@ -210,7 +215,7 @@
                             }
                         </div>
                     </div>
-                    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    <div class="flex items-center gap-1 opacity-100 md:opacity-60 md:group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200">
                         <button @onclick="() => RunNowAsync(workflow)" disabled="@IsBusy($"run-{workflow.Id}")" class="p-1.5 text-gray-500 hover:text-cyan-400 transition-colors disabled:opacity-40" title="Run now">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-5.197-3.03A1 1 0 008 9.03v6a1 1 0 001.555.832l5.197-3.03a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-6.219-8.56"/></svg>
                         </button>
@@ -259,7 +264,7 @@
     <div>
         <div class="flex items-center justify-between mb-2">
             <h2 class="text-sm font-medium text-gray-300">Recent Workflow Runs</h2>
-            <span class="text-[11px] text-gray-500">@workflowRuns.Count in last 100 runs</span>
+            <span class="text-[11px] text-gray-500">@(workflowRuns.Count > 15 ? $"latest 15 of {workflowRuns.Count}" : $"{workflowRuns.Count} total")</span>
         </div>
         <div class="border border-gray-800/60 rounded-xl overflow-hidden">
             <div class="overflow-x-auto">
@@ -293,7 +298,7 @@
                                         <span class="text-gray-500 font-mono">@ExtractWorkflowRef(run.TriggeredBy)[..Math.Min(8, ExtractWorkflowRef(run.TriggeredBy).Length)]</span>
                                     }
                                 </td>
-                                <td class="px-4 py-2.5 text-gray-400 text-xs">@run.StartedAt.ToString("MMM dd HH:mm")</td>
+                                <td class="px-4 py-2.5 text-gray-400 text-xs" title="@FormatInZone(run.StartedAt, RunTimeZoneId(run))">@FormatRunStarted(run)</td>
                                 <td class="px-4 py-2.5 text-gray-400 text-xs">@FormatDuration(duration)</td>
                                 <td class="px-4 py-2.5">
                                     <span class="@RunStatusClasses(run.Status)">@run.Status</span>
@@ -351,11 +356,55 @@
         timeZoneOptions.FirstOrDefault(z => string.Equals(z.Id, editWorkflow.TimeZoneId, StringComparison.OrdinalIgnoreCase))?.Label
         ?? "CAT";
 
+    private PeriodicTimer? pollTimer;
+    private CancellationTokenSource? pollCts;
+
     protected override async Task OnInitializedAsync()
     {
         await LoadDatabasesAsync();
         await ReloadAsync();
+        StartPolling();
     }
+
+    // Keep the list live (running/last-run/next-run) without manual refresh, like the Runs page.
+    private void StartPolling()
+    {
+        StopPolling();
+        pollCts = new CancellationTokenSource();
+        pollTimer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        var token = pollCts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (await pollTimer.WaitForNextTickAsync(token))
+                {
+                    // Don't disturb the user while they're editing or confirming a delete.
+                    if (showForm || showDeleteDialog)
+                        continue;
+
+                    await InvokeAsync(async () =>
+                    {
+                        await ReloadAsync();
+                        StateHasChanged();
+                    });
+                }
+            }
+            catch (OperationCanceledException) { }
+        }, token);
+    }
+
+    private void StopPolling()
+    {
+        pollCts?.Cancel();
+        pollTimer?.Dispose();
+        pollCts?.Dispose();
+        pollTimer = null;
+        pollCts = null;
+    }
+
+    public void Dispose() => StopPolling();
 
     private async Task ReloadAsync()
     {
@@ -553,10 +602,8 @@
         {
             BackgroundJobs.Enqueue<WorkflowExecutionJob>(job => job.ExecuteAsync(workflow.Id));
             SetFeedback($"'{workflow.Name}' queued — running now.", "info");
-            // Brief delay then reload to reflect running state
-            await Task.Delay(1500);
+            // Live poller (2s) will reflect the running → completed state; no blocking wait needed.
             await ReloadAsync();
-            StateHasChanged();
         }
         catch (Exception ex)
         {
@@ -662,6 +709,13 @@
         }
     }
 
+    // Keep the preset dropdown in sync when the cron is edited by hand.
+    private void OnEditCronChanged(ChangeEventArgs args)
+    {
+        editWorkflow.CronExpression = args.Value?.ToString()?.Trim() ?? "";
+        editSchedulePreset = DetectSchedulePreset(editWorkflow.CronExpression);
+    }
+
     private void OnEditCustomDateChanged(ChangeEventArgs args)
     {
         editCustomDateTimeLocal = args.Value?.ToString();
@@ -735,18 +789,7 @@
                 return preset.Key;
         }
 
-        return IsCustomDateCron(cron) ? "custom-date" : "hourly";
-    }
-
-    private static bool IsCustomDateCron(string cron)
-    {
-        var parts = cron.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return parts.Length == 5 &&
-               int.TryParse(parts[0], out _) &&
-               int.TryParse(parts[1], out _) &&
-               int.TryParse(parts[2], out _) &&
-               int.TryParse(parts[3], out _) &&
-               parts[4] == "*";
+        return WorkflowSchedulerService.IsOneShotCron(cron) ? "custom-date" : "hourly";
     }
 
     private static string? BuildDateTimeLocalFromCron(string? cron, string? timeZoneId)
@@ -814,6 +857,90 @@
         if (diff.TotalHours < 24) return $"{diff.TotalHours:F0}h ago";
         if (diff.TotalDays < 7) return $"{diff.TotalDays:F0}d ago";
         return utcTime.Value.ToString("MMM dd");
+    }
+
+    // Human-readable schedule label for the list (raw cron is shown as a tooltip).
+    private static string DescribeSchedule(string? cron)
+    {
+        if (string.IsNullOrWhiteSpace(cron)) return "—";
+        var trimmed = cron.Trim();
+
+        if (WorkflowSchedulerService.IsOneShotCron(trimmed))
+        {
+            var parts = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (int.TryParse(parts[0], out var min) && int.TryParse(parts[1], out var hr) &&
+                int.TryParse(parts[2], out var day) && int.TryParse(parts[3], out var mon) &&
+                mon is >= 1 and <= 12)
+            {
+                var monthName = System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetAbbreviatedMonthName(mon);
+                return $"Once · {monthName} {day}, {hr:00}:{min:00}";
+            }
+            return "Once";
+        }
+
+        foreach (var preset in CronPresets)
+        {
+            if (string.Equals(preset.Value, trimmed, StringComparison.OrdinalIgnoreCase))
+                return PresetLabel(preset.Key);
+        }
+        return trimmed; // fall back to raw cron for advanced expressions
+    }
+
+    private static string PresetLabel(string key) => key switch
+    {
+        "every-5-minutes" => "Every 5 min",
+        "every-15-minutes" => "Every 15 min",
+        "every-30-minutes" => "Every 30 min",
+        "hourly" => "Hourly",
+        "every-2-hours" => "Every 2 hours",
+        "daily" => "Daily",
+        "weekly" => "Weekly",
+        _ => key
+    };
+
+    // Live "next run" line shown inside the create/edit form.
+    private string EditSchedulePreview
+    {
+        get
+        {
+            var cron = editWorkflow.CronExpression?.Trim();
+            if (string.IsNullOrWhiteSpace(cron) || !WorkflowSchedulerService.IsValidCron(cron))
+                return "Enter a valid 5-field cron to preview the next run.";
+
+            var next = ComputeNextRun(cron, editWorkflow.TimeZoneId);
+            if (next == null)
+                return "No upcoming run for this schedule.";
+
+            var when = FormatInZone(next, editWorkflow.TimeZoneId);
+            var rel = FormatRelativeTime(next);
+            return WorkflowSchedulerService.IsOneShotCron(cron)
+                ? $"Runs once — {when} ({rel}), then disables itself."
+                : $"{DescribeSchedule(cron)} — next run {when} ({rel})";
+        }
+    }
+
+    private static DateTimeOffset? ComputeNextRun(string cron, string? timeZoneId)
+    {
+        try
+        {
+            var expr = Cronos.CronExpression.Parse(cron);
+            var zone = WorkflowTimeZones.ResolveOrDefault(timeZoneId);
+            var next = expr.GetNextOccurrence(DateTime.UtcNow, zone);
+            return next == null ? null : new DateTimeOffset(DateTime.SpecifyKind(next.Value, DateTimeKind.Utc));
+        }
+        catch { return null; }
+    }
+
+    private string RunTimeZoneId(RunSummary run)
+    {
+        var id = ExtractWorkflowRef(run.TriggeredBy);
+        return workflows.FirstOrDefault(w => w.Id == id)?.TimeZoneId ?? WorkflowTimeZones.DefaultId;
+    }
+
+    private string FormatRunStarted(RunSummary run)
+    {
+        var zone = WorkflowTimeZones.ResolveOrDefault(RunTimeZoneId(run));
+        return TimeZoneInfo.ConvertTime(run.StartedAt, zone).ToString("MMM dd HH:mm");
     }
 
     private class WorkflowRunState

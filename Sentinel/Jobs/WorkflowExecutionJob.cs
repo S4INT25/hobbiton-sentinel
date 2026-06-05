@@ -16,6 +16,7 @@ public class WorkflowExecutionJob(
     IAgentMemoryStore agentMemoryStore,
     EmailClient emailClient,
     IBackgroundJobClient backgroundJobs,
+    WorkflowSchedulerService scheduler,
     ILogger<WorkflowExecutionJob> logger)
 {
     public async Task ExecuteAsync(string workflowId)
@@ -35,32 +36,57 @@ public class WorkflowExecutionJob(
 
         var actionType = WorkflowActionTypes.Normalize(workflow.ActionType);
 
-        if (actionType == WorkflowActionTypes.EmailReport)
+        try
         {
-            await ExecuteEmailReportAsync(workflow);
-            return;
-        }
+            if (actionType == WorkflowActionTypes.EmailReport)
+            {
+                await ExecuteEmailReportAsync(workflow);
+            }
+            else if (actionType == WorkflowActionTypes.FraudRun)
+            {
+                var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+                var triggeredBy = $"workflow:{workflow.Id}";
+                await runTracker.MarkQueuedAsync(runId, triggeredBy, DateTime.UtcNow);
 
-        if (actionType == WorkflowActionTypes.FraudRun)
+                backgroundJobs.Enqueue<SentinelJob>(job =>
+                    job.RunAsync(new FraudAgentRunRequest
+                    {
+                        TriggeredBy = triggeredBy,
+                        RunId = runId,
+                        Database = workflow.TargetDatabase,
+                        CustomPrompt = workflow.CustomPrompt,
+                        WorkflowId = workflow.Id
+                    }));
+                logger.LogInformation("Workflow {WorkflowId} enqueued fraud run {RunId}", workflow.Id, runId);
+            }
+            else
+            {
+                throw new InvalidOperationException($"Unsupported workflow action type: {workflow.ActionType}");
+            }
+        }
+        finally
         {
-            var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
-            var triggeredBy = $"workflow:{workflow.Id}";
-            await runTracker.MarkQueuedAsync(runId, triggeredBy, DateTime.UtcNow);
-
-            backgroundJobs.Enqueue<SentinelJob>(job =>
-                job.RunAsync(new FraudAgentRunRequest
-                {
-                    TriggeredBy = triggeredBy,
-                    RunId = runId,
-                    Database = workflow.TargetDatabase,
-                    CustomPrompt = workflow.CustomPrompt,
-                    WorkflowId = workflow.Id
-                }));
-            logger.LogInformation("Workflow {WorkflowId} enqueued fraud run {RunId}", workflow.Id, runId);
-            return;
+            // A "run once on a date" schedule fires exactly once, then disables itself so it
+            // never silently recurs on the same day next year (cron has no year field).
+            if (WorkflowSchedulerService.IsOneShotCron(workflow.CronExpression))
+                await DisableOneShotAsync(workflow);
         }
+    }
 
-        throw new InvalidOperationException($"Unsupported workflow action type: {workflow.ActionType}");
+    private async Task DisableOneShotAsync(WorkflowDefinition workflow)
+    {
+        try
+        {
+            scheduler.RemoveWorkflowSchedule(workflow.Id);
+            var fresh = await workflowStore.GetByIdAsync(workflow.Id) ?? workflow;
+            fresh.Enabled = false;
+            await workflowStore.UpsertAsync(fresh);
+            logger.LogInformation("One-shot workflow {WorkflowId} completed; disabled and unscheduled.", workflow.Id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to disable one-shot workflow {WorkflowId} after run", workflow.Id);
+        }
     }
 
     private async Task ExecuteEmailReportAsync(WorkflowDefinition workflow)

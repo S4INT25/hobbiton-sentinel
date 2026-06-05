@@ -82,5 +82,24 @@ public class WorkflowSchedulerService(
             char.IsDigit(c) || c is '*' or '/' or ',' or '-' or '?'));
     }
 
+    /// <summary>
+    /// True when the cron targets a single specific date/time (fixed minute, hour, day-of-month
+    /// and month, with any day-of-week). Cron has no year field, so such a schedule would
+    /// otherwise recur every year — we treat it as a "run once" schedule instead.
+    /// </summary>
+    public static bool IsOneShotCron(string? cron)
+    {
+        if (string.IsNullOrWhiteSpace(cron))
+            return false;
+
+        var parts = cron.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return parts.Length == 5 &&
+               int.TryParse(parts[0], out _) && // minute
+               int.TryParse(parts[1], out _) && // hour
+               int.TryParse(parts[2], out _) && // day of month
+               int.TryParse(parts[3], out _) && // month
+               parts[4] == "*";                 // any day of week
+    }
+
     private static string RecurringId(string workflowId) => $"workflow:{workflowId}";
 }
