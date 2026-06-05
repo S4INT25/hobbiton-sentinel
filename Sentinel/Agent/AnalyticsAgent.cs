@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -39,6 +40,7 @@ public class AnalyticsAgent(
         List<ChatEntry>? history = null,
         string mode = "general",
         Func<AnalyticsStreamEvent, Task>? onEvent = null,
+        Func<AgentToolCall, Task>? onToolCall = null,
         IEnumerable<AgentMemory>? memories = null,
         CancellationToken cancellationToken = default)
     {
@@ -175,8 +177,29 @@ public class AnalyticsAgent(
                     logger.LogInformation("[Analytics] Tool: {Tool} args={Args}",
                         toolCall.FunctionName, args.Length > 200 ? args[..200] + "…" : args);
 
+                    var toolStart = Stopwatch.GetTimestamp();
                     var result = await ExecuteToolAsync(
                         toolCall, database, isInteractive, allowInteractiveReportSending, onEvent, response, chartResults);
+                    var durationMs = (int)Stopwatch.GetElapsedTime(toolStart).TotalMilliseconds;
+
+                    // Persist the tool call for the run audit trail (workflow runs only).
+                    if (onToolCall != null)
+                    {
+                        try
+                        {
+                            await onToolCall(new AgentToolCall(
+                                Iteration: iteration,
+                                ToolName: toolCall.FunctionName,
+                                Args: args,
+                                Result: result,
+                                DurationMs: durationMs,
+                                StartedAt: DateTime.UtcNow.AddMilliseconds(-durationMs)));
+                        }
+                        catch (Exception logEx)
+                        {
+                            logger.LogWarning(logEx, "[Analytics] Failed to log tool call {Tool}", toolCall.FunctionName);
+                        }
+                    }
 
                     // Check if ask_user was invoked — pause iteration
                     if (toolCall.FunctionName == "ask_user" && isInteractive)
@@ -429,6 +452,8 @@ public class AnalyticsAgent(
 
         var result = await emailClient.SendAsync(subject, body, severity, recipients);
         response.ReportSent = true;
+        response.EmailSubject = subject;
+        response.EmailBody = body;
         await Emit(onEvent, "report_sent", result);
         return result;
     }
@@ -830,7 +855,23 @@ public class AnalyticsResponse
     public List<string>? PendingChoices { get; set; }
     /// <summary>True if the agent already sent an email via the send_report tool.</summary>
     public bool ReportSent { get; set; }
+    /// <summary>Subject of the email sent via send_report (captured for audit storage).</summary>
+    public string? EmailSubject { get; set; }
+    /// <summary>Body of the email sent via send_report (captured for audit storage).</summary>
+    public string? EmailBody { get; set; }
 }
+
+/// <summary>
+/// A single tool invocation emitted by the agent during a run, for audit-trail persistence.
+/// Mirrors the data needed to build a <c>RunLog</c> without coupling the agent to the store.
+/// </summary>
+public record AgentToolCall(
+    int Iteration,
+    string ToolName,
+    string Args,
+    string Result,
+    int DurationMs,
+    DateTime StartedAt);
 
 public class QueryResult
 {
