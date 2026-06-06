@@ -12,7 +12,7 @@ public class WorkflowExecutionJob(
     IWorkflowStore workflowStore,
     IRunLogStore runLogStore,
     IActiveRunTracker runTracker,
-    AnalyticsAgent analyticsAgent,
+    WorkflowAnalyticsAgent analyticsAgent,
     IAgentMemoryStore agentMemoryStore,
     EmailClient emailClient,
     IBackgroundJobClient backgroundJobs,
@@ -125,7 +125,7 @@ public class WorkflowExecutionJob(
         try
         {
             var memories = await agentMemoryStore.GetEnabledAsync(database);
-            result = await analyticsAgent.AskAsync(prompt, database, mode: "autonomous", memories: memories,
+            result = await analyticsAgent.RunAsync(prompt, database, memories: memories,
                 onToolCall: async tc =>
                 {
                     if (tc.Iteration > maxIteration) maxIteration = tc.Iteration;

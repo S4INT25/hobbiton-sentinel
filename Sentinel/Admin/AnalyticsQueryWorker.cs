@@ -68,7 +68,7 @@ public class AnalyticsQueryWorker(
             }
 
             using var scope = scopeFactory.CreateScope();
-            var agent = scope.ServiceProvider.GetRequiredService<AnalyticsAgent>();
+            var agent = scope.ServiceProvider.GetRequiredService<ChatAnalyticsAgent>();
 
             // Load memories scoped to the selected database
             List<Admin.Models.AgentMemory>? memories = null;
@@ -76,7 +76,7 @@ public class AnalyticsQueryWorker(
             if (memoryStore != null)
                 memories = await memoryStore.GetEnabledAsync(job.Database);
 
-            var result = await agent.AskAsync(job.Prompt, job.Database, history, job.Mode,
+            var result = await agent.AskAsync(job.Prompt, job.Database, history,
                 memories: memories,
                 onEvent: async evt =>
                 {

@@ -12,17 +12,18 @@ using Sentinel.Infrastructure;
 namespace Sentinel.Agent;
 
 /// <summary>
-/// Iterative tool-calling analytics agent. Operates in interactive (chat) or autonomous (workflow) mode.
-/// Emits streaming events for UI consumption and can ask users for clarification.
+/// Shared iterative tool-calling analytics engine. Behaviour (tool set, prompt, report policy,
+/// token budget) is driven by an <see cref="AgentProfile"/>. Callers should use the
+/// <c>ChatAnalyticsAgent</c> or <c>WorkflowAnalyticsAgent</c> facades rather than this directly.
 /// </summary>
-public class AnalyticsAgent(
+public class AnalyticsAgentCore(
     OpenAIClient ai,
     ClickHouseClient ch,
     SchemaLoader schemaLoader,
     EmailClient emailClient,
     IAgentMemoryStore memoryStore,
     IConfiguration config,
-    ILogger<AnalyticsAgent> logger)
+    ILogger<AnalyticsAgentCore> logger)
 {
     private const int MaxHistoryExchanges = 10;
     private const int MaxIterations = 15;
@@ -38,9 +39,9 @@ public class AnalyticsAgent(
 
     public async Task<AnalyticsResponse> AskAsync(
         string prompt,
-        string database = "lipila_blaze",
+        string database,
+        AgentProfile profile,
         List<ChatEntry>? history = null,
-        string mode = "general",
         Func<AnalyticsStreamEvent, Task>? onEvent = null,
         Func<AgentToolCall, Task>? onToolCall = null,
         IEnumerable<AgentMemory>? memories = null,
@@ -48,7 +49,7 @@ public class AnalyticsAgent(
     {
         var modelName = config["DigitalOcean:ModelName"]!;
         var schema = await schemaLoader.GetSchemaBlockAsync(database);
-        var isInteractive = !string.Equals(mode, "autonomous", StringComparison.OrdinalIgnoreCase);
+        var isInteractive = profile.Interactive;
 
         var allowInteractiveReportSending = !isInteractive || HasExplicitEmailIntent(prompt);
         var systemPrompt = BuildSystemPrompt(database, schema, isInteractive, allowInteractiveReportSending, memories);
@@ -90,7 +91,7 @@ public class AnalyticsAgent(
 
             var options = new ChatCompletionOptions
             {
-                MaxOutputTokenCount = 4096,
+                MaxOutputTokenCount = profile.MaxOutputTokens,
                 Temperature = 0.1f
             };
 
