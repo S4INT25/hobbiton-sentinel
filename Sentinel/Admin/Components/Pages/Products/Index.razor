@@ -36,10 +36,20 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                     <label class="text-[10px] text-gray-500 uppercase tracking-wider block mb-1">Database Name</label>
-                    @if (editing != null)
+                    @if (editing != null && editAvailableDatabases is { Count: > 0 })
                     {
-                        <input value="@formDbName" disabled
-                               class="w-full px-3 py-1.5 bg-gray-800/50 border border-gray-700 rounded text-xs text-gray-500 cursor-not-allowed"/>
+                        <select @bind="formDbName"
+                                class="w-full px-3 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white">
+                            @foreach (var db in editAvailableDatabases)
+                            {
+                                <option value="@db">@db</option>
+                            }
+                        </select>
+                    }
+                    else if (editing != null)
+                    {
+                        <input @bind="formDbName" placeholder="e.g. lipila_blaze"
+                               class="w-full px-3 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white placeholder:text-gray-600"/>
                     }
                     else if (availableDatabases is { Count: > 0 })
                     {
@@ -188,6 +198,7 @@
 @code {
     private List<DatabaseProduct> products = [];
     private List<string>? availableDatabases;
+    private List<string>? editAvailableDatabases;
     private string? feedback;
     private string feedbackKind = "success";
 
@@ -245,6 +256,26 @@
         formSortOrder = product.SortOrder;
         formEnabled = product.Enabled;
         showForm = true;
+
+        // Build dropdown: all databases not used by OTHER products (current one stays selectable)
+        if (availableDatabases is not null)
+        {
+            var otherNames = products
+                .Where(p => p.Id != product.Id)
+                .Select(p => p.DatabaseName)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            editAvailableDatabases = availableDatabases
+                .Concat(new[] { product.DatabaseName })
+                .Where(db => !otherNames.Contains(db))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order()
+                .ToList();
+        }
+        else
+        {
+            editAvailableDatabases = null; // fall back to free-text input
+        }
     }
 
     private void CancelForm()

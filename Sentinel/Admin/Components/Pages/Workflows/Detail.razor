@@ -5,6 +5,7 @@
 @inject IFraudPatternStore FraudPatternStore
 @inject IEvidenceSourceStore EvidenceSourceStore
 @inject SchemaLoader SchemaLoader
+@inject IDatabaseProductStore ProductStore
 @inject NavigationManager Nav
 @attribute [Authorize(Policy = AuthConstants.AdminOnlyPolicy)]
 
@@ -645,6 +646,7 @@
     private RunSummary? selectedRunSummary;
     private string? selectedRunId;
     private List<string> availableDatabases = ["lipila_blaze"];
+    private Dictionary<string, string> dbDisplayNames = new(StringComparer.OrdinalIgnoreCase);
     private string activeTab = "overview";
     private bool saving;
     private string? feedbackMessage;
@@ -728,7 +730,9 @@
 
     private async Task LoadDatabasesAsync()
     {
-        availableDatabases = AllowedDatabases.ToList();
+        var products = await ProductStore.GetEnabledAsync();
+        availableDatabases = products.Select(p => p.DatabaseName).ToList();
+        dbDisplayNames = products.ToDictionary(p => p.DatabaseName, p => p.DisplayName, StringComparer.OrdinalIgnoreCase);
     }
 
     // --- System Prompt ---
@@ -973,11 +977,8 @@
         ? "pb-2 text-sm font-medium text-emerald-400 border-b-2 border-emerald-400 transition-colors whitespace-nowrap"
         : "pb-2 text-sm font-medium text-gray-500 hover:text-gray-300 border-b-2 border-transparent transition-colors whitespace-nowrap";
 
-    private static string DatabaseDisplayName(string db) => db switch
-    {
-        "inshuwa" => "insurer",
-        _ => db
-    };
+    private string DatabaseDisplayName(string db) =>
+        dbDisplayNames.TryGetValue(db, out var name) ? name : db;
 
     private static string FormatDuration(TimeSpan? duration)
     {
@@ -1032,11 +1033,4 @@
         WorkflowTimeZones.Options.FirstOrDefault(z => string.Equals(z.Id, WorkflowTimeZones.NormalizeOrDefaultId(timeZoneId), StringComparison.OrdinalIgnoreCase))?.Label
         ?? WorkflowTimeZones.DefaultId;
 
-    private static readonly IReadOnlyList<string> AllowedDatabases =
-    [
-        "inshuwa", // insurer
-        "lipila_blaze",
-        "bnpl",
-        "patumba_app"
-    ];
 }

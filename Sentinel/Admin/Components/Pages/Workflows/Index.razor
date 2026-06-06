@@ -5,6 +5,7 @@
 @inject WorkflowSchedulerService WorkflowScheduler
 @inject IBackgroundJobClient BackgroundJobs
 @inject SchemaLoader SchemaLoader
+@inject IDatabaseProductStore ProductStore
 @inject NavigationManager Nav
 @attribute [Authorize(Policy = AuthConstants.AdminOnlyPolicy)]
 @using System.Globalization
@@ -428,6 +429,7 @@
     }
     private Dictionary<string, WorkflowRunState> workflowStates = new();
     private List<string> availableDatabases = ["lipila_blaze"];
+    private Dictionary<string, string> dbDisplayNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<WorkflowTimeZoneOption> timeZoneOptions = WorkflowTimeZones.Options.ToList();
     private WorkflowDefinition editWorkflow = new();
     private bool showForm;
@@ -597,7 +599,9 @@
 
     private async Task LoadDatabasesAsync()
     {
-        availableDatabases = AllowedDatabases.ToList();
+        var products = await ProductStore.GetEnabledAsync();
+        availableDatabases = products.Select(p => p.DatabaseName).ToList();
+        dbDisplayNames = products.ToDictionary(p => p.DatabaseName, p => p.DisplayName, StringComparer.OrdinalIgnoreCase);
     }
 
     private void ShowCreateForm()
@@ -1101,19 +1105,8 @@
         WorkflowTimeZones.Options.FirstOrDefault(z => string.Equals(z.Id, WorkflowTimeZones.NormalizeOrDefaultId(timeZoneId), StringComparison.OrdinalIgnoreCase))?.Label
         ?? WorkflowTimeZones.DefaultId;
 
-    private static string DatabaseDisplayName(string db) => db switch
-    {
-        "inshuwa" => "insurer",
-        _ => db
-    };
-
-    private static readonly IReadOnlyList<string> AllowedDatabases =
-    [
-        "inshuwa", // insurer
-        "lipila_blaze",
-        "bnpl",
-        "patumba_app"
-    ];
+    private string DatabaseDisplayName(string db) =>
+        dbDisplayNames.TryGetValue(db, out var name) ? name : db;
 
     private static string FormatInZone(DateTimeOffset? utcTime, string? timeZoneId)
     {
