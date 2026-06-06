@@ -7,6 +7,7 @@
 @inject IWorkflowStore WorkflowStore
 @inject WorkflowSchedulerService WorkflowScheduler
 @inject SchemaLoader SchemaLoader
+@inject IActiveRunTracker ActiveRunTracker
 @inject AuthenticationStateProvider AuthState
 @attribute [Authorize(Policy = AuthConstants.AdminOrDeveloperPolicy)]
 
@@ -170,13 +171,36 @@
                     <tbody class="divide-y divide-gray-800/40">
                     @foreach (var run in recentRunsList.Take(10))
                     {
-                        <tr class="hover:bg-gray-900/40">
+                        var isLive = run.Status is "running" or "queued";
+                        <tr class="hover:bg-gray-900/40 @(isLive ? "bg-blue-500/5" : "")">
                             <td class="px-4 py-2.5">
-                                <a href="/admin/runs/@run.RunId"
-                                   class="text-emerald-400 hover:text-emerald-300 font-mono text-xs transition-colors">@run.RunId[..Math.Min(12, run.RunId.Length)]</a>
+                                @if (isLive)
+                                {
+                                    <span class="font-mono text-xs text-blue-400 flex items-center gap-1.5">
+                                        <svg class="w-3 h-3 animate-spin shrink-0" fill="none" viewBox="0 0 24 24"><circle
+                                                class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                                stroke-width="3"/><path class="opacity-90" fill="currentColor"
+                                                                        d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z"/></svg>
+                                        @run.RunId[..Math.Min(12, run.RunId.Length)]
+                                    </span>
+                                }
+                                else
+                                {
+                                    <a href="/admin/runs/@run.RunId"
+                                       class="text-emerald-400 hover:text-emerald-300 font-mono text-xs transition-colors">@run.RunId[..Math.Min(12, run.RunId.Length)]</a>
+                                }
                             </td>
                             <td class="px-4 py-2.5 text-gray-400 text-xs">@run.StartedAt.ToString("MMM dd HH:mm")</td>
-                            <td class="px-4 py-2.5 text-gray-300 font-mono text-xs tabular-nums">@((run.InputTokens + run.OutputTokens).ToString("N0"))</td>
+                            <td class="px-4 py-2.5 text-gray-300 font-mono text-xs tabular-nums">
+                                @if (isLive)
+                                {
+                                    <span class="text-gray-600">—</span>
+                                }
+                                else
+                                {
+                                    @((run.InputTokens + run.OutputTokens).ToString("N0"))
+                                }
+                            </td>
                             <td class="px-4 py-2.5">
                                 <span class="@RunStatusClasses(run.Status)" title="@run.Error">@run.Status</span>
                                 @if (run.Status is "error" or "failed" && !string.IsNullOrWhiteSpace(run.Error))
@@ -364,7 +388,18 @@
         }
 
         var runs = await RunLogStore.GetRecentRunsAsync(100);
-        recentRunsList = runs;
+        var completedIds = new HashSet<string>(runs.Select(r => r.RunId));
+        var activeRuns = await ActiveRunTracker.GetActiveRunsAsync();
+        var liveRows = activeRuns
+            .Where(a => a.Status is "running" or "queued" && !completedIds.Contains(a.RunId))
+            .Select(a => new RunSummary
+            {
+                RunId = a.RunId,
+                StartedAt = new DateTimeOffset(a.StartedAtUtc, TimeSpan.Zero),
+                Status = a.Status,
+                TriggeredBy = a.TriggeredBy
+            });
+        recentRunsList = liveRows.Concat(runs).OrderByDescending(r => r.StartedAt).ToList();
         workflowRuns24h = runs.Count(r =>
             r.StartedAt >= DateTime.UtcNow.AddHours(-24) &&
             r.TriggeredBy.StartsWith("workflow:", StringComparison.OrdinalIgnoreCase));
