@@ -3,13 +3,18 @@
 @inject IAnalyticsChatStore ChatStore
 @inject IAnalyticsJobStore JobStore
 @inject AnalyticsQueryWorker Worker
-@inject Infrastructure.ClickHouseClient ClickHouse
-@inject Infrastructure.SchemaLoader SchemaLoader
-@inject ZiggyCreatures.Caching.Fusion.IFusionCache Cache
+@inject ClickHouseClient ClickHouse
+@inject SchemaLoader SchemaLoader
+@inject IFusionCache Cache
 @inject AuthenticationStateProvider AuthState
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
 @attribute [Authorize(Policy = AuthConstants.Policy)]
+@using System.Globalization
+@using System.Text.Json
+@using System.Text.RegularExpressions
+@using Sentinel.Infrastructure
+@using ZiggyCreatures.Caching.Fusion
 @implements IDisposable
 
 <PageTitle>Chat — Sentinel</PageTitle>
@@ -177,7 +182,7 @@
                                 @if (!string.IsNullOrEmpty(msg.Explanation))
                                 {
                                     <div
-                                        class="text-sm text-gray-300 leading-relaxed prose prose-invert prose-sm max-w-none">@(Infrastructure.MarkdownRenderer.ToHtml(msg.Explanation))</div>
+                                        class="text-sm text-gray-300 leading-relaxed prose prose-invert prose-sm max-w-none">@(MarkdownRenderer.ToHtml(msg.Explanation))</div>
                                 }
 
                                 @if (!string.IsNullOrEmpty(msg.Summary) || !string.IsNullOrEmpty(msg.RiskLevel) || (msg.Findings?.Count > 0) || (msg.RecommendedActions?.Count > 0))
@@ -186,7 +191,7 @@
                                         @if (!string.IsNullOrEmpty(msg.Summary))
                                         {
                                             <div
-                                                class="text-sm text-gray-200 prose prose-invert prose-sm max-w-none">@(Infrastructure.MarkdownRenderer.ToHtml(msg.Summary))</div>
+                                                class="text-sm text-gray-200 prose prose-invert prose-sm max-w-none">@(MarkdownRenderer.ToHtml(msg.Summary))</div>
                                         }
                                         @if (!string.IsNullOrEmpty(msg.RiskLevel))
                                         {
@@ -234,7 +239,7 @@
                                             </div>
                                             @if (qr.ChartType != "none")
                                             {
-                                                <div class="p-3">
+                                                <div class="p-3" style="min-height:330px">
                                                     <div class="flex items-center gap-1.5 mb-2 flex-wrap">
                                                         @foreach (var ct in GetApplicableChartTypes(qr))
                                                         {
@@ -308,7 +313,8 @@
                                 }
                                 else if (HasChartContent(msg))
                                 {
-                                    <div class="border border-gray-800/60 rounded-lg p-3 bg-gray-950/30">
+                                    <div class="border border-gray-800/60 rounded-lg p-3 bg-gray-950/30"
+                                         style="min-height:370px">
                                         <div class="flex items-center gap-1.5 mb-2 flex-wrap">
                                             @foreach (var ct in GetApplicableChartTypes(msg))
                                             {
@@ -504,7 +510,7 @@
 
                     @if (loading)
                     {
-                        <div class="space-y-2 max-w-2xl">
+                        <div class="space-y-2 max-w-full">
                             @if (!string.IsNullOrWhiteSpace(GetPendingThinkingText(_pendingMessage)))
                             {
                                 <div class="border border-emerald-500/20 rounded-lg bg-emerald-500/5 px-3 py-2">
@@ -566,10 +572,10 @@
                             }
                             else if (!string.IsNullOrEmpty(_streamingText))
                             {
-                                <div class="border border-gray-800/60 rounded-xl p-4 bg-gray-900/35 space-y-1">
+                                <div class="space-y-3 max-w-full border rounded-xl p-4 bg-gray-900/35 border-gray-800">
                                     <div
                                         class="text-sm text-gray-300 leading-relaxed prose prose-invert prose-sm max-w-none">
-                                        @(Infrastructure.MarkdownRenderer.ToHtml(_streamingText))<span
+                                        @(MarkdownRenderer.ToHtml(_streamingText))<span
                                             class="inline-block w-0.5 h-4 bg-emerald-400 animate-pulse ml-0.5 align-middle"></span>
                                     </div>
                                 </div>
@@ -674,7 +680,7 @@
     protected override async Task OnInitializedAsync()
     {
         var authState = await AuthState.GetAuthenticationStateAsync();
-        userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "default";
+        userId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "default";
         await LoadDatabases();
         await LoadConversations();
 
@@ -734,7 +740,7 @@
         database = e.Value?.ToString() ?? database;
         try
         {
-            await Cache.SetAsync(DbPrefKey, database, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) });
+            await Cache.SetAsync(DbPrefKey, database, new FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) });
         }
         catch
         {
@@ -749,7 +755,7 @@
         mode = e.Value?.ToString() is "fraud" ? "fraud" : "general";
         try
         {
-            await Cache.SetAsync(ModePrefKey, mode, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) });
+            await Cache.SetAsync(ModePrefKey, mode, new FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) });
         }
         catch
         {
@@ -800,7 +806,7 @@
         mode = conv.Mode is "fraud" ? "fraud" : "general";
         try
         {
-            await Cache.SetAsync(DbPrefKey, database, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) });
+            await Cache.SetAsync(DbPrefKey, database, new FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) });
         }
         catch
         {
@@ -809,7 +815,7 @@
 
         try
         {
-            await Cache.SetAsync(ModePrefKey, mode, new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) });
+            await Cache.SetAsync(ModePrefKey, mode, new FusionCacheEntryOptions { Duration = TimeSpan.FromDays(30) });
         }
         catch
         {
@@ -973,7 +979,7 @@
         try
         {
             await Cache.SetAsync(BetaDisclaimerPrefKey, "1",
-                new ZiggyCreatures.Caching.Fusion.FusionCacheEntryOptions { Duration = TimeSpan.FromDays(365) });
+                new FusionCacheEntryOptions { Duration = TimeSpan.FromDays(365) });
         }
         catch
         {
@@ -1122,7 +1128,7 @@
             if (json.StartsWith("ClickHouse error") || json.StartsWith("Error:") || json.StartsWith("Query failed:"))
                 return;
 
-            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("data", out var data))
                 return;
 
@@ -1130,7 +1136,7 @@
             {
                 foreach (var prop in row.EnumerateObject())
                 {
-                    if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.String)
+                    if (prop.Value.ValueKind == JsonValueKind.String)
                     {
                         var tableName = prop.Value.GetString();
                         if (!string.IsNullOrWhiteSpace(tableName))
@@ -1688,7 +1694,7 @@
     private static string FormatCell(string? value, string? columnName = null)
     {
         if (string.IsNullOrEmpty(value)) return "";
-        if (double.TryParse(value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num))
+        if (double.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var num))
         {
             var isAmountCol = columnName != null && AmountColumnHints.Any(h => columnName.Contains(h, StringComparison.OrdinalIgnoreCase));
             if (isAmountCol)
@@ -1767,7 +1773,7 @@
         if (col.Contains('_'))
             return string.Join(" ", col.Split('_', StringSplitOptions.RemoveEmptyEntries)
                 .Select(w => char.ToUpper(w[0]) + w[1..]));
-        return System.Text.RegularExpressions.Regex.Replace(col, "([a-z])([A-Z])", "$1 $2");
+        return Regex.Replace(col, "([a-z])([A-Z])", "$1 $2");
     }
 
     private void ChangeChartType(ChatMessage message, string chartType)

@@ -60,6 +60,20 @@
 
         /* Line clamp utility */
         .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+        /* Smooth chart swap — prevent layout collapse during re-render */
+        .apexcharts-canvas {
+            animation: chartFadeIn 0.2s ease-out;
+        }
+
+        @@keyframes chartFadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
     </style>
     <HeadOutlet />
 </head>
