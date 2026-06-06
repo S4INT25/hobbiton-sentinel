@@ -1,7 +1,4 @@
 @page "/admin/workflows"
-@using Hangfire
-@using Sentinel.Jobs
-@using Sentinel.Infrastructure
 @inject IWorkflowStore WorkflowStore
 @inject IRunLogStore RunLogStore
 @inject IActiveRunTracker ActiveRunTracker
@@ -9,6 +6,11 @@
 @inject IBackgroundJobClient BackgroundJobs
 @inject SchemaLoader SchemaLoader
 @attribute [Authorize(Policy = AuthConstants.AdminOnlyPolicy)]
+@using System.Globalization
+@using Cronos
+@using Hangfire
+@using Sentinel.Infrastructure
+@using Sentinel.Jobs
 @implements IDisposable
 
 <PageTitle>Workflows — Sentinel</PageTitle>
@@ -219,12 +221,15 @@
                         <button @onclick="() => RunNowAsync(workflow)" disabled="@IsBusy($"run-{workflow.Id}")" class="p-1.5 text-gray-500 hover:text-cyan-400 transition-colors disabled:opacity-40" title="Run now">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-5.197-3.03A1 1 0 008 9.03v6a1 1 0 001.555.832l5.197-3.03a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-6.219-8.56"/></svg>
                         </button>
-                        @if (workflow.ActionType == WorkflowActionTypes.FraudRun)
-                        {
-                            <a href="/admin/workflows/@workflow.Id" class="p-1.5 text-gray-500 hover:text-purple-400 transition-colors" title="Configure patterns & sources">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                            </a>
-                        }
+                        <a href="/admin/workflows/@workflow.Id"
+                           class="p-1.5 text-gray-500 hover:text-purple-400 transition-colors" title="View details">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            </svg>
+                        </a>
                         <button @onclick="() => EditWorkflow(workflow)" disabled="@IsBusy($"workflow-{workflow.Id}")" class="p-1.5 text-gray-500 hover:text-emerald-400 transition-colors disabled:opacity-40" title="Edit">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                         </button>
@@ -282,11 +287,26 @@
                     <tbody class="divide-y divide-gray-800/40">
                         @foreach (var run in workflowRuns.Take(15))
                         {
-                            var duration = run.FinishedAt > run.StartedAt ? (TimeSpan?)(run.FinishedAt - run.StartedAt) : null;
+                            var isLive = run.Status is "running" or "queued";
+                            var duration = !isLive && run.FinishedAt > run.StartedAt ? (TimeSpan?)(run.FinishedAt - run.StartedAt) : null;
                             var wfName = GetWorkflowName(run.TriggeredBy);
-                            <tr class="hover:bg-gray-900/40">
+                            <tr class="hover:bg-gray-900/40 @(isLive ? "bg-blue-500/5" : "")">
                                 <td class="px-4 py-2.5">
-                                    <a href="@BuildWorkflowRunDetailHref(run)" class="text-cyan-400 hover:text-cyan-300 font-mono text-xs transition-colors">@run.RunId[..Math.Min(8, run.RunId.Length)]</a>
+                                    @if (isLive)
+                                    {
+                                        <span class="font-mono text-xs text-blue-400 flex items-center gap-1.5">
+                                            <svg class="w-3 h-3 animate-spin shrink-0" fill="none" viewBox="0 0 24 24"><circle
+                                                        class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                                        stroke-width="3"/><path class="opacity-90" fill="currentColor"
+                                                                                d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z"/></svg>
+                                            @run.RunId[..Math.Min(8, run.RunId.Length)]
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <a href="@BuildWorkflowRunDetailHref(run)"
+                                           class="text-cyan-400 hover:text-cyan-300 font-mono text-xs transition-colors">@run.RunId[..Math.Min(8, run.RunId.Length)]</a>
+                                    }
                                 </td>
                                 <td class="px-4 py-2.5 text-xs">
                                     @if (wfName != null)
@@ -299,7 +319,16 @@
                                     }
                                 </td>
                                 <td class="px-4 py-2.5 text-gray-400 text-xs" title="@FormatInZone(run.StartedAt, RunTimeZoneId(run))">@FormatRunStarted(run)</td>
-                                <td class="px-4 py-2.5 text-gray-400 text-xs">@FormatDuration(duration)</td>
+                                <td class="px-4 py-2.5 text-gray-400 text-xs">
+                                    @if (isLive)
+                                    {
+                                        <span class="text-blue-400 text-[10px]">@FormatElapsed(run.StartedAt)</span>
+                                    }
+                                    else
+                                    {
+                                        @FormatDuration(duration)
+                                    }
+                                </td>
                                 <td class="px-4 py-2.5">
                                     <span class="@RunStatusClasses(run.Status)" title="@run.Error">@run.Status</span>
                                     @if (run.Status is "error" or "failed" && !string.IsNullOrWhiteSpace(run.Error))
@@ -307,7 +336,16 @@
                                         <div class="mt-0.5 max-w-[260px] truncate text-[10px] text-rose-400/80" title="@run.Error">@run.Error</div>
                                     }
                                 </td>
-                                <td class="px-4 py-2.5 text-gray-300 font-mono text-xs tabular-nums">@((run.InputTokens + run.OutputTokens).ToString("N0"))</td>
+                                <td class="px-4 py-2.5 text-gray-300 font-mono text-xs tabular-nums">
+                                    @if (isLive)
+                                    {
+                                        <span class="text-gray-600">—</span>
+                                    }
+                                    else
+                                    {
+                                        @((run.InputTokens + run.OutputTokens).ToString("N0"))
+                                    }
+                                </td>
                             </tr>
                         }
                         @if (!workflowRuns.Any())
@@ -417,8 +455,29 @@
         var activeRunsTask = ActiveRunTracker.GetActiveRunsAsync();
         await Task.WhenAll(workflowTask, runsTask, activeRunsTask);
         workflows = workflowTask.Result;
-        workflowRuns = runsTask.Result
+        var completedRuns = runsTask.Result
             .Where(r => r.TriggeredBy.StartsWith("workflow:", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var completedRunIds = new HashSet<string>(completedRuns.Select(r => r.RunId));
+
+        // Merge active (running/queued) runs into the list so they're visible immediately —
+        // not just after they finish. Dedup by runId in case one just completed.
+        var activeAsSummaries = activeRunsTask.Result
+                .Where(a => a.TriggeredBy.StartsWith("workflow:", StringComparison.OrdinalIgnoreCase)
+                            && a.Status is "running" or "queued"
+                            && !completedRunIds.Contains(a.RunId))
+                .Select(a => new RunSummary
+                {
+                        RunId = a.RunId,
+                        StartedAt = new DateTimeOffset(a.StartedAtUtc, TimeSpan.Zero),
+                        FinishedAt = default,
+                        Status = a.Status,
+                        TriggeredBy = a.TriggeredBy
+                })
+                .ToList();
+
+        workflowRuns = activeAsSummaries
+                .Concat(completedRuns)
             .OrderByDescending(r => r.StartedAt)
             .ToList();
 
@@ -452,7 +511,7 @@
             {
                 try
                 {
-                    var cron = Cronos.CronExpression.Parse(wf.CronExpression);
+                    var cron = CronExpression.Parse(wf.CronExpression);
                     var zone = WorkflowTimeZones.ResolveOrDefault(wf.TimeZoneId);
                     var next = cron.GetNextOccurrence(DateTime.UtcNow, zone);
                     if (next != null)
@@ -845,6 +904,15 @@
         return $"{d.TotalHours:F0}h {d.Minutes}m";
     }
 
+    private static string FormatElapsed(DateTimeOffset startedAt)
+    {
+        var elapsed = DateTimeOffset.UtcNow - startedAt;
+        if (elapsed.TotalSeconds < 5) return "just started";
+        if (elapsed.TotalSeconds < 60) return $"{elapsed.TotalSeconds:F0}s elapsed";
+        if (elapsed.TotalMinutes < 60) return $"{elapsed.TotalMinutes:F0}m {elapsed.Seconds}s elapsed";
+        return $"{elapsed.TotalHours:F0}h {elapsed.Minutes}m elapsed";
+    }
+
     private static string FormatRelativeTime(DateTimeOffset? utcTime)
     {
         if (utcTime == null) return "Never";
@@ -877,7 +945,7 @@
                 int.TryParse(parts[2], out var day) && int.TryParse(parts[3], out var mon) &&
                 mon is >= 1 and <= 12)
             {
-                var monthName = System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetAbbreviatedMonthName(mon);
+                var monthName = CultureInfo.InvariantCulture.DateTimeFormat.GetAbbreviatedMonthName(mon);
                 return $"Once · {monthName} {day}, {hr:00}:{min:00}";
             }
             return "Once";
@@ -928,7 +996,7 @@
     {
         try
         {
-            var expr = Cronos.CronExpression.Parse(cron);
+            var expr = CronExpression.Parse(cron);
             var zone = WorkflowTimeZones.ResolveOrDefault(timeZoneId);
             var next = expr.GetNextOccurrence(DateTime.UtcNow, zone);
             return next == null ? null : new DateTimeOffset(DateTime.SpecifyKind(next.Value, DateTimeKind.Utc));

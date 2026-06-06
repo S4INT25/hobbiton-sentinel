@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using Sentinel.Admin.Models;
 using Sentinel.Admin.Stores;
 using Sentinel.Agent;
 
@@ -71,7 +72,7 @@ public class AnalyticsQueryWorker(
             var agent = scope.ServiceProvider.GetRequiredService<ChatAnalyticsAgent>();
 
             // Load memories scoped to the selected database
-            List<Admin.Models.AgentMemory>? memories = null;
+            List<AgentMemory>? memories = null;
             var memoryStore = scope.ServiceProvider.GetService<IAgentMemoryStore>();
             if (memoryStore != null)
                 memories = await memoryStore.GetEnabledAsync(job.Database);
@@ -86,6 +87,7 @@ public class AnalyticsQueryWorker(
                         _liveText[jobId] = evt.Message;
                         return;
                     }
+
                     job.StreamEvents.Add(evt);
                     await jobStore.UpdateAsync(job);
                 });
@@ -135,14 +137,14 @@ public class AnalyticsQueryWorker(
             if (!string.IsNullOrWhiteSpace(job.ConversationId))
             {
                 var conversation = await chatStore.GetConversationAsync(job.UserId, job.ConversationId)
-                    ?? new AnalyticsConversation
-                    {
-                        Id = job.ConversationId,
-                        Database = job.Database,
-                        Mode = string.IsNullOrWhiteSpace(job.Mode) ? "general" : job.Mode,
-                        UserId = job.UserId,
-                        Title = GenerateTitle(job.Prompt)
-                    };
+                                   ?? new AnalyticsConversation
+                                   {
+                                       Id = job.ConversationId,
+                                       Database = job.Database,
+                                       Mode = string.IsNullOrWhiteSpace(job.Mode) ? "general" : job.Mode,
+                                       UserId = job.UserId,
+                                       Title = GenerateTitle(job.Prompt)
+                                   };
 
                 var latestUserMessage = conversation.Messages.LastOrDefault(m => m.Role == "user");
                 if (!string.Equals(latestUserMessage?.Content, job.Prompt, StringComparison.Ordinal))

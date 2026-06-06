@@ -49,6 +49,7 @@ try
             .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
             .MinimumLevel.Override("Hangfire", LogEventLevel.Information)
             .MinimumLevel.Override("MailKit", LogEventLevel.Warning)
+            .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", LogEventLevel.Warning)
             .MinimumLevel.Override("System.Net.Http.HttpClient", LogEventLevel.Warning)
             .MinimumLevel.Override("ZiggyCreatures.Caching.Fusion", LogEventLevel.Warning)
             .Enrich.FromLogContext()
