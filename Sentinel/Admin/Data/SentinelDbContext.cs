@@ -12,6 +12,7 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
     public DbSet<EvidenceSource> EvidenceSources => Set<EvidenceSource>();
     public DbSet<WorkflowDefinition> Workflows => Set<WorkflowDefinition>();
     public DbSet<AgentMemory> AgentMemories => Set<AgentMemory>();
+    public DbSet<DatabaseProduct> DatabaseProducts => Set<DatabaseProduct>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -142,6 +143,22 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
             e.Property(m => m.UpdatedAt).HasColumnName("updated_at");
             e.HasIndex(m => m.Enabled);
             e.HasIndex(m => m.Term);
+        });
+
+        modelBuilder.Entity<DatabaseProduct>(e =>
+        {
+            e.HasKey(p => p.Id);
+            e.ToTable("database_products");
+            e.Property(p => p.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            e.Property(p => p.DatabaseName).HasColumnName("database_name").HasMaxLength(100);
+            e.Property(p => p.DisplayName).HasColumnName("display_name").HasMaxLength(200);
+            e.Property(p => p.Description).HasColumnName("description");
+            e.Property(p => p.Enabled).HasColumnName("enabled");
+            e.Property(p => p.SortOrder).HasColumnName("sort_order");
+            e.Property(p => p.CreatedAt).HasColumnName("created_at");
+            e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(p => p.DatabaseName).IsUnique();
+            e.HasIndex(p => p.Enabled);
         });
     }
 }

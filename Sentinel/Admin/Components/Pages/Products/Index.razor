@@ -1,0 +1,336 @@
+@page "/admin/products"
+@using Sentinel.Infrastructure
+@inject IDatabaseProductStore ProductStore
+@inject SchemaLoader SchemaLoader
+@attribute [Authorize(Policy = AuthConstants.AdminOnlyPolicy)]
+
+<PageTitle>Products — Sentinel</PageTitle>
+
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-lg font-semibold text-white">Products</h1>
+            <p class="text-xs text-gray-500 mt-0.5">Manage databases available in the analytics chat</p>
+        </div>
+        <button @onclick="ShowAddForm"
+                class="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-colors">
+            Add Product
+        </button>
+    </div>
+
+    @if (feedback is not null)
+    {
+        <div class="@FeedbackClass() flex items-center justify-between gap-3">
+            <span>@feedback</span>
+            <button @onclick="() => feedback = null" class="text-[11px] hover:text-white transition-colors">Dismiss
+            </button>
+        </div>
+    }
+
+    @* Add / Edit form *@
+    @if (showForm)
+    {
+        <div class="border border-gray-800 rounded-lg p-4 bg-gray-900/30 space-y-3">
+            <h3 class="text-sm font-medium text-white">@(editing != null ? "Edit Product" : "Add Product")</h3>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="text-[10px] text-gray-500 uppercase tracking-wider block mb-1">Database Name</label>
+                    @if (editing != null)
+                    {
+                        <input value="@formDbName" disabled
+                               class="w-full px-3 py-1.5 bg-gray-800/50 border border-gray-700 rounded text-xs text-gray-500 cursor-not-allowed"/>
+                    }
+                    else if (availableDatabases is { Count: > 0 })
+                    {
+                        <select @bind="formDbName"
+                                class="w-full px-3 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white">
+                            <option value="">Select a database...</option>
+                            @foreach (var db in availableDatabases)
+                            {
+                                <option value="@db">@db</option>
+                            }
+                        </select>
+                    }
+                    else
+                    {
+                        <input @bind="formDbName" placeholder="e.g. lipila_blaze"
+                               class="w-full px-3 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white placeholder:text-gray-600"/>
+                    }
+                </div>
+                <div>
+                    <label class="text-[10px] text-gray-500 uppercase tracking-wider block mb-1">Display Name</label>
+                    <input @bind="formDisplayName" placeholder="e.g. Lipila Payments"
+                           class="w-full px-3 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white placeholder:text-gray-600"/>
+                </div>
+            </div>
+
+            <div>
+                <label class="text-[10px] text-gray-500 uppercase tracking-wider block mb-1">Description
+                    (optional)</label>
+                <input @bind="formDescription" placeholder="Short description of this database"
+                       class="w-full px-3 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white placeholder:text-gray-600"/>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="text-[10px] text-gray-500 uppercase tracking-wider block mb-1">Sort Order</label>
+                    <input type="number" @bind="formSortOrder"
+                           class="w-full px-3 py-1.5 bg-gray-900 border border-gray-800 rounded text-xs text-white"/>
+                </div>
+                <div class="flex items-end pb-1">
+                    <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                        <input type="checkbox" @bind="formEnabled" class="rounded border-gray-700"/>
+                        Enabled (visible in chat)
+                    </label>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2 pt-1">
+                <button @onclick="SaveProduct"
+                        class="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-colors">
+                    @(editing != null ? "Update" : "Add")
+                </button>
+                <button @onclick="CancelForm"
+                        class="px-3 py-1.5 text-xs text-gray-400 hover:text-white border border-gray-800 rounded-md transition-colors">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    }
+
+    @* Products table *@
+    <div class="border border-gray-800 rounded-lg overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-900/50">
+            <tr class="text-xs text-gray-500 border-b border-gray-800">
+                <th class="text-left px-4 py-2 font-medium w-8">#</th>
+                <th class="text-left px-4 py-2 font-medium">Database</th>
+                <th class="text-left px-4 py-2 font-medium">Display Name</th>
+                <th class="text-left px-4 py-2 font-medium">Description</th>
+                <th class="text-left px-4 py-2 font-medium">Status</th>
+                <th class="text-right px-4 py-2 font-medium">Actions</th>
+            </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800/50">
+            @foreach (var product in products)
+            {
+                <tr class="hover:bg-gray-900/30 transition-colors">
+                    <td class="px-4 py-2.5 text-xs text-gray-600 font-mono">@product.SortOrder</td>
+                    <td class="px-4 py-2.5 text-xs text-white font-mono">@product.DatabaseName</td>
+                    <td class="px-4 py-2.5 text-xs text-gray-300">@product.DisplayName</td>
+                    <td class="px-4 py-2.5 text-xs text-gray-500 max-w-xs truncate">@(product.Description ?? "—")</td>
+                    <td class="px-4 py-2.5">
+                        @if (product.Enabled)
+                        {
+                            <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Enabled</span>
+                        }
+                        else
+                        {
+                            <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-700/40 text-gray-400 border border-gray-700">Disabled</span>
+                        }
+                    </td>
+                    <td class="px-4 py-2.5 text-right">
+                        <div class="flex items-center justify-end gap-1">
+                            <button @onclick="() => ToggleEnabled(product)"
+                                    title="@(product.Enabled ? "Disable" : "Enable")"
+                                    class="p-1 text-gray-500 hover:text-white transition-colors">
+                                @if (product.Enabled)
+                                {
+                                    <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor"
+                                         viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                    </svg>
+                                }
+                                else
+                                {
+                                    <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor"
+                                         viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                    </svg>
+                                }
+                            </button>
+                            <button @onclick="() => EditProduct(product)" title="Edit"
+                                    class="p-1 text-gray-500 hover:text-white transition-colors">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                </svg>
+                            </button>
+                            <button @onclick="() => DeleteProduct(product)" title="Remove"
+                                    class="p-1 text-gray-500 hover:text-rose-400 transition-colors">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            }
+            @if (!products.Any())
+            {
+                <tr>
+                    <td colspan="6" class="px-4 py-8 text-center text-gray-600 text-xs">No products configured. Add one
+                        to get started.
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private List<DatabaseProduct> products = [];
+    private List<string>? availableDatabases;
+    private string? feedback;
+    private string feedbackKind = "success";
+
+    // Form state
+    private bool showForm;
+    private DatabaseProduct? editing;
+    private string formDbName = "";
+    private string formDisplayName = "";
+    private string? formDescription;
+    private int formSortOrder;
+    private bool formEnabled = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProducts();
+        await LoadAvailableDatabases();
+    }
+
+    private async Task LoadProducts()
+    {
+        products = await ProductStore.GetAllAsync();
+    }
+
+    private async Task LoadAvailableDatabases()
+    {
+        try
+        {
+            var allDbs = await SchemaLoader.GetDatabasesAsync();
+            var existingNames = products.Select(p => p.DatabaseName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            availableDatabases = allDbs.Where(db => !existingNames.Contains(db)).Order().ToList();
+        }
+        catch
+        {
+            availableDatabases = null; // fall back to free-text input
+        }
+    }
+
+    private void ShowAddForm()
+    {
+        editing = null;
+        formDbName = "";
+        formDisplayName = "";
+        formDescription = null;
+        formSortOrder = products.Count;
+        formEnabled = true;
+        showForm = true;
+    }
+
+    private void EditProduct(DatabaseProduct product)
+    {
+        editing = product;
+        formDbName = product.DatabaseName;
+        formDisplayName = product.DisplayName;
+        formDescription = product.Description;
+        formSortOrder = product.SortOrder;
+        formEnabled = product.Enabled;
+        showForm = true;
+    }
+
+    private void CancelForm()
+    {
+        showForm = false;
+        editing = null;
+    }
+
+    private async Task SaveProduct()
+    {
+        if (string.IsNullOrWhiteSpace(formDbName))
+        {
+            SetFeedback("Database name is required.", "error");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(formDisplayName))
+        {
+            // Auto-generate display name from db name
+            formDisplayName = string.Join(" ", formDbName
+                    .Split(['_', '-'], StringSplitOptions.RemoveEmptyEntries)
+                    .Select(s => char.ToUpperInvariant(s[0]) + s[1..]));
+        }
+
+        var product = editing ?? new DatabaseProduct();
+        product.DatabaseName = formDbName.Trim();
+        product.DisplayName = formDisplayName.Trim();
+        product.Description = string.IsNullOrWhiteSpace(formDescription) ? null : formDescription.Trim();
+        product.SortOrder = formSortOrder;
+        product.Enabled = formEnabled;
+
+        try
+        {
+            await ProductStore.UpsertAsync(product);
+            SetFeedback(editing != null ? "Product updated." : $"Product '{product.DisplayName}' added.");
+            showForm = false;
+            editing = null;
+            await LoadProducts();
+            await LoadAvailableDatabases();
+        }
+        catch (Exception ex)
+        {
+            SetFeedback($"Failed to save: {ex.Message}", "error");
+        }
+    }
+
+    private async Task ToggleEnabled(DatabaseProduct product)
+    {
+        product.Enabled = !product.Enabled;
+        try
+        {
+            await ProductStore.UpsertAsync(product);
+            await LoadProducts();
+            SetFeedback($"{product.DisplayName} {(product.Enabled ? "enabled" : "disabled")}.");
+        }
+        catch (Exception ex)
+        {
+            SetFeedback($"Failed: {ex.Message}", "error");
+        }
+    }
+
+    private async Task DeleteProduct(DatabaseProduct product)
+    {
+        try
+        {
+            await ProductStore.DeleteAsync(product.Id);
+            await LoadProducts();
+            await LoadAvailableDatabases();
+            SetFeedback($"Product '{product.DisplayName}' removed.");
+        }
+        catch (Exception ex)
+        {
+            SetFeedback($"Failed: {ex.Message}", "error");
+        }
+    }
+
+    private void SetFeedback(string msg, string kind = "success")
+    {
+        feedback = msg;
+        feedbackKind = kind;
+    }
+
+    private string FeedbackClass() => feedbackKind switch
+    {
+            "error" => "rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-300",
+            _ => "rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300"
+    };
+
+}

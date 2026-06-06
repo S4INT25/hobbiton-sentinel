@@ -98,6 +98,7 @@ try
         builder.Services.AddScoped<IEvidenceSourceStore, PostgresEvidenceSourceStore>();
         builder.Services.AddScoped<IWorkflowStore, PostgresWorkflowStore>();
         builder.Services.AddScoped<IAgentMemoryStore, AgentMemoryStore>();
+        builder.Services.AddScoped<IDatabaseProductStore, PostgresDatabaseProductStore>();
     }
     else
     {
@@ -199,6 +200,8 @@ try
     await evidenceStore.SeedDefaultsAsync();
     var workflowStore = scope.ServiceProvider.GetRequiredService<IWorkflowStore>();
     await workflowStore.SeedDefaultsAsync();
+    var dbProductStore = scope.ServiceProvider.GetRequiredService<IDatabaseProductStore>();
+    await dbProductStore.SeedDefaultsAsync();
     await SeedAdminUser(app);
 
     // Warm schema cache for all databases at startup (non-blocking)

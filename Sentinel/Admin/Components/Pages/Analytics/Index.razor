@@ -6,6 +6,7 @@
 @inject ClickHouseClient ClickHouse
 @inject SchemaLoader SchemaLoader
 @inject IFusionCache Cache
+@inject IDatabaseProductStore ProductStore
 @inject AuthenticationStateProvider AuthState
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
@@ -647,6 +648,7 @@
     private string mode = "general";
     private bool debugMode;
     private List<string> databases = [];
+    private Dictionary<string, string> dbDisplayNames = new(StringComparer.OrdinalIgnoreCase);
     private string? dbLoadError;
     private List<AnalyticsConversation> conversations = [];
     private string? activeConversationId;
@@ -716,8 +718,21 @@
 
     private async Task LoadDatabases()
     {
-        databases = AllowedDatabases.ToList();
         dbLoadError = null;
+
+        try
+        {
+            var enabledProducts = await ProductStore.GetEnabledAsync();
+            databases = enabledProducts.Select(p => p.DatabaseName).ToList();
+            dbDisplayNames = enabledProducts.ToDictionary(
+                p => p.DatabaseName, p => p.DisplayName, StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            // Fallback if DB is unavailable
+            databases = ["lipila_blaze"];
+            dbDisplayNames = new(StringComparer.OrdinalIgnoreCase) { ["lipila_blaze"] = "Lipila" };
+        }
 
         // Restore saved database preference, fall back to first in list
         var saved = await Cache.GetOrDefaultAsync<string>(DbPrefKey);
@@ -765,31 +780,19 @@
         BuildQuickAskSuggestions();
     }
 
-    private static string GetProductLabel(string databaseName)
+    private string GetProductLabel(string databaseName)
     {
         if (string.IsNullOrWhiteSpace(databaseName))
             return "Unknown Product";
 
-        var normalized = databaseName.Trim().ToLowerInvariant();
-        return normalized switch
-        {
-            "lipila_blaze" => "lipila_blaze",
-            "inshuwa" => "insurer",
-            "bnpl" => "bnpl",
-            "patumba_app" => "patumba_app",
-            _ => string.Join(" ", databaseName
-                .Split(['_', '-'], StringSplitOptions.RemoveEmptyEntries)
-                .Select(segment => char.ToUpperInvariant(segment[0]) + segment[1..]))
-        };
-    }
+        if (dbDisplayNames.TryGetValue(databaseName, out var label) && !string.IsNullOrWhiteSpace(label))
+            return label;
 
-    private static readonly IReadOnlyList<string> AllowedDatabases =
-    [
-        "inshuwa", // insurer
-        "lipila_blaze",
-        "bnpl",
-        "patumba_app"
-    ];
+        // Fallback: title-case the database name
+        return string.Join(" ", databaseName
+            .Split(['_', '-'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(segment => char.ToUpperInvariant(segment[0]) + segment[1..]));
+    }
 
     private async Task LoadConversations()
     {
