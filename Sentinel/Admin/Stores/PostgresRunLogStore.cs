@@ -31,6 +31,7 @@ public class PostgresRunLogStore(IDbContextFactory<SentinelDbContext> dbFactory)
             existing.CasesResolved = summary.CasesResolved;
             existing.AlertsSent = summary.AlertsSent;
             existing.Status = summary.Status;
+            existing.Error = summary.Error;
             if (summary.EmailSubject != null) existing.EmailSubject = summary.EmailSubject;
             if (summary.EmailBody    != null) existing.EmailBody    = summary.EmailBody;
         }
