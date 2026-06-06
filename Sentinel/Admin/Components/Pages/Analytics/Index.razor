@@ -1154,10 +1154,14 @@
 
     private void BuildQuickAskSuggestions()
     {
+        var todaysInsights = new QuickAskSuggestion("Today's insights",
+            $"Give me a comprehensive summary of today's key metrics, trends, and notable activity in '{database}'. Include total volumes, success/failure rates, and anything unusual.");
+
         if (mode == "fraud")
         {
             quickAskSuggestions =
             [
+                todaysInsights,
                 new QuickAskSuggestion("High-risk patterns (24h)", $"Run fraud detection on '{database}' for last 24 hours. Return risk level, findings, and recommended actions."),
                 new QuickAskSuggestion("Merchant anomaly scan", $"Identify unusual merchant behaviour in '{database}' over last 24 hours and classify risk."),
                 new QuickAskSuggestion("Wallet risk hotspots", $"Find risky wallet/recipient concentration patterns in '{database}' this week."),
@@ -1170,6 +1174,7 @@
         {
             "lipila_blaze" => new List<QuickAskSuggestion>
             {
+                todaysInsights,
                 new("Hourly volume (24h)", $"Hourly transaction count for the last 24 hours in '{database}'"),
                 new("Status breakdown", $"Transaction status breakdown today in '{database}' as a pie chart"),
                 new("Top merchants today", $"Top 10 merchants by disbursement and Collections volume today in '{database}'"),
@@ -1177,6 +1182,7 @@
             },
             "inshuwa" => new List<QuickAskSuggestion>
             {
+                todaysInsights,
                 new("Active policies", $"Count of active policies by insurance class in '{database}'"),
                 new("Claims this month", $"Claims submitted this month grouped by status in '{database}'"),
                 new("Premium revenue", $"Total premium revenue this week by policy type in '{database}'"),
@@ -1184,6 +1190,7 @@
             },
             "bnpl" => new List<QuickAskSuggestion>
             {
+                todaysInsights,
                 new("Active loans", $"Count of active loans by status in '{database}'"),
                 new("Disbursements today", $"Total loan disbursements today in '{database}'"),
                 new("Repayment rate", $"Repayment success rate this week in '{database}'"),
@@ -1191,6 +1198,7 @@
             },
             var db when db != null && db.StartsWith("patumba") => new List<QuickAskSuggestion>
             {
+                todaysInsights,
                 new("Savings overview", $"Total savings contributions this week in '{database}'"),
                 new("Active goals", $"Count of active savings goals by status in '{database}'"),
                 new("Top savers", $"Top 10 users by total contributions this month in '{database}'"),
@@ -1198,12 +1206,13 @@
             },
             _ => new List<QuickAskSuggestion>
             {
+                todaysInsights,
                 new("Recent activity", $"Show key activity trends for the last 24 hours in '{database}'"),
                 new("Status distribution", $"Show status distribution for recent records in '{database}' as a pie chart"),
                 new("Top entities", $"Show top entities by volume in '{database}'"),
                 new("Daily trend (7d)", $"Show daily record counts over the last 7 days in '{database}' as a line chart"),
             }
-        }).Take(4).ToList();
+        }).Take(5).ToList();
     }
 
     private static bool HasSummaryContent(ChatMessage msg) =>

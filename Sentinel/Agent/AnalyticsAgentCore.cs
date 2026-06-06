@@ -98,6 +98,7 @@ public class AnalyticsAgentCore(
         var chartResults = new List<QueryResult>();
         string? pendingQuestion = null;
         List<string>? pendingChoices = null;
+        var nudgedToSendReport = false;
 
         await Emit(onEvent, "thinking", "Analysing your question…");
 
@@ -189,6 +190,25 @@ public class AnalyticsAgentCore(
             {
                 if (!string.IsNullOrWhiteSpace(textContent))
                     response.Explanation = textContent;
+
+                // In autonomous (workflow) mode the agent MUST call send_report before stopping.
+                // If it wrote a text answer but forgot the tool call, nudge it back into the loop
+                // rather than accepting a silent finish. Allow one nudge only to avoid infinite loops.
+                if (!isInteractive && !response.ReportSent && !nudgedToSendReport && iteration < MaxIterations)
+                {
+                    nudgedToSendReport = true;
+                    logger.LogWarning(
+                        "[Analytics] Autonomous agent stopped without calling send_report — nudging to retry (iteration {N})",
+                        iteration);
+                    messages.Add(new UserChatMessage(
+                        "You finished without calling `send_report`. This is a scheduled workflow — " +
+                        "the ONLY way to deliver results is via `send_report`. " +
+                        "Call `send_report` now with the analysis you just produced. " +
+                        "Use template=\"insights\", a clear subject line, and include the full report body."));
+                    await Emit(onEvent, "fixing", "Agent forgot to send report — nudging to retry…");
+                    continue;
+                }
+
                 break;
             }
 
