@@ -55,7 +55,7 @@
 @code {
     private List<AuditLog> logs = [];
     private int currentPage = 1;
-    private const int PageSize = 25;
+    private const int PageSize = 10;
     private int TotalPages => Math.Max(1, (int)Math.Ceiling((double)logs.Count / PageSize));
     private IEnumerable<AuditLog> PagedLogs => logs.Skip((currentPage - 1) * PageSize).Take(PageSize);
 

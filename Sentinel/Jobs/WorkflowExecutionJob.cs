@@ -17,6 +17,7 @@ public class WorkflowExecutionJob(
     EmailClient emailClient,
     IBackgroundJobClient backgroundJobs,
     WorkflowSchedulerService scheduler,
+    RunCancellationRegistry cancellationRegistry,
     ILogger<WorkflowExecutionJob> logger)
 {
     public async Task ExecuteAsync(string workflowId)
@@ -101,6 +102,7 @@ public class WorkflowExecutionJob(
         if (string.IsNullOrWhiteSpace(workflow.CustomPrompt))
             throw new InvalidOperationException($"Workflow {workflow.Id} has no prompt configured.");
 
+        var ct = cancellationRegistry.Register(runId);
         await runTracker.MarkRunningAsync(runId, triggeredBy, startedAt);
 
         var recipients = ParseRecipients(workflow.EmailRecipients);
@@ -125,6 +127,7 @@ public class WorkflowExecutionJob(
         try
         {
             var memories = await agentMemoryStore.GetEnabledAsync(database);
+            ct.ThrowIfCancellationRequested();
             result = await analyticsAgent.RunAsync(prompt, database, memories: memories,
                 onToolCall: async tc =>
                 {
@@ -139,7 +142,8 @@ public class WorkflowExecutionJob(
                         StartedAt = tc.StartedAt,
                         DurationMs = (uint)tc.DurationMs
                     });
-                });
+                },
+                cancellationToken: ct);
             status = result.Success ? "completed" : "error";
 
             if (!result.Success)
@@ -182,16 +186,22 @@ public class WorkflowExecutionJob(
                 "Workflow {WorkflowId} run {RunId} completed. ReportSent={Sent} Subject={Subject}",
                 workflow.Id, runId, result.ReportSent, result.EmailSubject);
         }
+        catch (OperationCanceledException)
+        {
+            status = "stopped";
+            error = "Stopped by user.";
+            logger.LogWarning("Workflow {WorkflowId} run {RunId} was stopped by user", workflow.Id, runId);
+        }
         catch (Exception ex)
         {
-            // Capture the reason so it can be shown in the dashboard / runs UI, then rethrow
-            // so Hangfire still records the failure and retries.
             status = "error";
             error = ex.Message;
             throw;
         }
         finally
         {
+            cancellationRegistry.Remove(runId);
+
             await runLogStore.SaveSummaryAsync(new RunSummary
             {
                 RunId = runId,
@@ -206,13 +216,14 @@ public class WorkflowExecutionJob(
                 Status = status,
                 TriggeredBy = triggeredBy,
                 Error = error ?? (status == "error" ? result?.Error : null),
-                // Persist the generated email content so it can be reviewed later
                 EmailSubject = result?.EmailSubject,
                 EmailBody = result?.EmailBody
             });
 
             if (status == "completed")
                 await runTracker.MarkCompletedAsync(runId);
+            else if (status == "stopped")
+                await runTracker.MarkStoppedAsync(runId);
             else
                 await runTracker.MarkFailedAsync(runId);
         }

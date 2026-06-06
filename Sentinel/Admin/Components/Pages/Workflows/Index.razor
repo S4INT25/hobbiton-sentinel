@@ -5,6 +5,7 @@
 @inject WorkflowSchedulerService WorkflowScheduler
 @inject IBackgroundJobClient BackgroundJobs
 @inject SchemaLoader SchemaLoader
+@inject NavigationManager Nav
 @attribute [Authorize(Policy = AuthConstants.AdminOnlyPolicy)]
 @using System.Globalization
 @using Cronos
@@ -282,7 +283,7 @@
     <div>
         <div class="flex items-center justify-between mb-2">
             <h2 class="text-sm font-medium text-gray-300">Recent Workflow Runs</h2>
-            <span class="text-[11px] text-gray-500">@(workflowRuns.Count > 15 ? $"latest 15 of {workflowRuns.Count}" : $"{workflowRuns.Count} total")</span>
+            <span class="text-[11px] text-gray-500">@workflowRuns.Count total</span>
         </div>
         <div class="border border-gray-800/60 rounded-xl overflow-hidden">
             <div class="overflow-x-auto">
@@ -298,7 +299,7 @@
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-800/40">
-                        @foreach (var run in workflowRuns.Take(15))
+                    @foreach (var run in PagedRuns)
                         {
                             var isLive = run.Status is "running" or "queued";
                             var duration = !isLive && run.FinishedAt > run.StartedAt ? (TimeSpan?)(run.FinishedAt - run.StartedAt) : null;
@@ -307,13 +308,14 @@
                                 <td class="px-4 py-2.5">
                                     @if (isLive)
                                     {
-                                        <span class="font-mono text-xs text-blue-400 flex items-center gap-1.5">
+                                        <a href="/admin/workflows/@ExtractWorkflowRef(run.TriggeredBy)/live/@run.RunId"
+                                           class="font-mono text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1.5 transition-colors">
                                             <svg class="w-3 h-3 animate-spin shrink-0" fill="none" viewBox="0 0 24 24"><circle
                                                         class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
                                                         stroke-width="3"/><path class="opacity-90" fill="currentColor"
                                                                                 d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z"/></svg>
                                             @run.RunId[..Math.Min(8, run.RunId.Length)]
-                                        </span>
+                                        </a>
                                     }
                                     else
                                     {
@@ -369,6 +371,22 @@
                 </table>
             </div>
         </div>
+        @if (RunsTotalPages > 1)
+        {
+            <div class="mt-2 flex items-center justify-between text-xs">
+                <span class="text-gray-500">Page @runsCurrentPage / @RunsTotalPages</span>
+                <div class="flex items-center gap-2">
+                    <button @onclick="RunsPrevPage" disabled="@(runsCurrentPage <= 1)"
+                            class="px-2.5 py-1 border border-gray-800 rounded text-gray-300 hover:bg-gray-900 disabled:opacity-40 transition-colors">
+                        Prev
+                    </button>
+                    <button @onclick="RunsNextPage" disabled="@(runsCurrentPage >= RunsTotalPages)"
+                            class="px-2.5 py-1 border border-gray-800 rounded text-gray-300 hover:bg-gray-900 disabled:opacity-40 transition-colors">
+                        Next
+                    </button>
+                </div>
+            </div>
+        }
     </div>
 </div>
 
@@ -392,6 +410,22 @@
     private readonly HashSet<string> busyActionKeys = [];
     private List<WorkflowDefinition> workflows = [];
     private List<RunSummary> workflowRuns = [];
+
+    // Runs pagination
+    private int runsCurrentPage = 1;
+    private const int RunsPageSize = 5;
+    private int RunsTotalPages => Math.Max(1, (int)Math.Ceiling((double)workflowRuns.Count / RunsPageSize));
+    private IEnumerable<RunSummary> PagedRuns => workflowRuns.Skip((runsCurrentPage - 1) * RunsPageSize).Take(RunsPageSize);
+
+    private void RunsPrevPage()
+    {
+        if (runsCurrentPage > 1) runsCurrentPage--;
+    }
+
+    private void RunsNextPage()
+    {
+        if (runsCurrentPage < RunsTotalPages) runsCurrentPage++;
+    }
     private Dictionary<string, WorkflowRunState> workflowStates = new();
     private List<string> availableDatabases = ["lipila_blaze"];
     private readonly List<WorkflowTimeZoneOption> timeZoneOptions = WorkflowTimeZones.Options.ToList();
@@ -679,8 +713,28 @@
         {
             BackgroundJobs.Enqueue<WorkflowExecutionJob>(job => job.ExecuteAsync(workflow.Id));
             SetFeedback($"'{workflow.Name}' queued — running now.", "info");
-            // Live poller (2s) will reflect the running → completed state; no blocking wait needed.
-            await ReloadAsync();
+
+            // Wait briefly for the job to register its runId, then navigate to the live view.
+            var triggeredBy = $"workflow:{workflow.Id}";
+            string? liveRunId = null;
+            for (var attempt = 0; attempt < 8; attempt++)
+            {
+                await Task.Delay(500);
+                var active = await ActiveRunTracker.GetActiveRunsAsync();
+                var match = active.FirstOrDefault(a =>
+                        a.TriggeredBy.Equals(triggeredBy, StringComparison.OrdinalIgnoreCase)
+                        && a.Status is "running" or "queued");
+                if (match != null)
+                {
+                    liveRunId = match.RunId;
+                    break;
+                }
+            }
+
+            if (liveRunId != null)
+                Nav.NavigateTo($"/admin/workflows/{workflow.Id}/live/{liveRunId}");
+            else
+                await ReloadAsync(); // fallback: just refresh the list
         }
         catch (Exception ex)
         {
