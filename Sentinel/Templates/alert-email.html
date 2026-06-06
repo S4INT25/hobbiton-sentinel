@@ -23,11 +23,6 @@
     .outer      { width: 100%; background-color: #f4f4f5; padding: 32px 16px; }
 
     .inner {
-      max-width: {
-    {
-      WIDTH
-    }
-    };
       margin: 0 auto;
     }
     .topbar     { height: 3px; background-color: {{COLOR}}; border-radius: 2px; margin-bottom: 28px; }
@@ -130,7 +125,7 @@
 </head>
 <body>
 <div class="outer">
-  <div class="inner">
+  <div class="inner" style="max-width:{{WIDTH}}">
 
     <div class="topbar"></div>
 

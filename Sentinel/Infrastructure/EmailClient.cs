@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using MimeKit;
+using ContentDisposition = MimeKit.ContentDisposition;
 
 namespace Sentinel.Infrastructure;
 
@@ -33,7 +34,8 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
         string body,
         string severity = "watching",
         IReadOnlyList<string>? recipients = null,
-        bool wide = false)
+        bool wide = false,
+        IReadOnlyList<EmbeddedChartImage>? chartImages = null)
     {
         try
         {
@@ -47,12 +49,42 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
             var pass = config["Email:Smtp:Password"]!;
 
             var htmlBody = BuildHtml(subject, body, severity, wide);
+
+            // Append chart images section to the HTML if present
+            if (chartImages is { Count: > 0 })
+            {
+                var chartHtml = BuildChartSection(chartImages);
+                // Insert before the footer
+                var footerMarker = "<table class=\"footer-rule\"";
+                var footerIdx = htmlBody.IndexOf(footerMarker, StringComparison.Ordinal);
+                if (footerIdx > 0)
+                    htmlBody = htmlBody.Insert(footerIdx, chartHtml);
+                else
+                    htmlBody = htmlBody.Replace("</body>", chartHtml + "</body>");
+            }
+
             var fullSubject = $"{prefix} {subject}";
+
+            var builder = new BodyBuilder { TextBody = body };
+
+            // Embed chart images as CID-linked resources so email clients render them inline
+            if (chartImages is { Count: > 0 })
+            {
+                foreach (var ci in chartImages)
+                {
+                    var resource = builder.LinkedResources.Add(ci.ContentId + ".png", ci.PngBytes,
+                        new ContentType("image", "png"));
+                    resource.ContentId = ci.ContentId;
+                    resource.ContentDisposition = new ContentDisposition(ContentDisposition.Inline);
+                }
+            }
+
+            builder.HtmlBody = htmlBody;
 
             var message = new MimeMessage
             {
                 Subject = fullSubject,
-                Body = new BodyBuilder { HtmlBody = htmlBody, TextBody = body }.ToMessageBody(),
+                Body = builder.ToMessageBody(),
                 Sender = new MailboxAddress(fromName, from),
                 From = { new MailboxAddress(fromName, from) }
             };
@@ -72,14 +104,33 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
             await smtp.SendAsync(message);
             await smtp.DisconnectAsync(true);
 
-            logger.LogInformation("Alert sent [{Severity}]: {Subject}", severity, fullSubject);
-            return $"Alert sent to {string.Join(", ", message.To)}";
+            logger.LogInformation("Alert sent [{Severity}]: {Subject} (charts: {ChartCount})",
+                severity, fullSubject, chartImages?.Count ?? 0);
+            return $"Alert sent to {string.Join(", ", message.To)}" +
+                   (chartImages is { Count: > 0 } ? $" with {chartImages.Count} chart(s)" : "");
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to send alert email");
             return $"Email failed: {ex.Message}";
         }
+    }
+
+    private static string BuildChartSection(IReadOnlyList<EmbeddedChartImage> charts)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("<h2>Charts</h2>");
+        foreach (var chart in charts)
+        {
+            sb.AppendLine("<div style=\"margin: 16px 0;\">");
+            if (!string.IsNullOrWhiteSpace(chart.Title))
+                sb.AppendLine($"<h3>{Encode(chart.Title)}</h3>");
+            sb.AppendLine($"<img src=\"cid:{chart.ContentId}\" alt=\"{Encode(chart.Title ?? "Chart")}\" " +
+                          "style=\"max-width:100%;height:auto;border:1px solid #e4e4e7;border-radius:6px;\" />");
+            sb.AppendLine("</div>");
+        }
+
+        return sb.ToString();
     }
 
     private static string BuildHtml(string subject, string markdownBody, string severity, bool wide = false)
@@ -327,4 +378,14 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
         text = Regex.Replace(text, @"`(.+?)`", "<code>$1</code>");
         return text;
     }
+}
+
+/// <summary>
+/// A rendered chart image ready for CID embedding in an email.
+/// </summary>
+public class EmbeddedChartImage
+{
+    public required string ContentId { get; init; }
+    public required byte[] PngBytes { get; init; }
+    public string? Title { get; init; }
 }

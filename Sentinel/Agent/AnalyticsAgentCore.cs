@@ -22,6 +22,7 @@ public class AnalyticsAgentCore(
     ClickHouseClient ch,
     SchemaLoader schemaLoader,
     EmailClient emailClient,
+    ChartRenderer chartRenderer,
     IAgentMemoryStore memoryStore,
     IConfiguration config,
     ILogger<AnalyticsAgentCore> logger)
@@ -692,14 +693,93 @@ public class AnalyticsAgentCore(
         if (string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(body))
             return "Subject and body are required.";
 
-        await Emit(onEvent, "sending_report", $"Sending {template} report: {subject}");
+        // Parse and render charts if provided
+        List<EmbeddedChartImage>? chartImages = null;
+        if (root.TryGetProperty("charts", out var chartsArr) && chartsArr.ValueKind == JsonValueKind.Array)
+        {
+            chartImages = [];
+            var chartIndex = 0;
+            foreach (var chartEl in chartsArr.EnumerateArray())
+            {
+                var chart = ParseEmailChart(chartEl);
+                if (chart == null) continue;
 
-        var result = await emailClient.SendAsync(subject, body, severity, recipients, wide: true);
+                await Emit(onEvent, "rendering_chart", $"Rendering chart: {chart.Title}");
+                var pngBytes = chartRenderer.Render(chart);
+                if (pngBytes is { Length: > 0 })
+                {
+                    chartImages.Add(new EmbeddedChartImage
+                    {
+                        ContentId = $"chart-{chartIndex++}-{Guid.NewGuid():N}",
+                        PngBytes = pngBytes,
+                        Title = chart.Title
+                    });
+                }
+            }
+
+            if (chartImages.Count == 0) chartImages = null;
+        }
+
+        await Emit(onEvent, "sending_report",
+            $"Sending {template} report: {subject}" +
+            (chartImages is { Count: > 0 } ? $" with {chartImages.Count} chart(s)" : ""));
+
+        var result = await emailClient.SendAsync(subject, body, severity, recipients,
+            wide: true, chartImages: chartImages);
         response.ReportSent = true;
         response.EmailSubject = subject;
         response.EmailBody = body;
         await Emit(onEvent, "report_sent", result);
         return result;
+    }
+
+    private static EmailChart? ParseEmailChart(JsonElement el)
+    {
+        try
+        {
+            var chart = new EmailChart
+            {
+                Type = el.TryGetProperty("type", out var t) ? t.GetString() : "bar",
+                Title = el.TryGetProperty("title", out var tt) ? tt.GetString() : null
+            };
+
+            if (el.TryGetProperty("labels", out var labels) && labels.ValueKind == JsonValueKind.Array)
+                chart.Labels = labels.EnumerateArray()
+                    .Select(l => l.GetString() ?? "")
+                    .ToList();
+
+            if (el.TryGetProperty("datasets", out var datasets) && datasets.ValueKind == JsonValueKind.Array)
+            {
+                chart.Datasets = [];
+                foreach (var ds in datasets.EnumerateArray())
+                {
+                    var dataset = new EmailChartDataset
+                    {
+                        Label = ds.TryGetProperty("label", out var dl) ? dl.GetString() : null
+                    };
+
+                    if (ds.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
+                    {
+                        dataset.Data = data.EnumerateArray()
+                            .Select(d =>
+                            {
+                                if (d.ValueKind == JsonValueKind.Number) return d.GetDecimal();
+                                if (decimal.TryParse(d.GetString(), out var parsed)) return parsed;
+                                return 0m;
+                            })
+                            .ToList();
+                    }
+
+                    chart.Datasets.Add(dataset);
+                }
+            }
+
+            return chart;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private async Task<string> HandleSaveMemory(
@@ -815,6 +895,13 @@ public class AnalyticsAgentCore(
               Tone: professional, data-driven, concise. No filler, no hedging, no casual language.
               Format numbers consistently: K 1,250.00 for currency, use percentages for changes.
               Keep it scannable — busy executives should grasp the key points in 10 seconds.
+
+              ## Charts in Emails
+              You can include charts in email reports by providing the `charts` array in `send_report`.
+              Charts are rendered as images and embedded directly in the email.
+              Use charts when visual representation adds insight — trends over time (line/area), comparisons (bar),
+              distributions (pie/doughnut). Use the data you already queried — do NOT re-query for chart data.
+              Keep charts focused: 1-3 charts per report, clear titles, reasonable data points (under 20 labels).
               """;
 
         var memoriesBlock = BuildMemoriesBlock(memories);

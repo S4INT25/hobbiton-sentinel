@@ -75,6 +75,7 @@ try
     builder.Services.AddHttpClient<ClickHouseClient>();
     builder.Services.AddHttpClient<IpLookupClient>();
     builder.Services.AddSingleton<EmailClient>();
+    builder.Services.AddSingleton<ChartRenderer>();
 
     // Stores backed by FusionCache — single implementation for dev and prod
     builder.Services.AddSingleton<ICaseStore, CaseStore>();
