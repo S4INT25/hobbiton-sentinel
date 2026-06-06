@@ -1,13 +1,26 @@
+using System.Net;
+using System.Text;
+using System.Text.RegularExpressions;
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using MimeKit;
-using System.Text;
-using System.Text.RegularExpressions;
 
 namespace Sentinel.Infrastructure;
 
 public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
 {
+    private const string FallbackTemplate = """
+                                            <html><body style="font-family:sans-serif;max-width:{{WIDTH}};margin:0 auto;padding:24px;color:#111">
+                                            <div style="border-bottom:2px solid {{COLOR}};padding-bottom:10px;margin-bottom:20px">
+                                              <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#666">Sentinel Analytics</div>
+                                              <h1 style="font-size:18px;margin:6px 0 4px">{{SUBJECT}}</h1>
+                                              <p style="font-size:12px;color:#999">{{TIMESTAMP}} &nbsp;·&nbsp; {{SEVERITY}}</p>
+                                            </div>
+                                            {{BODY}}
+                                            <p style="font-size:11px;color:#bbb;margin-top:24px;border-top:1px solid #eee;padding-top:10px">Sentinel · Automated report · Do not reply</p>
+                                            </body></html>
+                                            """;
+
     private static readonly string TemplatePath = Path.Combine(
         AppContext.BaseDirectory, "Templates", "alert-email.html");
 
@@ -19,7 +32,8 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
         string subject,
         string body,
         string severity = "watching",
-        IReadOnlyList<string>? recipients = null)
+        IReadOnlyList<string>? recipients = null,
+        bool wide = false)
     {
         try
         {
@@ -32,7 +46,7 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
             var user = config["Email:Smtp:User"]!;
             var pass = config["Email:Smtp:Password"]!;
 
-            var htmlBody = BuildHtml(subject, body, severity);
+            var htmlBody = BuildHtml(subject, body, severity, wide);
             var fullSubject = $"{prefix} {subject}";
 
             var message = new MimeMessage
@@ -68,7 +82,7 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
         }
     }
 
-    private static string BuildHtml(string subject, string markdownBody, string severity)
+    private static string BuildHtml(string subject, string markdownBody, string severity, bool wide = false)
     {
         var color = severity switch
         {
@@ -89,7 +103,8 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
 
         return template
             .Replace("{{COLOR}}", color)
-            .Replace("{{SUBJECT}}", System.Net.WebUtility.HtmlEncode(subject))
+            .Replace("{{WIDTH}}", wide ? "860px" : "620px")
+            .Replace("{{SUBJECT}}", WebUtility.HtmlEncode(subject))
             .Replace("{{PILL_CLASS}}", pillClass)
             .Replace("{{SEVERITY}}", severity)
             .Replace("{{TIMESTAMP}}", timestamp)
@@ -121,6 +136,7 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
                     sb.AppendLine(Encode(lines[i]));
                     i++;
                 }
+
                 sb.AppendLine("</pre>");
                 i++; // skip closing ```
                 continue;
@@ -135,6 +151,7 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
                     tableLines.Add(lines[i]);
                     i++;
                 }
+
                 sb.Append(RenderTable(tableLines));
                 continue;
             }
@@ -149,6 +166,7 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
                     sb.AppendLine($"  <p>{InlineFormat(Encode(content))}</p>");
                     i++;
                 }
+
                 sb.AppendLine("</blockquote>");
                 continue;
             }
@@ -157,24 +175,30 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
             if (line.StartsWith("### "))
             {
                 sb.AppendLine($"<h3>{InlineFormat(Encode(line[4..]))}</h3>");
-                i++; continue;
+                i++;
+                continue;
             }
+
             if (line.StartsWith("## "))
             {
                 sb.AppendLine($"<h2>{InlineFormat(Encode(line[3..]))}</h2>");
-                i++; continue;
+                i++;
+                continue;
             }
+
             if (line.StartsWith("# "))
             {
                 sb.AppendLine($"<h2>{InlineFormat(Encode(line[2..]))}</h2>");
-                i++; continue;
+                i++;
+                continue;
             }
 
             // ── Horizontal rule ────────────────────────────────────────────
             if (Regex.IsMatch(line.Trim(), @"^[-*]{3,}$"))
             {
                 sb.AppendLine("<hr class=\"rule\">");
-                i++; continue;
+                i++;
+                continue;
             }
 
             // ── Unordered list ─────────────────────────────────────────────
@@ -187,6 +211,7 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
                     sb.AppendLine($"  <li>{InlineFormat(Encode(text))}</li>");
                     i++;
                 }
+
                 sb.AppendLine("</ul>");
                 continue;
             }
@@ -201,6 +226,7 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
                     sb.AppendLine($"  <li>{InlineFormat(Encode(text))}</li>");
                     i++;
                 }
+
                 sb.AppendLine("</ol>");
                 continue;
             }
@@ -208,7 +234,8 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
             // ── Blank line ─────────────────────────────────────────────────
             if (string.IsNullOrWhiteSpace(line))
             {
-                i++; continue;
+                i++;
+                continue;
             }
 
             // ── Paragraph — group consecutive plain lines ──────────────────
@@ -229,6 +256,7 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
                 para.Append(lines[i].Trim());
                 i++;
             }
+
             if (para.Length > 0)
                 sb.AppendLine($"<p>{InlineFormat(Encode(para.ToString()))}</p>");
         }
@@ -251,6 +279,7 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
             row.Replace("|", "").Replace("-", "").Replace(":", "").Replace(" ", "").Length == 0;
 
         var sb = new StringBuilder();
+        sb.AppendLine("<div class=\"table-wrap\">");
         sb.AppendLine("<table class=\"data\">");
 
         // Header row
@@ -277,16 +306,19 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
                     var content = c < cells.Length ? cells[c] : "";
                     sb.AppendLine($"      <td>{InlineFormat(Encode(content))}</td>");
                 }
+
                 sb.AppendLine("    </tr>");
             }
+
             sb.AppendLine("  </tbody>");
         }
 
         sb.AppendLine("</table>");
+        sb.AppendLine("</div>");
         return sb.ToString();
     }
 
-    private static string Encode(string s) => System.Net.WebUtility.HtmlEncode(s);
+    private static string Encode(string s) => WebUtility.HtmlEncode(s);
 
     private static string InlineFormat(string text)
     {
@@ -295,16 +327,4 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
         text = Regex.Replace(text, @"`(.+?)`", "<code>$1</code>");
         return text;
     }
-
-    private const string FallbackTemplate = """
-                                            <html><body style="font-family:sans-serif;max-width:680px;margin:0 auto;padding:24px;color:#111">
-                                            <div style="border-bottom:2px solid {{COLOR}};padding-bottom:10px;margin-bottom:20px">
-                                              <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#666">Sentinel Analytics</div>
-                                              <h1 style="font-size:18px;margin:6px 0 4px">{{SUBJECT}}</h1>
-                                              <p style="font-size:12px;color:#999">{{TIMESTAMP}} &nbsp;·&nbsp; {{SEVERITY}}</p>
-                                            </div>
-                                            {{BODY}}
-                                            <p style="font-size:11px;color:#bbb;margin-top:24px;border-top:1px solid #eee;padding-top:10px">Sentinel · Automated report · Do not reply</p>
-                                            </body></html>
-                                            """;
 }

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using OpenAI;
 using OpenAI.Chat;
@@ -28,14 +29,29 @@ public class AnalyticsAgentCore(
     private const int MaxHistoryExchanges = 10;
     private const int MaxIterations = 15;
 
-    private sealed class ToolCallBuilder
+    private static readonly Regex FromTableRegex = new(
+        @"(?i)\bFROM\s+`?(\w+)`?\.`?(\w+)`?", RegexOptions.Compiled);
+
+    private static readonly Regex JoinTableRegex = new(
+        @"(?i)\bJOIN\s+`?(\w+)`?\.`?(\w+)`?", RegexOptions.Compiled);
+
+    private static readonly Regex EqualsFilterRegex = new(
+        @"(?i)\b`?(\w+)`?\s*=\s*'([^']+)'", RegexOptions.Compiled);
+
+    private static readonly Regex InFilterRegex = new(
+        @"(?i)\b`?(\w+)`?\s+IN\s*\(([^)]+)\)", RegexOptions.Compiled);
+
+    private static readonly Regex StringLiteralInList = new(
+        @"'([^']+)'", RegexOptions.Compiled);
+
+    private static readonly HashSet<string> SqlKeywords = new(StringComparer.OrdinalIgnoreCase)
     {
-        public string Id { get; set; } = "";
-        public string Name { get; set; } = "";
-        // Accumulate raw UTF-8 bytes and decode once at the end. Decoding each streamed
-        // chunk separately corrupts any multi-byte character split across a chunk boundary.
-        public List<byte> ArgBytes { get; } = [];
-    }
+        "SELECT", "FROM", "WHERE", "AND", "OR", "NOT", "IN", "LIKE", "BETWEEN",
+        "ORDER", "GROUP", "BY", "HAVING", "LIMIT", "OFFSET", "JOIN", "ON",
+        "LEFT", "RIGHT", "INNER", "OUTER", "AS", "WITH", "UNION", "ALL",
+        "DISTINCT", "CASE", "WHEN", "THEN", "ELSE", "END", "NULL", "IS",
+        "FORMAT", "INTERVAL", "DAY", "HOUR", "WEEK", "MONTH", "YEAR"
+    };
 
     public async Task<AnalyticsResponse> AskAsync(
         string prompt,
@@ -105,7 +121,8 @@ public class AnalyticsAgentCore(
 
             try
             {
-                await foreach (var update in chatClient.CompleteChatStreamingAsync(messages, options, cancellationToken))
+                await foreach (var update in
+                               chatClient.CompleteChatStreamingAsync(messages, options, cancellationToken))
                 {
                     foreach (var part in update.ContentUpdate)
                     {
@@ -123,9 +140,11 @@ public class AnalyticsAgentCore(
                             b = new ToolCallBuilder();
                             tcBuilders[tc.Index] = b;
                         }
+
                         if (!string.IsNullOrEmpty(tc.ToolCallId)) b.Id = tc.ToolCallId;
                         if (!string.IsNullOrEmpty(tc.FunctionName)) b.Name = tc.FunctionName;
-                        if (tc.FunctionArgumentsUpdate != null) b.ArgBytes.AddRange(tc.FunctionArgumentsUpdate.ToArray());
+                        if (tc.FunctionArgumentsUpdate != null)
+                            b.ArgBytes.AddRange(tc.FunctionArgumentsUpdate.ToArray());
                     }
 
                     if (update.FinishReason.HasValue) finishReason = update.FinishReason;
@@ -153,7 +172,8 @@ public class AnalyticsAgentCore(
 
             var textContent = streamTextSb.ToString();
             var streamedToolCalls = tcBuilders.OrderBy(x => x.Key)
-                .Select(x => ChatToolCall.CreateFunctionToolCall(x.Value.Id, x.Value.Name, BinaryData.FromBytes(x.Value.ArgBytes.ToArray())))
+                .Select(x => ChatToolCall.CreateFunctionToolCall(x.Value.Id, x.Value.Name,
+                    BinaryData.FromBytes(x.Value.ArgBytes.ToArray())))
                 .ToList();
 
             // Reconstruct assistant message for conversation history
@@ -182,7 +202,8 @@ public class AnalyticsAgentCore(
 
                     var toolStart = Stopwatch.GetTimestamp();
                     var result = await ExecuteToolAsync(
-                        toolCall, database, isInteractive, allowInteractiveReportSending, onEvent, response, chartResults);
+                        toolCall, database, isInteractive, allowInteractiveReportSending, onEvent, response,
+                        chartResults);
                     var durationMs = (int)Stopwatch.GetElapsedTime(toolStart).TotalMilliseconds;
 
                     // Persist the tool call for the run audit trail (workflow runs only).
@@ -200,7 +221,8 @@ public class AnalyticsAgentCore(
                         }
                         catch (Exception logEx)
                         {
-                            logger.LogWarning(logEx, "[Analytics] Failed to log tool call {Tool}", toolCall.FunctionName);
+                            logger.LogWarning(logEx, "[Analytics] Failed to log tool call {Tool}",
+                                toolCall.FunctionName);
                         }
                     }
 
@@ -218,7 +240,10 @@ public class AnalyticsAgentCore(
                                     .Select(x => x.GetString()!)
                                     .ToList();
                         }
-                        catch { /* ignore parse errors */ }
+                        catch
+                        {
+                            /* ignore parse errors */
+                        }
                     }
 
                     messages.Add(new ToolChatMessage(toolCall.Id, result));
@@ -295,7 +320,8 @@ public class AnalyticsAgentCore(
                     "get_schema" => await HandleGetSchema(root),
                     "describe_table" => await HandleDescribeTable(root),
                     "emit_chart" => HandleEmitChart(root, chartResults, onEvent).Result,
-                    "send_report" => await HandleSendReport(root, isInteractive, allowInteractiveReportSending, onEvent, response),
+                    "send_report" => await HandleSendReport(root, isInteractive, allowInteractiveReportSending, onEvent,
+                        response),
                     "save_memory" => await HandleSaveMemory(root, database, onEvent),
                     "ask_user" => HandleAskUser(root, isInteractive),
                     _ => $"Unknown tool: {toolCall.FunctionName}"
@@ -374,6 +400,7 @@ public class AnalyticsAgentCore(
                     {
                         sb.Append('\\').Append('\\'); // lone backslash → escape it
                     }
+
                     break;
                 case '\n': sb.Append("\\n"); break;
                 case '\r': sb.Append("\\r"); break;
@@ -426,7 +453,7 @@ public class AnalyticsAgentCore(
 
             if (IsClickHouseError(raw))
             {
-                var feedback = BuildErrorFeedback(raw, sql);
+                var feedback = await BuildErrorFeedbackAsync(raw, sql, defaultDb);
                 results.Add($"Query {i + 1} error:\n{feedback}");
                 await Emit(onEvent, "error", $"Query {i + 1} failed", sql);
                 continue;
@@ -438,7 +465,7 @@ public class AnalyticsAgentCore(
 
             // Truncate result for LLM context (max 50 rows in text)
             var shown = Math.Min(tableData.Rows.Count, 50);
-            var sb = new System.Text.StringBuilder();
+            var sb = new StringBuilder();
             sb.AppendLine($"Query {i + 1} ({tableData.Rows.Count} rows):");
             if (tableData.Columns.Count > 0)
             {
@@ -506,6 +533,7 @@ public class AnalyticsAgentCore(
                         _ => prop.Value.GetRawText()
                     };
                 }
+
                 rows.Add(dict);
             }
         }
@@ -533,7 +561,8 @@ public class AnalyticsAgentCore(
         AnalyticsResponse response)
     {
         if (isInteractive && !allowInteractiveReportSending)
-            return "Email sending is blocked in chat mode unless the user explicitly asks to send an email report in this message.";
+            return
+                "Email sending is blocked in chat mode unless the user explicitly asks to send an email report in this message.";
 
         var template = root.TryGetProperty("template", out var tp) ? tp.GetString() ?? "custom" : "custom";
         var subject = root.TryGetProperty("subject", out var s) ? s.GetString() ?? "" : "";
@@ -556,7 +585,7 @@ public class AnalyticsAgentCore(
 
         await Emit(onEvent, "sending_report", $"Sending {template} report: {subject}");
 
-        var result = await emailClient.SendAsync(subject, body, severity, recipients);
+        var result = await emailClient.SendAsync(subject, body, severity, recipients, wide: true);
         response.ReportSent = true;
         response.EmailSubject = subject;
         response.EmailBody = body;
@@ -617,25 +646,27 @@ public class AnalyticsAgentCore(
         if (!isInteractive)
         {
             var question = root.TryGetProperty("question", out var q) ? q.GetString() ?? "" : "";
-            return $"Running in autonomous mode — cannot ask user. Make a reasonable decision and proceed. Original question was: {question}";
+            return
+                $"Running in autonomous mode — cannot ask user. Make a reasonable decision and proceed. Original question was: {question}";
         }
-        
+
         return "Question sent to user. Waiting for response.";
     }
-    
 
-    private static string BuildSystemPrompt(string database, string schema, bool isInteractive, bool allowInteractiveReportSending, IEnumerable<AgentMemory>? memories = null)
+
+    private static string BuildSystemPrompt(string database, string schema, bool isInteractive,
+        bool allowInteractiveReportSending, IEnumerable<AgentMemory>? memories = null)
     {
         var reportPolicyBlock = isInteractive
             ? (allowInteractiveReportSending
                 ? """
-                  
+
                   ## Email Reports
                   The user explicitly asked to send an email report in this message.
                   You may use `send_report` if it improves the outcome.
                   """
                 : """
-                  
+
                   ## Email Reports
                   Do NOT call `send_report` in chat mode unless the user explicitly asks to send an email/report.
                   Focus on analysis in chat and keep results in the conversation.
@@ -644,25 +675,25 @@ public class AnalyticsAgentCore(
 
         var interactiveBlock = isInteractive
             ? """
-              
+
               ## Interaction
               You are in interactive mode. If the user's request is ambiguous or you need more context,
               use the `ask_user` tool to ask clarifying questions with choices. Examples:
               - "Which time period?" with choices ["Last 24 hours", "Last 7 days", "Last 30 days", "Custom"]
               - "Which database?" with available database options
               Don't over-ask — only when genuinely needed. If you can make a reasonable assumption, do so.
-              
+
               ## Charts
               Use `emit_chart` when visualization would help the user understand patterns or trends.
               Decide the chart type based on data shape (time series → line, categories → bar, proportions → pie).
               """
             : """
-              
+
               ## Mode
               You are in autonomous mode (running from a workflow/scheduled job).
               Do NOT call ask_user or emit_chart — these tools are not available.
               Make reasonable decisions and proceed. Default to last 7 days if no time period specified.
-              
+
               ## Email Reports
               When using `send_report`, produce a PROFESSIONAL executive-quality report suitable for management.
               Structure:
@@ -671,7 +702,7 @@ public class AnalyticsAgentCore(
               - **Key metrics** — use a clean markdown table with well-formatted numbers (K prefix, commas, percentages)
               - **Trends & insights** — specific observations with supporting data points
               - **Recommendations** — clear, actionable next steps (if applicable)
-              
+
               Tone: professional, data-driven, concise. No filler, no hedging, no casual language.
               Format numbers consistently: K 1,250.00 for currency, use percentages for changes.
               Keep it scannable — busy executives should grasp the key points in 10 seconds.
@@ -682,10 +713,10 @@ public class AnalyticsAgentCore(
         return $$"""
                  You are an intelligent analytics agent with full access to ClickHouse databases.
                  You investigate questions by querying data, analysing results, and presenting findings clearly.
-                 
+
                  You have tools: run_sql, get_schema, describe_table, emit_chart, send_report, ask_user.
                  You can also use save_memory to store durable business definitions for future analyses.
-                 
+
                  ## How to work
                  1. Think about what data you need to answer the question
                  2. Run SQL queries to get the data (batch related queries together)
@@ -693,7 +724,7 @@ public class AnalyticsAgentCore(
                  4. In chat mode: use emit_chart if visualization adds insight
                  5. If asked to send a report, use send_report with well-structured markdown content
                  6. Provide a clear, insightful explanation of your findings
-                 
+
                  ## Decision making
                  - Structure reports however makes most sense for the content — no fixed template
                  - If you find something interesting while investigating, follow up on it
@@ -703,10 +734,10 @@ public class AnalyticsAgentCore(
                  - If the user gives a durable metric/term definition (or asks you to remember one), call `save_memory`.
                  - Save only reusable business knowledge, not temporary one-off context.
                  - Keep terms short and definitions precise.
-                 
+
                  ## Primary database: `{{database}}`
                  {{schema}}
-                 
+
                  ## ClickHouse SQL Rules
                  - ONLY SELECT/WITH queries. Never INSERT/UPDATE/DELETE/DROP.
                  - Always qualify tables: `{{database}}.<table>`.
@@ -715,17 +746,17 @@ public class AnalyticsAgentCore(
                  - BANNED functions: COALESCE, ISNULL, DATEDIFF (use dateDiff), IIF, NVL, TOP, DATEADD.
                  - Use single quotes for string literals. Add LIMIT 50 unless user specifies otherwise.
                  - For time filtering: `created_at >= now() - INTERVAL 7 DAY`.
-                 
+
                  ## Filter Values
                  The schema lists allowed values for LowCardinality columns. Use ONLY these exact values (case-sensitive).
                  Never guess or invent filter values.
-                 
+
                  ## Currency
                  All amounts are Zambian Kwacha (ZMW). Use "K" prefix in explanations (e.g. K 1,250.00). Never use $.
                  {{memoriesBlock}}
                  {{interactiveBlock}}
                  {{reportPolicyBlock}}
-                 
+
                  ## Response style
                  After your tool calls complete, write a clear, insightful final response. Reference specific numbers.
                  Be concise but substantive. Don't repeat the query — focus on what the data means.
@@ -758,7 +789,7 @@ public class AnalyticsAgentCore(
 
         return mentionsEmailOrReport && hasDeliveryVerb;
     }
-    
+
 
     private async Task<string?> ValidateCategoricalFiltersAsync(string sql, string database)
     {
@@ -779,6 +810,7 @@ public class AnalyticsAgentCore(
                     set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     allAllowed[col] = set;
                 }
+
                 foreach (var v in values) set.Add(v);
             }
         }
@@ -805,31 +837,92 @@ public class AnalyticsAgentCore(
                "\n\nUse ONLY the allowed values listed above. Pick the closest match.";
     }
 
-    private static string BuildErrorFeedback(string error, string sql)
+    /// <summary>
+    /// Build a corrective feedback message for a failed SQL query. When the error involves
+    /// unknown columns/identifiers, we fetch and include the actual table schema so the agent
+    /// can self-correct in one retry instead of guessing.
+    /// </summary>
+    private async Task<string> BuildErrorFeedbackAsync(string error, string sql, string database)
     {
-        var feedback = $"ClickHouse error:\n{error}\n\nSQL:\n{sql}\n\n";
-        if (error.Contains("Unknown table", StringComparison.OrdinalIgnoreCase))
-            feedback += "Tables are prefixed with `public_`. Use only tables from the schema.";
-        else if (error.Contains("Unknown column", StringComparison.OrdinalIgnoreCase) ||
-                 error.Contains("Missing columns", StringComparison.OrdinalIgnoreCase))
-            feedback += "Column name wrong. Check the schema — names are case-sensitive.";
-        else if (error.Contains("COALESCE", StringComparison.OrdinalIgnoreCase))
-            feedback += "Banned function. Use ifNull() instead.";
-        else
-            feedback += "Fix the SQL syntax for ClickHouse.";
-        return feedback;
-    }
+        var sb = new StringBuilder();
+        sb.AppendLine($"ClickHouse error:\n{error}");
+        sb.AppendLine($"\nFailing SQL:\n{sql}\n");
 
-    private static readonly Regex FromTableRegex = new(
-        @"(?i)\bFROM\s+`?(\w+)`?\.`?(\w+)`?", RegexOptions.Compiled);
-    private static readonly Regex JoinTableRegex = new(
-        @"(?i)\bJOIN\s+`?(\w+)`?\.`?(\w+)`?", RegexOptions.Compiled);
-    private static readonly Regex EqualsFilterRegex = new(
-        @"(?i)\b`?(\w+)`?\s*=\s*'([^']+)'", RegexOptions.Compiled);
-    private static readonly Regex InFilterRegex = new(
-        @"(?i)\b`?(\w+)`?\s+IN\s*\(([^)]+)\)", RegexOptions.Compiled);
-    private static readonly Regex StringLiteralInList = new(
-        @"'([^']+)'", RegexOptions.Compiled);
+        var isColumnError =
+            error.Contains("Unknown expression", StringComparison.OrdinalIgnoreCase) ||
+            error.Contains("Unknown identifier", StringComparison.OrdinalIgnoreCase) ||
+            error.Contains("Missing columns", StringComparison.OrdinalIgnoreCase) ||
+            error.Contains("Unknown column", StringComparison.OrdinalIgnoreCase);
+
+        var isTableError =
+            error.Contains("Unknown table", StringComparison.OrdinalIgnoreCase) ||
+            error.Contains("Table", StringComparison.OrdinalIgnoreCase) &&
+            error.Contains("doesn't exist", StringComparison.OrdinalIgnoreCase);
+
+        var isTypeError =
+            error.Contains("Illegal type", StringComparison.OrdinalIgnoreCase) ||
+            error.Contains("TYPE_MISMATCH", StringComparison.OrdinalIgnoreCase);
+
+        var isFunctionError =
+            error.Contains("Unknown function", StringComparison.OrdinalIgnoreCase) ||
+            error.Contains("COALESCE", StringComparison.OrdinalIgnoreCase);
+
+        if (isTableError)
+        {
+            sb.AppendLine(
+                "FIX: The table does not exist. Tables are case-sensitive and prefixed with the database name (e.g. `lipila_blaze.public_transactions`). Use only tables from the schema provided.");
+        }
+        else if (isColumnError)
+        {
+            sb.AppendLine(
+                "FIX: A column name is wrong or does not exist on this table. Column names are CASE-SENSITIVE in ClickHouse.");
+
+            // Fetch the real columns for each table referenced in the query so the agent
+            // can see exactly what's available and fix the query in one retry.
+            var tables = ExtractReferencedTables(sql, database);
+            foreach (var table in tables.Take(3)) // limit to avoid huge payloads
+            {
+                try
+                {
+                    var cols = await ch.QueryAsync(
+                        $"SELECT name, type FROM system.columns WHERE database = '{database}' AND table = '{table}' ORDER BY position FORMAT TabSeparatedWithNames");
+                    if (!IsClickHouseError(cols))
+                    {
+                        sb.AppendLine($"\nActual columns on `{database}.{table}`:");
+                        sb.AppendLine(cols);
+                    }
+                }
+                catch
+                {
+                    /* best-effort */
+                }
+            }
+        }
+        else if (isFunctionError)
+        {
+            sb.AppendLine("FIX: That function is not available in ClickHouse. Common replacements:");
+            sb.AppendLine("  - COALESCE → ifNull(a, b)");
+            sb.AppendLine("  - NVL → ifNull(a, b)");
+            sb.AppendLine("  - DATE_TRUNC('month', col) → toStartOfMonth(col)");
+            sb.AppendLine("  - DATEDIFF → dateDiff('unit', start, end)");
+            sb.AppendLine("  - STRING_AGG → groupArray(col)");
+        }
+        else if (isTypeError)
+        {
+            sb.AppendLine("FIX: Type mismatch. Common fixes:");
+            sb.AppendLine("  - Comparing String to number → use toString(col) or toUInt64(col)");
+            sb.AppendLine("  - Date arithmetic → use toDate(col) + INTERVAL N DAY");
+        }
+        else
+        {
+            sb.AppendLine(
+                "FIX: Review the error above and correct the SQL. Remember ClickHouse syntax differs from MySQL/PostgreSQL.");
+        }
+
+        sb.AppendLine(
+            "\nRewrite the query using only columns and functions that exist. Call run_sql again with the corrected SQL.");
+        return sb.ToString();
+    }
 
     private static List<string> ExtractReferencedTables(string sql, string database)
     {
@@ -851,7 +944,12 @@ public class AnalyticsAgentCore(
         {
             var col = m.Groups[1].Value;
             if (IsReservedKeyword(col)) continue;
-            if (!map.TryGetValue(col, out var set)) { set = []; map[col] = set; }
+            if (!map.TryGetValue(col, out var set))
+            {
+                set = [];
+                map[col] = set;
+            }
+
             set.Add(m.Groups[2].Value);
         }
 
@@ -859,22 +957,18 @@ public class AnalyticsAgentCore(
         {
             var col = m.Groups[1].Value;
             if (IsReservedKeyword(col)) continue;
-            if (!map.TryGetValue(col, out var set)) { set = []; map[col] = set; }
+            if (!map.TryGetValue(col, out var set))
+            {
+                set = [];
+                map[col] = set;
+            }
+
             foreach (Match lit in StringLiteralInList.Matches(m.Groups[2].Value))
                 set.Add(lit.Groups[1].Value);
         }
 
         return map.Where(kv => kv.Value.Count > 0).Select(kv => (kv.Key, kv.Value.ToList())).ToList();
     }
-
-    private static readonly HashSet<string> SqlKeywords = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "SELECT", "FROM", "WHERE", "AND", "OR", "NOT", "IN", "LIKE", "BETWEEN",
-        "ORDER", "GROUP", "BY", "HAVING", "LIMIT", "OFFSET", "JOIN", "ON",
-        "LEFT", "RIGHT", "INNER", "OUTER", "AS", "WITH", "UNION", "ALL",
-        "DISTINCT", "CASE", "WHEN", "THEN", "ELSE", "END", "NULL", "IS",
-        "FORMAT", "INTERVAL", "DAY", "HOUR", "WEEK", "MONTH", "YEAR"
-    };
 
     private static bool IsReservedKeyword(string word) => SqlKeywords.Contains(word);
 
@@ -911,15 +1005,21 @@ public class AnalyticsAgentCore(
                             };
                         else rowDict[col] = "";
                     }
+
                     data.Rows.Add(rowDict);
                 }
             }
         }
-        catch { /* return empty table */ }
+        catch
+        {
+            /* return empty table */
+        }
+
         return data;
     }
 
-    private static async Task Emit(Func<AnalyticsStreamEvent, Task>? onEvent, string type, string message, string? sql = null)
+    private static async Task Emit(Func<AnalyticsStreamEvent, Task>? onEvent, string type, string message,
+        string? sql = null)
     {
         if (onEvent != null)
             await onEvent(new AnalyticsStreamEvent
@@ -929,6 +1029,17 @@ public class AnalyticsAgentCore(
                 Sql = sql,
                 Attempt = 1
             });
+    }
+
+    private sealed class ToolCallBuilder
+    {
+        public string Id { get; set; } = "";
+
+        public string Name { get; set; } = "";
+
+        // Accumulate raw UTF-8 bytes and decode once at the end. Decoding each streamed
+        // chunk separately corrupts any multi-byte character split across a chunk boundary.
+        public List<byte> ArgBytes { get; } = [];
     }
 }
 
@@ -943,8 +1054,7 @@ public class AnalyticsResponse
     public List<string> Findings { get; set; } = [];
     public List<string> RecommendedActions { get; set; } = [];
 
-    [System.Text.Json.Serialization.JsonIgnore]
-    public string? RawResult { get; set; }
+    [JsonIgnore] public string? RawResult { get; set; }
 
     public string? Error { get; set; }
     public string ChartType { get; set; } = "none";
@@ -957,12 +1067,16 @@ public class AnalyticsResponse
 
     /// <summary>Non-null when the agent is waiting for user input (interactive mode).</summary>
     public string? PendingQuestion { get; set; }
+
     /// <summary>Choices offered by the agent (if any).</summary>
     public List<string>? PendingChoices { get; set; }
+
     /// <summary>True if the agent already sent an email via the send_report tool.</summary>
     public bool ReportSent { get; set; }
+
     /// <summary>Subject of the email sent via send_report (captured for audit storage).</summary>
     public string? EmailSubject { get; set; }
+
     /// <summary>Body of the email sent via send_report (captured for audit storage).</summary>
     public string? EmailBody { get; set; }
 }

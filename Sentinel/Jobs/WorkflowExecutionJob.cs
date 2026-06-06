@@ -1,8 +1,8 @@
 using Hangfire;
-using Sentinel.Agent;
 using Sentinel.Admin;
 using Sentinel.Admin.Models;
 using Sentinel.Admin.Stores;
+using Sentinel.Agent;
 using Sentinel.Infrastructure;
 
 namespace Sentinel.Jobs;
@@ -113,10 +113,10 @@ public class WorkflowExecutionJob(
         var prompt = workflow.CustomPrompt + recipientHint + """
 
 
-            IMPORTANT: You MUST call the send_report tool to deliver your findings by email.
-            Do NOT finish without calling send_report — if you do not call it the workflow will be considered failed.
-            Use template="insights", include an executive summary, key metrics, and recommendations in the body.
-            """;
+                                                             IMPORTANT: You MUST call the send_report tool to deliver your findings by email.
+                                                             Do NOT finish without calling send_report — if you do not call it the workflow will be considered failed.
+                                                             Use template="insights", include an executive summary, key metrics, and recommendations in the body.
+                                                             """;
 
         AnalyticsResponse? result = null;
         var status = "error";
@@ -171,11 +171,11 @@ public class WorkflowExecutionJob(
                     "Workflow {WorkflowId} run {RunId}: agent did not call send_report — emailing its analysis as a fallback",
                     workflow.Id, runId);
 
-                await emailClient.SendAsync(fallbackSubject, explanation, "watching", recipients?.ToList());
+                await emailClient.SendAsync(fallbackSubject, explanation, "watching", recipients?.ToList(), wide: true);
 
-                result.ReportSent   = true;
+                result.ReportSent = true;
                 result.EmailSubject = fallbackSubject;
-                result.EmailBody    = explanation;
+                result.EmailBody = explanation;
             }
 
             logger.LogInformation(
@@ -194,21 +194,21 @@ public class WorkflowExecutionJob(
         {
             await runLogStore.SaveSummaryAsync(new RunSummary
             {
-                RunId        = runId,
-                StartedAt    = startedAt,
-                FinishedAt   = DateTime.UtcNow,
-                Iterations   = (ushort)maxIteration,
-                InputTokens  = (uint)(result?.InputTokens  ?? 0),
+                RunId = runId,
+                StartedAt = startedAt,
+                FinishedAt = DateTime.UtcNow,
+                Iterations = (ushort)maxIteration,
+                InputTokens = (uint)(result?.InputTokens ?? 0),
                 OutputTokens = (uint)(result?.OutputTokens ?? 0),
-                CasesCreated    = 0,
-                CasesResolved   = 0,
-                AlertsSent   = (ushort)((result?.ReportSent ?? false) ? 1 : 0),
-                Status       = status,
-                TriggeredBy  = triggeredBy,
-                Error        = error ?? (status == "error" ? result?.Error : null),
+                CasesCreated = 0,
+                CasesResolved = 0,
+                AlertsSent = (ushort)((result?.ReportSent ?? false) ? 1 : 0),
+                Status = status,
+                TriggeredBy = triggeredBy,
+                Error = error ?? (status == "error" ? result?.Error : null),
                 // Persist the generated email content so it can be reviewed later
                 EmailSubject = result?.EmailSubject,
-                EmailBody    = result?.EmailBody
+                EmailBody = result?.EmailBody
             });
 
             if (status == "completed")

@@ -21,7 +21,15 @@
     img   { border: 0; display: block; }
 
     .outer      { width: 100%; background-color: #f4f4f5; padding: 32px 16px; }
-    .inner      { max-width: 620px; margin: 0 auto; }
+
+    .inner {
+        max-width: {
+    {
+        WIDTH
+    }
+    };
+        margin: 0 auto;
+    }
     .topbar     { height: 3px; background-color: {{COLOR}}; border-radius: 2px; margin-bottom: 28px; }
 
     .header-org   { font-size: 10px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: #a1a1aa; margin-bottom: 6px; }
@@ -51,8 +59,30 @@
     blockquote { margin: 16px 0; padding: 10px 14px; border-left: 3px solid #d4d4d8; background-color: #ebebec; border-radius: 0 3px 3px 0; }
     blockquote p { margin: 0; color: #71717a; font-size: 13px; font-style: italic; }
 
-    table.data { width: 100%; font-size: 13px; margin: 10px 0; }
-    table.data th { padding: 7px 12px; text-align: left; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #a1a1aa; border-bottom: 1px solid #e4e4e7; }
+    .table-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        margin: 10px 0;
+    }
+
+    table.data {
+        width: 100%;
+        min-width: 480px;
+        font-size: 13px;
+        border-collapse: collapse;
+    }
+
+    table.data th {
+        padding: 7px 12px;
+        text-align: left;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #a1a1aa;
+        border-bottom: 1px solid #e4e4e7;
+        white-space: nowrap;
+    }
     table.data td { padding: 8px 12px; color: #52525b; border-bottom: 1px solid #f4f4f5; }
     table.data td strong { color: #18181b; }
 
