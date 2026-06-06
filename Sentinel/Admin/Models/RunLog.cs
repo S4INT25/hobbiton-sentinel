@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Sentinel.Admin.Models;
@@ -14,4 +13,11 @@ public class RunLog
     [Column("result")] public string Result { get; set; } = "";
     [Column("started_at")] public DateTimeOffset StartedAt { get; set; }
     [Column("duration_ms")] public uint DurationMs { get; set; }
+
+    /// <summary>
+    /// Discriminator: "tool_call" (default) or "message" for conversation history entries.
+    /// Message entries use ToolName as role (system/user/assistant) and Result as content.
+    /// </summary>
+    [Column("log_type")]
+    public string LogType { get; set; } = "tool_call";
 }

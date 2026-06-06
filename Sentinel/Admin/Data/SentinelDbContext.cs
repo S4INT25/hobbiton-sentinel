@@ -5,13 +5,13 @@ namespace Sentinel.Admin.Data;
 
 public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : DbContext(options)
 {
-    public DbSet<RunLog>             RunLogs         => Set<RunLog>();
-    public DbSet<RunSummary>         RunSummaries    => Set<RunSummary>();
-    public DbSet<AuditLog>           AuditLogs       => Set<AuditLog>();
-    public DbSet<FraudPatternEntity> FraudPatterns   => Set<FraudPatternEntity>();
-    public DbSet<EvidenceSource>     EvidenceSources => Set<EvidenceSource>();
-    public DbSet<WorkflowDefinition> Workflows       => Set<WorkflowDefinition>();
-    public DbSet<AgentMemory>        AgentMemories   => Set<AgentMemory>();
+    public DbSet<RunLog> RunLogs => Set<RunLog>();
+    public DbSet<RunSummary> RunSummaries => Set<RunSummary>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<FraudPatternEntity> FraudPatterns => Set<FraudPatternEntity>();
+    public DbSet<EvidenceSource> EvidenceSources => Set<EvidenceSource>();
+    public DbSet<WorkflowDefinition> Workflows => Set<WorkflowDefinition>();
+    public DbSet<AgentMemory> AgentMemories => Set<AgentMemory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -49,6 +49,7 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
             e.Property(r => r.Result).HasColumnName("result");
             e.Property(r => r.StartedAt).HasColumnName("started_at");
             e.Property(r => r.DurationMs).HasColumnName("duration_ms");
+            e.Property(r => r.LogType).HasColumnName("log_type").HasDefaultValue("tool_call");
             e.HasIndex(r => r.RunId);
         });
 

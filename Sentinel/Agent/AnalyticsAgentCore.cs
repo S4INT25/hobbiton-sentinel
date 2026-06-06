@@ -98,9 +98,36 @@ public class AnalyticsAgentCore(
         var chartResults = new List<QueryResult>();
         string? pendingQuestion = null;
         List<string>? pendingChoices = null;
-        var nudgedToSendReport = false;
+        var sendReportNudgeCount = 0;
+        const int maxNudges = 3;
+        var allExplanationParts = new List<string>();
+
+        // Helper to log a conversation message to the run audit trail
+        async Task LogMessage(string role, string content, int iter)
+        {
+            if (onToolCall == null || string.IsNullOrWhiteSpace(content)) return;
+            try
+            {
+                var truncated = content.Length > 10_000 ? content[..10_000] : content;
+                await onToolCall(new AgentToolCall(
+                    Iteration: iter,
+                    ToolName: role,
+                    Args: "",
+                    Result: truncated,
+                    DurationMs: 0,
+                    StartedAt: DateTime.UtcNow,
+                    LogType: "message"));
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "[Analytics] Failed to log {Role} message", role);
+            }
+        }
 
         await Emit(onEvent, "thinking", "Analysing your question…");
+
+        // Log the initial user prompt
+        await LogMessage("user", prompt, 0);
 
         while (iteration++ < MaxIterations)
         {
@@ -186,26 +213,51 @@ public class AnalyticsAgentCore(
             logger.LogInformation("[Analytics] Iteration {N}: finish={Reason} tools={Tools} tokens in={In} out={Out}",
                 iteration, finishReason, streamedToolCalls.Count, totalInput, totalOutput);
 
+            // Log assistant response to conversation history
+            if (!string.IsNullOrWhiteSpace(textContent))
+                await LogMessage("assistant", textContent, iteration);
+
             if (finishReason == ChatFinishReason.Stop)
             {
+                // Accumulate explanation text across iterations. The agent may produce its
+                // real analysis on one iteration, then a short "sure, sending now" on the next.
+                // We keep ALL substantive text so the fallback email path always has content.
                 if (!string.IsNullOrWhiteSpace(textContent))
-                    response.Explanation = textContent;
+                    allExplanationParts.Add(textContent.Trim());
+
+                // Always surface the longest/best explanation we've seen.
+                var bestExplanation = allExplanationParts.OrderByDescending(p => p.Length).FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(bestExplanation))
+                    response.Explanation = bestExplanation;
 
                 // In autonomous (workflow) mode the agent MUST call send_report before stopping.
-                // If it wrote a text answer but forgot the tool call, nudge it back into the loop
-                // rather than accepting a silent finish. Allow one nudge only to avoid infinite loops.
-                if (!isInteractive && !response.ReportSent && !nudgedToSendReport && iteration < MaxIterations)
+                // Nudge it back into the loop, up to maxNudges times with escalating urgency.
+                if (!isInteractive && !response.ReportSent && sendReportNudgeCount < maxNudges &&
+                    iteration < MaxIterations)
                 {
-                    nudgedToSendReport = true;
+                    sendReportNudgeCount++;
                     logger.LogWarning(
-                        "[Analytics] Autonomous agent stopped without calling send_report — nudging to retry (iteration {N})",
-                        iteration);
-                    messages.Add(new UserChatMessage(
-                        "You finished without calling `send_report`. This is a scheduled workflow — " +
-                        "the ONLY way to deliver results is via `send_report`. " +
-                        "Call `send_report` now with the analysis you just produced. " +
-                        "Use template=\"insights\", a clear subject line, and include the full report body."));
-                    await Emit(onEvent, "fixing", "Agent forgot to send report — nudging to retry…");
+                        "[Analytics] Autonomous agent stopped without calling send_report — nudge {Nudge}/{Max} (iteration {N})",
+                        sendReportNudgeCount, maxNudges, iteration);
+
+                    var nudgeMessage = sendReportNudgeCount switch
+                    {
+                        1 => "You finished without calling `send_report`. This is a scheduled workflow — " +
+                             "the ONLY way to deliver results is via `send_report`. " +
+                             "Call `send_report` now with the analysis you just produced. " +
+                             "Use template=\"insights\", a clear subject line, and include the full report body.",
+                        2 => "You STILL did not call the `send_report` tool. Do NOT reply with text. " +
+                             "You MUST make a tool call to `send_report` right now. " +
+                             "Arguments: template=\"insights\", subject=\"<your subject>\", body=\"<your analysis>\", severity=\"watching\".",
+                        _ => "FINAL ATTEMPT: Call the send_report tool immediately. " +
+                             "Do not output any text — ONLY a tool call. " +
+                             "send_report(template=\"insights\", subject=\"Scheduled Report\", body=\"<full analysis>\", severity=\"watching\")"
+                    };
+
+                    messages.Add(new UserChatMessage(nudgeMessage));
+                    await LogMessage("system_nudge", nudgeMessage, iteration);
+                    await Emit(onEvent, "fixing",
+                        $"Agent forgot to send report — nudge attempt {sendReportNudgeCount}/{maxNudges}…");
                     continue;
                 }
 
@@ -293,6 +345,47 @@ public class AnalyticsAgentCore(
             response.Columns = primary.Columns;
             response.Rows = primary.Rows;
             response.RowCount = primary.RowCount;
+        }
+
+        // ─── Nuclear fallback: the agent exhausted all iterations or nudges without ever
+        // calling send_report. If we have accumulated explanation text, send the report
+        // programmatically from the engine rather than failing the run. This is the last
+        // line of defence — it guarantees email workflows always deliver something.
+        if (!isInteractive && !response.ReportSent)
+        {
+            var bestExplanation = allExplanationParts
+                .OrderByDescending(p => p.Length)
+                .FirstOrDefault(p => p.Length >= 40);
+
+            if (!string.IsNullOrWhiteSpace(bestExplanation))
+            {
+                logger.LogWarning(
+                    "[Analytics] Agent never called send_report after {Iterations} iterations and {Nudges} nudges — force-sending from engine",
+                    iteration - 1, sendReportNudgeCount);
+
+                try
+                {
+                    // Build a reasonable subject from the first line of the explanation
+                    var firstLine = bestExplanation.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                        .FirstOrDefault()?.Trim() ?? "Scheduled Report";
+                    if (firstLine.Length > 80) firstLine = firstLine[..77] + "…";
+                    var subject = firstLine.StartsWith('#') ? firstLine.TrimStart('#', ' ') : firstLine;
+
+                    await emailClient.SendAsync(subject, bestExplanation, "watching", wide: true);
+                    response.ReportSent = true;
+                    response.EmailSubject = subject;
+                    response.EmailBody = bestExplanation;
+
+                    await LogMessage("system_fallback",
+                        $"Engine force-sent report because agent did not call send_report. Subject: {subject}",
+                        iteration - 1);
+                    await Emit(onEvent, "report_sent", $"Fallback: sent report — {subject}");
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "[Analytics] Failed to force-send fallback report");
+                }
+            }
         }
 
         await Emit(onEvent, "done", response.Explanation ?? "Analysis complete.");
@@ -483,17 +576,13 @@ public class AnalyticsAgentCore(
             await Emit(onEvent, "result",
                 $"Query {i + 1}: {tableData.Rows.Count} rows", sql);
 
-            // Truncate result for LLM context (max 50 rows in text)
-            var shown = Math.Min(tableData.Rows.Count, 50);
             var sb = new StringBuilder();
             sb.AppendLine($"Query {i + 1} ({tableData.Rows.Count} rows):");
             if (tableData.Columns.Count > 0)
             {
                 sb.AppendLine(string.Join(" | ", tableData.Columns));
-                foreach (var row in tableData.Rows.Take(shown))
+                foreach (var row in tableData.Rows)
                     sb.AppendLine(string.Join(" | ", tableData.Columns.Select(c => row.GetValueOrDefault(c, ""))));
-                if (tableData.Rows.Count > shown)
-                    sb.AppendLine($"... ({tableData.Rows.Count - shown} more rows)");
             }
 
             results.Add(sb.ToString());
@@ -1111,7 +1200,8 @@ public record AgentToolCall(
     string Args,
     string Result,
     int DurationMs,
-    DateTime StartedAt);
+    DateTime StartedAt,
+    string LogType = "tool_call");
 
 public class QueryResult
 {

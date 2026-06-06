@@ -140,7 +140,8 @@ public class WorkflowExecutionJob(
                         Args = tc.Args,
                         Result = tc.Result.Length > 10_000 ? tc.Result[..10_000] : tc.Result,
                         StartedAt = tc.StartedAt,
-                        DurationMs = (uint)tc.DurationMs
+                        DurationMs = (uint)tc.DurationMs,
+                        LogType = tc.LogType
                     });
                 },
                 cancellationToken: ct);
