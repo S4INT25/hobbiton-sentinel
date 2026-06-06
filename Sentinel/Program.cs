@@ -1,22 +1,24 @@
+using System.ClientModel;
+using ApexCharts;
 using Hangfire;
 using Hangfire.Dashboard.BasicAuthorization;
 using Hangfire.Redis.StackExchange;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using OpenAI;
-using Serilog;
-using Serilog.Events;
-using StackExchange.Redis;
-using System.ClientModel;
 using Sentinel.Admin;
 using Sentinel.Admin.Auth;
+using Sentinel.Admin.Components;
 using Sentinel.Admin.Data;
+using Sentinel.Admin.Models;
 using Sentinel.Admin.Stores;
 using Sentinel.Agent;
-using ApexCharts;
 using Sentinel.Infrastructure;
 using Sentinel.Jobs;
 using Sentinel.Memory;
+using Serilog;
+using Serilog.Events;
+using StackExchange.Redis;
 using ZiggyCreatures.Caching.Fusion;
 using ZiggyCreatures.Caching.Fusion.Serialization.SystemTextJson;
 
@@ -144,7 +146,6 @@ try
     builder.Services.AddSingleton<WorkflowSchedulerService>();
     builder.Services.AddSingleton<AnalyticsQueryWorker>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<AnalyticsQueryWorker>());
-    builder.Services.AddHostedService<FraudSchedulerService>();
     builder.Services.AddApexCharts();
 
     // ── Authentication & Authorization ──
@@ -217,7 +218,7 @@ try
     app.UseStaticFiles();
     app.UseAntiforgery();
     app.MapGet("/", () => Results.Redirect("/admin/chat"));
-    app.MapRazorComponents<Sentinel.Admin.Components.App>()
+    app.MapRazorComponents<App>()
         .AddInteractiveServerRenderMode();
 
     app.MapAdminApi();
@@ -264,7 +265,7 @@ static async Task SeedAdminUser(WebApplication app)
     var username = config["Admin:DefaultUsername"] ?? "admin";
     var password = config["Admin:DefaultPassword"] ?? "sentinel2025!";
 
-    var user = new Sentinel.Admin.Models.AdminUser
+    var user = new AdminUser
     {
         Username = username,
         PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
