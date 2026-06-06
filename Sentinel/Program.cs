@@ -138,7 +138,9 @@ try
     builder.Services.AddScoped<FraudAgent>();
     builder.Services.AddScoped<SentinelJob>();
     builder.Services.AddScoped<WorkflowExecutionJob>();
-    builder.Services.AddScoped<AnalyticsAgent>();
+    builder.Services.AddScoped<AnalyticsAgentCore>();
+    builder.Services.AddScoped<ChatAnalyticsAgent>();
+    builder.Services.AddScoped<WorkflowAnalyticsAgent>();
     builder.Services.AddSingleton<WorkflowSchedulerService>();
     builder.Services.AddSingleton<AnalyticsQueryWorker>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<AnalyticsQueryWorker>());
