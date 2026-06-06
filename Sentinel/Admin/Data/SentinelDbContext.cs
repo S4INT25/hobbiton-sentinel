@@ -30,6 +30,7 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
             e.Property(r => r.AlertsSent).HasColumnName("alerts_sent");
             e.Property(r => r.Status).HasColumnName("status");
             e.Property(r => r.TriggeredBy).HasColumnName("triggered_by");
+            e.Property(r => r.Error).HasColumnName("error");
             e.Property(r => r.EmailSubject).HasColumnName("email_subject");
             e.Property(r => r.EmailBody).HasColumnName("email_body");
             e.HasIndex(r => r.StartedAt);

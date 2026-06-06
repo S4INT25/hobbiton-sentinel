@@ -179,7 +179,7 @@
                             }
                             else if (state.LastRunStatus is "error" or "failed")
                             {
-                                <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">Last run failed</span>
+                                <span class="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20" title="@state.LastRunError">Last run failed</span>
                             }
                         </div>
                         @if (!string.IsNullOrWhiteSpace(workflow.Description))
@@ -301,7 +301,11 @@
                                 <td class="px-4 py-2.5 text-gray-400 text-xs" title="@FormatInZone(run.StartedAt, RunTimeZoneId(run))">@FormatRunStarted(run)</td>
                                 <td class="px-4 py-2.5 text-gray-400 text-xs">@FormatDuration(duration)</td>
                                 <td class="px-4 py-2.5">
-                                    <span class="@RunStatusClasses(run.Status)">@run.Status</span>
+                                    <span class="@RunStatusClasses(run.Status)" title="@run.Error">@run.Status</span>
+                                    @if (run.Status is "error" or "failed" && !string.IsNullOrWhiteSpace(run.Error))
+                                    {
+                                        <div class="mt-0.5 max-w-[260px] truncate text-[10px] text-rose-400/80" title="@run.Error">@run.Error</div>
+                                    }
                                 </td>
                                 <td class="px-4 py-2.5 text-gray-300 font-mono text-xs tabular-nums">@((run.InputTokens + run.OutputTokens).ToString("N0"))</td>
                             </tr>
@@ -462,6 +466,7 @@
                 TimeZoneId = wf.TimeZoneId,
                 LastRunAt = lastRunAt,
                 LastRunStatus = lastRunStatus,
+                LastRunError = lastRun?.Error,
                 LastRunDuration = lastRun != null && lastRun.FinishedAt > lastRun.StartedAt
                     ? lastRun.FinishedAt - lastRun.StartedAt
                     : null,
@@ -948,6 +953,7 @@
         public string TimeZoneId { get; set; } = WorkflowTimeZones.DefaultId;
         public DateTimeOffset? LastRunAt { get; set; }
         public string? LastRunStatus { get; set; }
+        public string? LastRunError { get; set; }
         public TimeSpan? LastRunDuration { get; set; }
         public DateTimeOffset? NextRunAt { get; set; }
         public bool IsRunning { get; set; }

@@ -120,6 +120,7 @@ public class WorkflowExecutionJob(
 
         AnalyticsResponse? result = null;
         var status = "error";
+        string? error = null;
         var maxIteration = 0;
         try
         {
@@ -181,6 +182,14 @@ public class WorkflowExecutionJob(
                 "Workflow {WorkflowId} run {RunId} completed. ReportSent={Sent} Subject={Subject}",
                 workflow.Id, runId, result.ReportSent, result.EmailSubject);
         }
+        catch (Exception ex)
+        {
+            // Capture the reason so it can be shown in the dashboard / runs UI, then rethrow
+            // so Hangfire still records the failure and retries.
+            status = "error";
+            error = ex.Message;
+            throw;
+        }
         finally
         {
             await runLogStore.SaveSummaryAsync(new RunSummary
@@ -196,6 +205,7 @@ public class WorkflowExecutionJob(
                 AlertsSent   = (ushort)((result?.ReportSent ?? false) ? 1 : 0),
                 Status       = status,
                 TriggeredBy  = triggeredBy,
+                Error        = error ?? (status == "error" ? result?.Error : null),
                 // Persist the generated email content so it can be reviewed later
                 EmailSubject = result?.EmailSubject,
                 EmailBody    = result?.EmailBody

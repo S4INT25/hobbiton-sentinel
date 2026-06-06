@@ -17,6 +17,8 @@ public class RunSummary
     [Column("alerts_sent")] public ushort AlertsSent { get; set; }
     [Column("status")] public string Status { get; set; } = "completed"; // completed, incomplete, error
     [Column("triggered_by")] public string TriggeredBy { get; set; } = "scheduler";
+    /// <summary>Failure reason when Status is error/failed. Null on success.</summary>
+    [Column("error")] public string? Error { get; set; }
     /// <summary>Subject of the email that was generated and sent (workflow runs only).</summary>
     [Column("email_subject")] public string? EmailSubject { get; set; }
     /// <summary>Full markdown body of the email that was generated and sent (workflow runs only).</summary>
