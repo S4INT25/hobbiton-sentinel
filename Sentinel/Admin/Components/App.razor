@@ -68,38 +68,120 @@
     <script src="_framework/blazor.web.js" autostart="false"></script>
     <script src="js/chart-interop.js"></script>
 
-    <!-- Reconnect UI -->
-    <div id="blazor-reconnect-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(3,7,18,0.85);backdrop-filter:blur(4px);align-items:center;justify-content:center;">
-        <div style="background:#111827;border:1px solid #1f2937;border-radius:12px;padding:24px 32px;text-align:center;max-width:320px;box-shadow:0 25px 50px rgba(0,0,0,0.6);">
-            <div id="blazor-reconnect-spinner" style="width:36px;height:36px;border:3px solid #1f2937;border-top-color:#10b981;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 16px;"></div>
-            <p style="color:#f9fafb;font-size:14px;font-weight:500;margin:0 0 6px;">Reconnecting…</p>
-            <p style="color:#6b7280;font-size:12px;margin:0 0 16px;">Your session is being restored</p>
-            <button onclick="window.location.reload()" style="padding:8px 20px;background:#10b981;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;">Reload now</button>
+    <!-- Reconnect UI — visibility driven by Blazor's components-reconnect-* classes -->
+    <div id="components-reconnect-modal">
+        <div class="reconnect-card">
+            <div class="reconnect-spinner"></div>
+            <p class="reconnect-title">Reconnecting…</p>
+            <p class="reconnect-sub">Restoring your session automatically.</p>
+            <button onclick="window.location.reload()" class="reconnect-btn">Reload now</button>
         </div>
     </div>
-    <style>@@keyframes spin{to{transform:rotate(360deg)}}</style>
+    <style>
+        #components-reconnect-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            background: rgba(3, 7, 18, 0.85);
+            backdrop-filter: blur(4px);
+            align-items: center;
+            justify-content: center;
+        }
+
+        #components-reconnect-modal.components-reconnect-show,
+        #components-reconnect-modal.components-reconnect-failed,
+        #components-reconnect-modal.components-reconnect-rejected {
+            display: flex;
+        }
+
+        #components-reconnect-modal .reconnect-card {
+            background: #111827;
+            border: 1px solid #1f2937;
+            border-radius: 12px;
+            padding: 24px 32px;
+            text-align: center;
+            max-width: 320px;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.6);
+        }
+
+        #components-reconnect-modal .reconnect-spinner {
+            width: 36px;
+            height: 36px;
+            border: 3px solid #1f2937;
+            border-top-color: #10b981;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        #components-reconnect-modal .reconnect-title {
+            color: #f9fafb;
+            font-size: 14px;
+            font-weight: 500;
+            margin: 0 0 6px;
+        }
+
+        #components-reconnect-modal .reconnect-sub {
+            color: #6b7280;
+            font-size: 12px;
+            margin: 0 0 16px;
+        }
+
+        #components-reconnect-modal .reconnect-btn {
+            padding: 8px 20px;
+            background: #10b981;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        @@keyframes spin {
+            to {
+                transform: rotate(360deg)
+            }
+        }
+    </style>
 
     <script>
-        const modal = document.getElementById('blazor-reconnect-modal');
-
+        // Keep Blazor's DEFAULT reconnection handler — it runs the automatic retry loop.
+        // We only widen the retry budget and layer no-touch recovery on top.
         Blazor.start({
             circuit: {
                 reconnectionOptions: {
-                    maxRetries: 5,
-                    retryIntervalMilliseconds: 2000,
-                    dialogId: 'blazor-reconnect-modal'
-                },
-                reconnectionHandler: {
-                    onConnectionDown: () => modal.style.display = 'flex',
-                    onConnectionUp: () => window.location.reload()
+                    maxRetries: 10,
+                    retryIntervalMilliseconds: 3000
                 }
             }
         });
 
-        // Keep-alive ping every 25s to prevent idle timeout
-        setInterval(() => {
-            fetch('/_blazor', { method: 'HEAD' }).catch(() => {});
-        }, 25000);
+        const reconnectModal = document.getElementById('components-reconnect-modal');
+        const reconnectDead = () =>
+            reconnectModal.classList.contains('components-reconnect-failed') ||
+            reconnectModal.classList.contains('components-reconnect-rejected');
+
+        // Recover without any user action:
+        //  - "rejected": the server circuit is gone (typical after a long idle) — retrying can't
+        //    help, so reload to start a fresh circuit.
+        //  - "failed": retries exhausted (server briefly unreachable) — reload shortly to retry.
+        new MutationObserver(() => {
+            if (reconnectModal.classList.contains('components-reconnect-rejected')) {
+                window.location.reload();
+            } else if (reconnectModal.classList.contains('components-reconnect-failed')) {
+                setTimeout(() => window.location.reload(), 3000);
+            }
+        }).observe(reconnectModal, {attributes: true, attributeFilter: ['class']});
+
+        // Coming back to a long-backgrounded tab: if we're already disconnected, reload
+        // immediately rather than waiting out the retry schedule.
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && reconnectDead()) {
+                window.location.reload();
+            }
+        });
     </script>
 </body>
 </html>
