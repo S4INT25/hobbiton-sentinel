@@ -36,6 +36,7 @@
                     <th class="text-left px-4 py-2 font-medium">ID</th>
                     <th class="text-left px-4 py-2 font-medium">Title</th>
                     <th class="text-left px-4 py-2 font-medium">Severity</th>
+                    <th class="text-left px-4 py-2 font-medium">Confidence</th>
                     <th class="text-left px-4 py-2 font-medium">Status</th>
                     <th class="text-left px-4 py-2 font-medium">Created</th>
                     <th class="text-left px-4 py-2 font-medium">Actions</th>
@@ -49,6 +50,9 @@
                         <td class="px-4 py-2.5 text-xs text-gray-200 max-w-sm truncate">@c.Title</td>
                         <td class="px-4 py-2.5">
                             <span class="@SeverityClasses(c.Severity)">@c.Severity</span>
+                        </td>
+                        <td class="px-4 py-2.5">
+                            <span class="@ConfidenceClasses(c.Confidence)">@c.Confidence%</span>
                         </td>
                         <td class="px-4 py-2.5 text-xs text-gray-500">@c.Status</td>
                         <td class="px-4 py-2.5 text-xs text-gray-500">@c.FirstSeen.ToString("MMM dd HH:mm")</td>
@@ -67,7 +71,9 @@
                 }
                 @if (!cases.Any())
                 {
-                    <tr><td colspan="6" class="px-4 py-8 text-center text-gray-600 text-xs">No open cases</td></tr>
+                    <tr>
+                        <td colspan="7" class="px-4 py-8 text-center text-gray-600 text-xs">No open cases</td>
+                    </tr>
                 }
             </tbody>
         </table>
@@ -195,7 +201,7 @@
             var user = authState.User;
             await AuditStore.LogAsync(new AuditLog
             {
-                UserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+                UserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "",
                 Username = user.Identity?.Name ?? "unknown",
                 Action = "delete",
                 ResourceType = "case",
@@ -250,7 +256,7 @@
             var user = authState.User;
             await AuditStore.LogAsync(new AuditLog
             {
-                UserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+                UserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "",
                 Username = user.Identity?.Name ?? "unknown",
                 Action = "case_resolve",
                 ResourceType = "case",
@@ -275,6 +281,14 @@
             busyActionKeys.Remove(key);
         }
     }
+
+    private static string ConfidenceClasses(int confidence) => confidence switch
+    {
+            >= 90 => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20",
+            >= 70 => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20",
+            >= 50 => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20",
+            _ => "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20"
+    };
 
     private static string SeverityClasses(string severity) => severity switch
     {

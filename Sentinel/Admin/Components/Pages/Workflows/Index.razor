@@ -71,6 +71,7 @@
                         <option value="every-2-hours">Every 2 hours</option>
                         <option value="daily">Every day</option>
                         <option value="weekly">Every week</option>
+                        <option value="monthly">Every month</option>
                         <option value="custom-date">Once (on a date)</option>
                     </select>
                 </div>
@@ -910,7 +911,8 @@
         ["hourly"] = "0 * * * *",
         ["every-2-hours"] = "0 */2 * * *",
         ["daily"] = "0 0 * * *",
-        ["weekly"] = "0 0 * * 1"
+        ["weekly"] = "0 0 * * 1",
+        ["monthly"] = "0 0 1 * *"
     };
 
     private static string DetectSchedulePreset(string? cron)
@@ -1039,6 +1041,7 @@
         "every-2-hours" => "Every 2 hours",
         "daily" => "Daily",
         "weekly" => "Weekly",
+        "monthly" => "Monthly",
         _ => key
     };
 

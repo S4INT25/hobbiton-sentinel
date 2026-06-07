@@ -1,3 +1,4 @@
+using System.Text;
 using ZiggyCreatures.Caching.Fusion;
 
 namespace Sentinel.Memory;
@@ -9,12 +10,6 @@ public class CaseStore(IFusionCache cache, ILogger<CaseStore> logger) : ICaseSto
 {
     private const string StoreKey = "fraud:cases";
     private static readonly TimeSpan CaseTtl = TimeSpan.FromDays(30);
-
-    private async Task<Dictionary<string, FraudCase>> LoadAsync() =>
-        await cache.GetOrDefaultAsync<Dictionary<string, FraudCase>>(StoreKey) ?? [];
-
-    private Task PersistAsync(Dictionary<string, FraudCase> cases) =>
-        cache.SetAsync(StoreKey, cases, o => o.SetDuration(CaseTtl)).AsTask();
 
     public async Task<List<FraudCase>> GetOpenCasesAsync()
     {
@@ -105,16 +100,24 @@ public class CaseStore(IFusionCache cache, ILogger<CaseStore> logger) : ICaseSto
             : await GetOpenCasesForWorkflowAsync(workflowId);
         if (cases.Count == 0) return "No open cases.";
 
-        var sb = new System.Text.StringBuilder();
+        var sb = new StringBuilder();
         foreach (var c in cases)
         {
-            sb.AppendLine($"- [{c.Severity.ToUpper()}] Case {c.Id}: {c.Title}");
-            sb.AppendLine($"  Category: {c.Category} | Status: {c.Status} | Seen {c.OccurrenceCount}x | First: {c.FirstSeen:yyyy-MM-dd HH:mm} UTC | Last: {c.LastSeen:yyyy-MM-dd HH:mm} UTC");
+            sb.AppendLine($"- [{c.Severity.ToUpper()}] Case {c.Id}: {c.Title} (confidence: {c.Confidence}%)");
+            sb.AppendLine(
+                $"  Category: {c.Category} | Status: {c.Status} | Confidence: {c.Confidence}% | Seen {c.OccurrenceCount}x | First: {c.FirstSeen:yyyy-MM-dd HH:mm} UTC | Last: {c.LastSeen:yyyy-MM-dd HH:mm} UTC");
             sb.AppendLine($"  Entities: {string.Join(", ", c.AffectedEntities.Take(5))}");
             if (c.FollowUpQueries.Count > 0)
                 sb.AppendLine($"  Follow-up queries suggested: {c.FollowUpQueries.Count}");
             sb.AppendLine($"  Notes: {c.Notes[..Math.Min(200, c.Notes.Length)]}");
         }
+
         return sb.ToString();
     }
+
+    private async Task<Dictionary<string, FraudCase>> LoadAsync() =>
+        await cache.GetOrDefaultAsync<Dictionary<string, FraudCase>>(StoreKey) ?? [];
+
+    private Task PersistAsync(Dictionary<string, FraudCase> cases) =>
+        cache.SetAsync(StoreKey, cases, o => o.SetDuration(CaseTtl)).AsTask();
 }

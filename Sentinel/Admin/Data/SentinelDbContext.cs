@@ -13,6 +13,7 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
     public DbSet<WorkflowDefinition> Workflows => Set<WorkflowDefinition>();
     public DbSet<AgentMemory> AgentMemories => Set<AgentMemory>();
     public DbSet<DatabaseProduct> DatabaseProducts => Set<DatabaseProduct>();
+    public DbSet<CaseOutcome> CaseOutcomes => Set<CaseOutcome>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -159,6 +160,32 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
             e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
             e.HasIndex(p => p.DatabaseName).IsUnique();
             e.HasIndex(p => p.Enabled);
+        });
+
+        modelBuilder.Entity<CaseOutcome>(e =>
+        {
+            e.HasKey(o => o.Id);
+            e.ToTable("case_outcomes");
+            e.Property(o => o.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            e.Property(o => o.CaseId).HasColumnName("case_id").HasMaxLength(20);
+            e.Property(o => o.Title).HasColumnName("title").HasMaxLength(500);
+            e.Property(o => o.Category).HasColumnName("category").HasMaxLength(50);
+            e.Property(o => o.PatternId).HasColumnName("pattern_id");
+            e.Property(o => o.Outcome).HasColumnName("outcome").HasMaxLength(30);
+            e.Property(o => o.OriginalSeverity).HasColumnName("original_severity").HasMaxLength(20);
+            e.Property(o => o.Confidence).HasColumnName("confidence");
+            e.Property(o => o.AffectedEntities).HasColumnName("affected_entities");
+            e.Property(o => o.Database).HasColumnName("database").HasMaxLength(100);
+            e.Property(o => o.WorkflowId).HasColumnName("workflow_id");
+            e.Property(o => o.Resolution).HasColumnName("resolution");
+            e.Property(o => o.ResolvedBy).HasColumnName("resolved_by").HasMaxLength(50);
+            e.Property(o => o.OccurrenceCount).HasColumnName("occurrence_count");
+            e.Property(o => o.CreatedAt).HasColumnName("created_at");
+            e.Property(o => o.ResolvedAt).HasColumnName("resolved_at");
+            e.HasIndex(o => o.CaseId).IsUnique();
+            e.HasIndex(o => o.Category);
+            e.HasIndex(o => o.Outcome);
+            e.HasIndex(o => o.ResolvedAt);
         });
     }
 }

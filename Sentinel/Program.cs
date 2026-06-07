@@ -99,6 +99,7 @@ try
         builder.Services.AddScoped<IWorkflowStore, PostgresWorkflowStore>();
         builder.Services.AddScoped<IAgentMemoryStore, AgentMemoryStore>();
         builder.Services.AddScoped<IDatabaseProductStore, PostgresDatabaseProductStore>();
+        builder.Services.AddScoped<ICaseOutcomeStore, PostgresCaseOutcomeStore>();
     }
     else
     {
@@ -108,6 +109,7 @@ try
         builder.Services.AddSingleton<IEvidenceSourceStore, InMemoryEvidenceSourceStore>();
         builder.Services.AddSingleton<IWorkflowStore, InMemoryWorkflowStore>();
         builder.Services.AddSingleton<IAgentMemoryStore, InMemoryAgentMemoryStore>();
+        builder.Services.AddSingleton<ICaseOutcomeStore, InMemoryCaseOutcomeStore>();
     }
 
     if (useRedisInfrastructure)

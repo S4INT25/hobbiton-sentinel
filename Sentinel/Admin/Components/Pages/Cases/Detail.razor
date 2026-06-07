@@ -1,6 +1,7 @@
 @page "/admin/cases/{Id}"
 @inject ICaseStore CaseStore
 @inject IFeedbackRuleStore RuleStore
+@inject ICaseOutcomeStore OutcomeStore
 @inject IAuditLogStore AuditStore
 @inject AuthenticationStateProvider AuthState
 @inject IHttpContextAccessor HttpContextAccessor
@@ -18,7 +19,7 @@
     @if (fraudCase != null)
     {
         var c = fraudCase;
-        <div class="grid grid-cols-4 gap-3 text-xs">
+        <div class="grid grid-cols-5 gap-3 text-xs">
             <div class="p-3 bg-gray-900 border border-gray-800 rounded-lg">
                 <div class="text-gray-500 mb-0.5">Severity</div>
                 <div class="text-white font-medium">@c.Severity</div>
@@ -26,6 +27,10 @@
             <div class="p-3 bg-gray-900 border border-gray-800 rounded-lg">
                 <div class="text-gray-500 mb-0.5">Status</div>
                 <div class="text-white">@c.Status</div>
+            </div>
+            <div class="p-3 bg-gray-900 border border-gray-800 rounded-lg">
+                <div class="text-gray-500 mb-0.5">Confidence</div>
+                <div class="text-white font-medium">@c.Confidence%</div>
             </div>
             <div class="p-3 bg-gray-900 border border-gray-800 rounded-lg">
                 <div class="text-gray-500 mb-0.5">Created</div>
@@ -163,13 +168,31 @@
                 if (c != null) { c.Severity = "critical"; await CaseStore.SaveCaseAsync(c); }
                 break;
             case "resolve":
+                // Analyst manually resolving = confirmed fraud (they investigated and took action)
+                if (fraudCase != null)
+                {
+                    await OutcomeStore.SaveAsync(new CaseOutcome
+                    {
+                            CaseId = Id,
+                            Title = fraudCase.Title,
+                            Category = fraudCase.Category,
+                            Outcome = "confirmed_fraud",
+                            OriginalSeverity = fraudCase.Severity,
+                            Confidence = fraudCase.Confidence,
+                            AffectedEntities = string.Join(", ", fraudCase.AffectedEntities),
+                            WorkflowId = fraudCase.WorkflowId,
+                            Resolution = "Manually resolved by analyst — confirmed fraud",
+                            ResolvedBy = user.Identity?.Name ?? "analyst",
+                            OccurrenceCount = fraudCase.OccurrenceCount
+                    });
+                }
                 await CaseStore.ResolveCaseAsync(Id, "Manually resolved by analyst");
                 break;
         }
 
         await AuditStore.LogAsync(new AuditLog
         {
-            UserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+            UserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "",
             Username = user.Identity?.Name ?? "unknown",
             Action = $"case_{action}",
             ResourceType = "case",
@@ -184,6 +207,25 @@
     {
         var authState = await AuthState.GetAuthenticationStateAsync();
         var user = authState.User;
+
+        // Save outcome as false_positive for historical learning
+        if (fraudCase != null)
+        {
+            await OutcomeStore.SaveAsync(new CaseOutcome
+            {
+                    CaseId = Id,
+                    Title = fraudCase.Title,
+                    Category = fraudCase.Category,
+                    Outcome = "false_positive",
+                    OriginalSeverity = fraudCase.Severity,
+                    Confidence = fraudCase.Confidence,
+                    AffectedEntities = string.Join(", ", fraudCase.AffectedEntities),
+                    WorkflowId = fraudCase.WorkflowId,
+                    Resolution = $"False positive: {fpReason}",
+                    ResolvedBy = user.Identity?.Name ?? "analyst",
+                    OccurrenceCount = fraudCase.OccurrenceCount
+            });
+        }
 
         await CaseStore.ResolveCaseAsync(Id, $"False positive: {fpReason}");
 
@@ -202,7 +244,7 @@
 
             await AuditStore.LogAsync(new AuditLog
             {
-                UserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+                UserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "",
                 Username = user.Identity?.Name ?? "unknown",
                 Action = "create",
                 ResourceType = "rule",
@@ -214,7 +256,7 @@
 
         await AuditStore.LogAsync(new AuditLog
         {
-            UserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "",
+            UserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "",
             Username = user.Identity?.Name ?? "unknown",
             Action = "case_false_positive",
             ResourceType = "case",
