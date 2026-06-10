@@ -20,11 +20,21 @@
 
 <PageTitle>Chat — Sentinel</PageTitle>
 
+<style>
+    @@keyframes slideIn {
+        from {
+            transform: translateX(-100%);
+        }
+        to {
+            transform: translateX(0);
+        }
+    }
+</style>
+
 <div class="flex flex-col md:flex-row h-[calc(100vh-6rem)]">
     <!-- Conversation Sidebar -->
-    <div
-        class="@(showHistoryPanel ? "flex" : "hidden") w-full md:w-56 border-b md:border-b-0 md:border-r border-gray-800 flex-col shrink-0 max-h-64 md:max-h-none transition-all">
-        <div class="flex items-center justify-between px-3 py-2 border-b border-gray-800">
+    <div class="@(showHistoryPanel ? "w-full md:w-64" : "w-0") border-r border-gray-800 flex-col shrink-0 max-h-64 md:max-h-none overflow-hidden transition-all duration-300 ease-in-out hidden md:flex">
+        <div class="flex items-center justify-between px-3 py-2 border-b border-gray-800 min-w-[16rem]">
             <span class="text-xs font-medium text-gray-400">History</span>
             <div class="flex items-center gap-1.5">
                 <button @onclick="NewConversation"
@@ -40,7 +50,7 @@
                 </button>
             </div>
         </div>
-        <div class="flex-1 overflow-y-auto p-1.5 space-y-0.5">
+        <div class="flex-1 overflow-y-auto p-1.5 space-y-0.5 min-w-[16rem]">
             @foreach (var conv in conversations)
             {
                 <div @onclick="() => LoadConversation(conv.Id)"
@@ -62,18 +72,67 @@
         </div>
     </div>
 
+    @* Mobile sidebar overlay *@
+    @if (showHistoryMobile)
+    {
+        <div class="fixed inset-0 z-40 md:hidden">
+            <div class="absolute inset-0 bg-black/50" @onclick="() => showHistoryMobile = false"></div>
+            <div class="absolute inset-y-0 left-0 w-72 bg-gray-950 border-r border-gray-800 flex flex-col z-50 shadow-2xl"
+                 style="animation: slideIn .2s ease-out">
+                <div class="flex items-center justify-between px-3 py-2 border-b border-gray-800">
+                    <span class="text-xs font-medium text-gray-400">History</span>
+                    <div class="flex items-center gap-1.5">
+                        <button @onclick="NewConversation"
+                                class="px-2 py-1 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white rounded transition-colors">
+                            + New
+                        </button>
+                        <button @onclick="() => showHistoryMobile = false"
+                                class="p-1 text-gray-500 hover:text-gray-300 rounded hover:bg-gray-800 transition-colors"
+                                title="Close history">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex-1 overflow-y-auto p-1.5 space-y-0.5">
+                    @foreach (var conv in conversations)
+                    {
+                        <div @onclick="() => { LoadConversation(conv.Id); showHistoryMobile = false; }"
+                             class="px-2.5 py-2 rounded border cursor-pointer group transition-colors @(conv.Id == activeConversationId ? "bg-gray-800/60 border-emerald-500/30" : "border-transparent hover:bg-gray-900")">
+                            <div class="text-xs text-gray-300 truncate">@conv.Title</div>
+                            <div class="flex items-center justify-between mt-0.5">
+                                <span class="text-[10px] text-gray-600">@conv.Database</span>
+                                <button @onclick="() => DeleteConversation(conv.Id)" @onclick:stopPropagation="true"
+                                        class="opacity-0 group-hover:opacity-100 text-[10px] text-rose-500 hover:text-rose-400 transition-opacity">
+                                    ✕
+                                </button>
+                            </div>
+                        </div>
+                    }
+                    @if (!conversations.Any())
+                    {
+                        <div class="px-3 py-4 text-center text-[10px] text-gray-600">No conversations yet</div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
     <!-- Main Chat Area -->
     <div class="flex-1 flex flex-col min-w-0">
         <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800">
             <div class="flex items-center gap-2 md:gap-3 flex-wrap">
-                <button @onclick="() => showHistoryPanel = !showHistoryPanel"
-                        class="px-2.5 py-1.5 text-xs border rounded transition-colors whitespace-nowrap @(showHistoryPanel ? "bg-gray-800 border-gray-700 text-gray-200" : "border-gray-800 text-gray-500 hover:text-gray-300 hover:bg-gray-900")"
+                <button @onclick="ToggleSidebar"
+                        class="px-2.5 py-1.5 text-xs border rounded transition-colors whitespace-nowrap @(showHistoryPanel || showHistoryMobile ? "bg-gray-800 border-gray-700 text-gray-200" : "border-gray-800 text-gray-500 hover:text-gray-300 hover:bg-gray-900")"
                         title="@(showHistoryPanel ? "Hide history" : "Show history")">
                     <span class="flex items-center gap-1.5">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path
-                                stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                        History
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M4 6h16M4 12h16M4 18h7"/>
+                        </svg>
+                        <span class="hidden sm:inline">History</span>
                     </span>
                 </button>
                 <span class="text-[10px] text-gray-500 uppercase tracking-wider">Product</span>
@@ -1261,6 +1320,12 @@
     }
 
     private void ToggleHistoryMobile() => showHistoryMobile = !showHistoryMobile;
+
+    private void ToggleSidebar()
+    {
+        showHistoryPanel = !showHistoryPanel;
+        showHistoryMobile = !showHistoryMobile;
+    }
     // ── ApexCharts helpers ──────────────────────────────────────────────────
 
     private record ChartDataPoint(string Label, decimal Value);

@@ -566,6 +566,8 @@ public class FraudAgent(
                 "describe_table" => await schemaLoader.DescribeTableAsync(
                     root.GetProperty("database").GetString()!,
                     root.GetProperty("table").GetString()!),
+                "get_current_time" => $"UTC: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} ({DateTime.UtcNow:dddd})\n" +
+                                      $"Server local: {DateTime.Now:yyyy-MM-dd HH:mm:ss} ({DateTime.Now:dddd}, {TimeZoneInfo.Local.DisplayName})",
                 _ => $"Unknown tool: {toolCall.FunctionName}"
             };
         }

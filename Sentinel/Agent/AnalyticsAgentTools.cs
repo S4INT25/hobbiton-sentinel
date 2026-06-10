@@ -233,6 +233,23 @@ public static class AnalyticsAgentTools
         ),
 
         ChatTool.CreateFunctionTool(
+            functionName: "get_current_time",
+            functionDescription: """
+                                 Get the current date and time in UTC and the server's local timezone.
+                                 Call this whenever you need to know the current date, day of week, or time —
+                                 for example when building date filters, calculating relative time ranges
+                                 (today, last 7 days, this month), or answering time-sensitive questions.
+                                 """,
+            functionParameters: BinaryData.FromString("""
+                                                      {
+                                                          "type": "object",
+                                                          "properties": {},
+                                                          "required": []
+                                                      }
+                                                      """)
+        ),
+
+        ChatTool.CreateFunctionTool(
             functionName: "ask_user",
             functionDescription: """
                                  Ask the user a clarifying question when you need more information to proceed.

@@ -438,6 +438,7 @@ public class AnalyticsAgentCore(
                         response),
                     "save_memory" => await HandleSaveMemory(root, database, onEvent),
                     "ask_user" => HandleAskUser(root, isInteractive),
+                    "get_current_time" => HandleGetCurrentTime(),
                     _ => $"Unknown tool: {toolCall.FunctionName}"
                 };
             }
@@ -842,6 +843,13 @@ public class AnalyticsAgentCore(
         return "Question sent to user. Waiting for response.";
     }
 
+    private static string HandleGetCurrentTime()
+    {
+        var utcNow = DateTime.UtcNow;
+        var localNow = DateTime.Now;
+        return $"UTC: {utcNow:yyyy-MM-dd HH:mm:ss} ({utcNow:dddd})\n" +
+               $"Server local: {localNow:yyyy-MM-dd HH:mm:ss} ({localNow:dddd}, {TimeZoneInfo.Local.DisplayName})";
+    }
 
     private static string BuildSystemPrompt(string database, string schema, bool isInteractive,
         bool allowInteractiveReportSending, IEnumerable<AgentMemory>? memories = null)

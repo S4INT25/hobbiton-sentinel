@@ -317,6 +317,23 @@ public static class FraudAgentTools
         ),
 
         ChatTool.CreateFunctionTool(
+            functionName: "get_current_time",
+            functionDescription: """
+                                 Get the current date and time in UTC and the server's local timezone.
+                                 Call this whenever you need to know the current date, day of week, or time —
+                                 for example when building date filters, calculating relative time ranges
+                                 (today, last 7 days, this month), or determining recency of events.
+                                 """,
+            functionParameters: BinaryData.FromString("""
+                                                      {
+                                                          "type": "object",
+                                                          "properties": {},
+                                                          "required": []
+                                                      }
+                                                      """)
+        ),
+
+        ChatTool.CreateFunctionTool(
             functionName: "lookup_ip",
             functionDescription: """
                                  Look up geolocation and threat intelligence for an IP address.
