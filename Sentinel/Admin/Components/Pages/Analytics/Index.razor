@@ -511,11 +511,19 @@
 
                     @if (loading)
                     {
-                        <div class="space-y-2 max-w-full" @ref="loadingAnchor">
-                            @* Live progress bar — always visible *@
-                            <div class="border border-gray-800 rounded-xl p-3 bg-gray-900/35 space-y-2.5">
-                                @* Current status line *@
-                                <div class="flex items-center gap-2.5">
+                        <div @ref="loadingAnchor">
+                            @if (!string.IsNullOrEmpty(_streamingText))
+                            {
+                                <div class="border rounded-xl p-4 bg-gray-900/35 border-gray-800">
+                                    <div class="text-sm text-gray-300 leading-relaxed prose prose-invert prose-sm max-w-none">
+                                        @(MarkdownRenderer.ToHtml(_streamingText))<span
+                                                class="inline-block w-0.5 h-4 bg-emerald-400 animate-pulse ml-0.5 align-middle"></span>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="flex items-center gap-2.5 py-3">
                                     <svg class="w-4 h-4 animate-spin text-emerald-400 shrink-0" fill="none"
                                          viewBox="0 0 24 24">
                                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
@@ -524,90 +532,6 @@
                                               d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
                                     </svg>
                                     <span class="text-sm text-gray-300">@CurrentProgressLabel</span>
-                                </div>
-
-                                @* Step indicators — show completed + active steps *@
-                                @if (_pendingMessage?.StreamEvents?.Count > 0)
-                                {
-                                    var recentEvents = _pendingMessage.StreamEvents.TakeLast(5).ToList();
-                                    <div class="space-y-1 pl-6">
-                                        @foreach (var evt in recentEvents)
-                                        {
-                                            var isLast = evt == recentEvents.Last();
-                                            <div
-                                                class="flex items-center gap-2 text-xs @(isLast ? "text-gray-300" : "text-gray-600")">
-                                                @if (isLast)
-                                                {
-                                                    <span
-                                                        class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
-                                                }
-                                                else
-                                                {
-                                                    <span class="w-1.5 h-1.5 rounded-full bg-gray-600 shrink-0"></span>
-                                                }
-                                                <span class="truncate">@evt.Message</span>
-                                            </div>
-                                        }
-                                    </div>
-                                }
-
-                                @* Thinking text *@
-                                @if (!string.IsNullOrWhiteSpace(GetPendingThinkingText(_pendingMessage)))
-                                {
-                                    <div class="pl-6 border-l-2 border-emerald-500/20 ml-1.5">
-                                        <div
-                                            class="text-[10px] uppercase tracking-wider text-emerald-300/60 font-medium mb-0.5">
-                                            Thinking
-                                        </div>
-                                        <div
-                                            class="text-xs text-emerald-100/70 italic">@GetPendingThinkingText(_pendingMessage)</div>
-                                    </div>
-                                }
-                            </div>
-
-                            @* Debug: full timeline *@
-                            @if (debugMode && _pendingMessage?.StreamEvents?.Count > 0)
-                            {
-                                <details class="border border-gray-800/60 rounded-lg overflow-hidden bg-gray-900/30">
-                                    <summary
-                                        class="px-3 py-1.5 border-b border-gray-800/60 flex items-center gap-2 cursor-pointer">
-                                        <span class="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Full Agent Timeline · @_pendingMessage.StreamEvents.Count steps</span>
-                                    </summary>
-                                    <div class="p-2.5 space-y-1.5">
-                                        @foreach (var evt in _pendingMessage.StreamEvents)
-                                        {
-                                            <div class="flex items-start gap-2 text-xs">
-                                                <span
-                                                    class="shrink-0 mt-0.5 @StreamEventDotClass(evt.Type) w-1.5 h-1.5 rounded-full"></span>
-                                                <div class="min-w-0">
-                                                    <span class="@StreamEventTextClass(evt.Type)">@evt.Message</span>
-                                                    @if (!string.IsNullOrEmpty(evt.Sql))
-                                                    {
-                                                        <details class="mt-1">
-                                                            <summary
-                                                                class="text-gray-600 cursor-pointer hover:text-gray-500">
-                                                                View SQL
-                                                            </summary>
-                                                            <pre
-                                                                class="mt-1 p-2 text-[10px] bg-gray-950 text-emerald-300 rounded font-mono whitespace-pre-wrap border border-gray-800">@evt.Sql</pre>
-                                                        </details>
-                                                    }
-                                                </div>
-                                            </div>
-                                        }
-                                    </div>
-                                </details>
-                            }
-
-                            @* Streaming text preview *@
-                            @if (!string.IsNullOrEmpty(_streamingText))
-                            {
-                                <div class="space-y-3 max-w-full border rounded-xl p-4 bg-gray-900/35 border-gray-800">
-                                    <div
-                                        class="text-sm text-gray-300 leading-relaxed prose prose-invert prose-sm max-w-none">
-                                        @(MarkdownRenderer.ToHtml(_streamingText))<span
-                                            class="inline-block w-0.5 h-4 bg-emerald-400 animate-pulse ml-0.5 align-middle"></span>
-                                    </div>
                                 </div>
                             }
                         </div>
