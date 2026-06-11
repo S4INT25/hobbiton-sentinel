@@ -544,23 +544,27 @@
                                     </details>
                                 }
 
-                                @if (debugMode && msg.StreamEvents?.Count > 0)
+                                @if (msg.StreamEvents?.Count > 0)
                                 {
-                                    <details class="border border-gray-800/60 rounded-lg overflow-hidden">
-                                        <summary
-                                            class="px-3 py-2 text-xs text-gray-400 cursor-pointer hover:text-gray-300 select-none bg-gray-900/40">
-                                            Agent timeline · @msg.StreamEvents.Count steps
-                                        </summary>
-                                        <div class="p-2.5 space-y-1 bg-gray-950/40">
-                                            @foreach (var evt in msg.StreamEvents.Where(e => e.Type is not "token" and not "result"))
-                                            {
-                                                <div class="flex items-center gap-2 text-xs">
-                                                    <div class="shrink-0">@((MarkupString)StreamEventIconDone(evt.Type))</div>
-                                                    <span class="text-gray-400">@StreamEventLabel(evt)</span>
-                                                </div>
-                                            }
-                                        </div>
-                                    </details>
+                                    var toolEvents = msg.StreamEvents.Where(e => e.Type is not "token" and not "result" and not "done").ToList();
+                                    @if (toolEvents.Count > 0)
+                                    {
+                                        <details class="border border-gray-800/40 rounded-lg overflow-hidden">
+                                            <summary class="px-3 py-1.5 text-[11px] text-gray-500 cursor-pointer hover:text-gray-400 select-none flex items-center gap-1.5">
+                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                                                @toolEvents.Count tool calls used
+                                            </summary>
+                                            <div class="px-3 py-2 space-y-1 bg-gray-950/30 border-t border-gray-800/40">
+                                                @foreach (var evt in toolEvents)
+                                                {
+                                                    <div class="flex items-center gap-2 text-xs">
+                                                        <div class="shrink-0">@((MarkupString)StreamEventIconDone(evt.Type))</div>
+                                                        <span class="text-gray-500">@StreamEventLabel(evt)</span>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </details>
+                                    }
                                 }
 
                             </div>
