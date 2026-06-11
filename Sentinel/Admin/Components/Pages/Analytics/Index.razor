@@ -552,12 +552,11 @@
                                             Agent timeline · @msg.StreamEvents.Count steps
                                         </summary>
                                         <div class="p-2.5 space-y-1 bg-gray-950/40">
-                                            @foreach (var evt in msg.StreamEvents)
+                                            @foreach (var evt in msg.StreamEvents.Where(e => e.Type is not "token" and not "result"))
                                             {
-                                                <div class="flex items-start gap-2 text-xs">
-                                                    <span
-                                                        class="shrink-0 @StreamEventDotClass(evt.Type) w-1.5 h-1.5 rounded-full mt-1"></span>
-                                                    <span class="@StreamEventTextClass(evt.Type)">@evt.Message</span>
+                                                <div class="flex items-center gap-2 text-xs">
+                                                    <div class="shrink-0">@((MarkupString)StreamEventIconDone(evt.Type))</div>
+                                                    <span class="text-gray-400">@StreamEventLabel(evt)</span>
                                                 </div>
                                             }
                                         </div>
@@ -570,27 +569,58 @@
 
                     @if (loading)
                     {
-                        <div @ref="loadingAnchor">
+                        <div @ref="loadingAnchor" class="space-y-2">
+                            @* Live activity feed *@
+                            @if (_pendingMessage?.StreamEvents?.Count > 0)
+                            {
+                                var events = _pendingMessage.StreamEvents;
+                                var visibleEvents = events.Where(e => e.Type is not "token" and not "result").ToList();
+                                @if (visibleEvents.Count > 0)
+                                {
+                                    <div class="space-y-0.5 py-1">
+                                        @foreach (var evt in visibleEvents)
+                                        {
+                                            var isLatest = evt == visibleEvents.Last();
+                                            <div class="flex items-start gap-2.5 py-1 @(isLatest ? "" : "opacity-50")">
+                                                @if (isLatest)
+                                                {
+                                                    <div class="mt-0.5 shrink-0">@((MarkupString)StreamEventIcon(evt.Type))</div>
+                                                }
+                                                else
+                                                {
+                                                    <div class="mt-0.5 shrink-0">@((MarkupString)StreamEventIconDone(evt.Type))</div>
+                                                }
+                                                <div class="min-w-0 flex-1">
+                                                    <span class="text-xs @(isLatest ? StreamEventActiveTextClass(evt.Type) : "text-gray-600")">@StreamEventLabel(evt)</span>
+                                                    @if (isLatest && evt.Type is "executing_sql" && !string.IsNullOrEmpty(evt.Sql))
+                                                    {
+                                                        <pre class="mt-1 px-2.5 py-1.5 text-[10px] bg-gray-950/80 text-emerald-300/70 rounded font-mono whitespace-pre-wrap border border-gray-800/50 max-h-20 overflow-y-auto">@evt.Sql</pre>
+                                                    }
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                @* Initial state before any events *@
+                                <div class="flex items-center gap-2.5 py-2">
+                                    <svg class="w-4 h-4 animate-spin text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                    </svg>
+                                    <span class="text-xs text-gray-400">Starting analysis…</span>
+                                </div>
+                            }
+
+                            @* Streaming text — shown below the activity feed *@
                             @if (!string.IsNullOrEmpty(_streamingText))
                             {
                                 <div class="border rounded-xl p-4 bg-gray-900/35 border-gray-800">
                                     <div class="text-sm text-gray-300 leading-relaxed prose prose-invert prose-sm max-w-none">
-                                        @(MarkdownRenderer.ToHtml(_streamingText))<span
-                                                class="inline-block w-0.5 h-4 bg-emerald-400 animate-pulse ml-0.5 align-middle"></span>
+                                        @(MarkdownRenderer.ToHtml(_streamingText))<span class="inline-block w-0.5 h-4 bg-emerald-400 animate-pulse ml-0.5 align-middle"></span>
                                     </div>
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="flex items-center gap-2.5 py-3">
-                                    <svg class="w-4 h-4 animate-spin text-emerald-400 shrink-0" fill="none"
-                                         viewBox="0 0 24 24">
-                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
-                                                stroke-width="4"></circle>
-                                        <path class="opacity-75" fill="currentColor"
-                                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                                    </svg>
-                                    <span class="text-sm text-gray-300">@CurrentProgressLabel</span>
                                 </div>
                             }
                         </div>
@@ -1245,45 +1275,6 @@
     private static bool HasReasoningContent(ChatMessage msg) =>
         !string.IsNullOrWhiteSpace(msg.Thinking);
 
-    private string CurrentProgressLabel
-    {
-        get
-        {
-            if (_pendingMessage?.StreamEvents?.Count > 0)
-            {
-                var last = _pendingMessage.StreamEvents.Last();
-                return last.Type switch
-                {
-                    "sql" => "Running SQL query…",
-                    "thinking" or "analysing" => "Analysing data…",
-                    "tool_call" => last.Message ?? "Calling tool…",
-                    "error" => "Encountered an issue, retrying…",
-                    _ => last.Message ?? "Processing…"
-                };
-            }
-
-            if (!string.IsNullOrEmpty(_streamingText)) return "Generating response…";
-            return "Starting analysis…";
-        }
-    }
-
-    private static string? GetPendingThinkingText(ChatMessage? pendingMessage)
-    {
-        if (pendingMessage?.StreamEvents?.Count is not > 0)
-            return null;
-
-        var latestThinking = pendingMessage.StreamEvents
-            .LastOrDefault(e => string.Equals(e.Type, "thinking", StringComparison.OrdinalIgnoreCase)
-                                || string.Equals(e.Type, "analysing", StringComparison.OrdinalIgnoreCase)
-                                || string.Equals(e.Type, "asking", StringComparison.OrdinalIgnoreCase));
-
-        if (!string.IsNullOrWhiteSpace(latestThinking?.Message))
-            return latestThinking.Message;
-
-        var latestMessage = pendingMessage.StreamEvents.LastOrDefault(e => !string.IsNullOrWhiteSpace(e.Message));
-        return latestMessage?.Message;
-    }
-
     private static string MessageTabClass(ChatMessage msg, string tab) =>
         msg.ActiveTab == tab
             ? "px-2 py-1 text-[10px] rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
@@ -1758,25 +1749,61 @@
         activePolls.Clear();
     }
 
-    private static string StreamEventDotClass(string type) => type switch
+    private static string StreamEventIcon(string type) => type switch
     {
-        "thinking" => "bg-emerald-500/60 mt-1",
-        "analysing" => "bg-purple-500/60 mt-1",
-        "sql" or "executing" => "bg-blue-500/60 mt-1",
-        "error" => "bg-rose-500 mt-1",
-        "fixing" => "bg-amber-500/80 mt-1",
-        "done" => "bg-emerald-400 mt-1",
-        _ => "bg-gray-600 mt-1"
+        "thinking" or "analysing" =>
+            """<svg class="w-4 h-4 text-emerald-400 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>""",
+        "tool_call" =>
+            """<svg class="w-4 h-4 text-blue-400 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>""",
+        "executing_sql" or "sql" =>
+            """<svg class="w-4 h-4 text-blue-400 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg>""",
+        "error" =>
+            """<svg class="w-4 h-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>""",
+        "fixing" =>
+            """<svg class="w-4 h-4 text-amber-400 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>""",
+        "chart" or "rendering_chart" or "emit_chart" =>
+            """<svg class="w-4 h-4 text-purple-400 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>""",
+        "sending_report" or "report_sent" =>
+            """<svg class="w-4 h-4 text-cyan-400 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>""",
+        "memory_saved" =>
+            """<svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>""",
+        "done" =>
+            """<svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>""",
+        _ =>
+            """<svg class="w-4 h-4 text-gray-500 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2" class="opacity-25"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>"""
     };
 
-    private static string StreamEventTextClass(string type) => type switch
+    private static string StreamEventIconDone(string type) =>
+        """<svg class="w-3.5 h-3.5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>""";
+
+    private static string StreamEventActiveTextClass(string type) => type switch
     {
         "error" => "text-rose-400",
         "fixing" => "text-amber-300",
         "done" => "text-emerald-400",
-        "analysing" => "text-purple-300",
-        "sql" or "executing" => "text-blue-300",
-        _ => "text-gray-400"
+        "thinking" or "analysing" => "text-gray-300",
+        "executing_sql" or "sql" => "text-blue-300",
+        "tool_call" => "text-blue-300",
+        "chart" or "rendering_chart" => "text-purple-300",
+        "sending_report" or "report_sent" => "text-cyan-300",
+        _ => "text-gray-300"
+    };
+
+    private static string StreamEventLabel(AnalyticsStreamEvent evt) => evt.Type switch
+    {
+        "thinking" => "Thinking…",
+        "analysing" => evt.Message,
+        "tool_call" => $"Using tool: {evt.Message}",
+        "executing_sql" => "Running SQL query…",
+        "error" => evt.Message,
+        "fixing" => "Retrying with fix…",
+        "chart" or "rendering_chart" => evt.Message,
+        "sending_report" => "Sending report…",
+        "report_sent" => "Report sent",
+        "memory_saved" => evt.Message,
+        "done" => "Done",
+        "asking" => evt.Message,
+        _ => evt.Message
     };
 
     private static string RiskLevelClasses(string? riskLevel) => (riskLevel ?? "").ToLowerInvariant() switch

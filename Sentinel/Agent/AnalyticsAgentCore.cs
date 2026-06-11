@@ -273,6 +273,8 @@ public class AnalyticsAgentCore(
                     logger.LogInformation("[Analytics] Tool: {Tool} args={Args}",
                         toolCall.FunctionName, args.Length > 200 ? args[..200] + "…" : args);
 
+                    await Emit(onEvent, "tool_call", toolCall.FunctionName);
+
                     var toolStart = Stopwatch.GetTimestamp();
                     var result = await ExecuteToolAsync(
                         toolCall, database, isInteractive, allowInteractiveReportSending, onEvent, response,
