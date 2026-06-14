@@ -89,6 +89,10 @@
                         </div>
                         <div class="flex items-center justify-between mt-0.5">
                             <span class="text-[10px] text-gray-600">@conv.Database</span>
+                            @if (_shareCopiedId == conv.Id)
+                            {
+                                <span class="text-[10px] text-emerald-400 font-medium">Link copied!</span>
+                            }
                         </div>
                     }
                     @if (_contextMenuConvId == conv.Id)
@@ -199,6 +203,10 @@
                                 </div>
                                 <div class="flex items-center justify-between mt-0.5">
                                     <span class="text-[10px] text-gray-600">@conv.Database</span>
+                                    @if (_shareCopiedId == conv.Id)
+                                    {
+                                        <span class="text-[10px] text-emerald-400 font-medium">Link copied!</span>
+                                    }
                                 </div>
                             }
                             @if (_contextMenuConvId == conv.Id)
@@ -1116,13 +1124,14 @@
 
         await ChatStore.ShareConversationAsync(conv);
         var url = Navigation.BaseUri + $"shared/{convId}";
-        await JS.InvokeVoidAsync("chartInterop.copyToClipboard", url);
+        await JS.InvokeAsync<bool>("chartInterop.copyToClipboard", url);
 
         _shareCopiedId = convId;
-        StateHasChanged();
-        await Task.Delay(1500);
-        _shareCopiedId = null;
         _contextMenuConvId = null;
+        StateHasChanged();
+        await Task.Delay(2000);
+        _shareCopiedId = null;
+        StateHasChanged();
     }
 
     private async Task Send()

@@ -47,7 +47,29 @@ window.chartInterop = {
         return true;
     },
     copyToClipboard: function (text) {
-        return navigator.clipboard.writeText(text).then(function () { return true; }, function () { return false; });
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(text).then(function () {
+                return true;
+            }, function () {
+                return this._fallbackCopy(text);
+            }.bind(this));
+        }
+        return Promise.resolve(this._fallbackCopy(text));
+    },
+    _fallbackCopy: function (text) {
+        try {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            return true;
+        } catch (e) {
+            return false;
+        }
     },
     getChartPngBase64: async function (containerEl) {
         if (!containerEl) return null;
