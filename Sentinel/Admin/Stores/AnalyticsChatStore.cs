@@ -6,16 +6,10 @@ public class AnalyticsChatStore(IFusionCache cache, ILogger<AnalyticsChatStore> 
 {
     private static readonly TimeSpan ConversationTtl = TimeSpan.FromDays(90);
 
-    private static string ConversationKey(string userId, string id) =>
-        $"sentinel:analytics:conversations:{userId}:{id}";
-
-    private static string UserListKey(string userId) =>
-        $"sentinel:analytics:conversations:{userId}:all";
-
     public async Task<List<AnalyticsConversation>> ListConversationsAsync(string userId) =>
         (await cache.GetOrDefaultAsync<List<AnalyticsConversation>>(UserListKey(userId)) ?? [])
-            .OrderByDescending(c => c.UpdatedAt)
-            .ToList();
+        .OrderByDescending(c => c.UpdatedAt)
+        .ToList();
 
     public async Task<AnalyticsConversation?> GetConversationAsync(string userId, string conversationId) =>
         await cache.GetOrDefaultAsync<AnalyticsConversation>(ConversationKey(userId, conversationId));
@@ -50,9 +44,33 @@ public class AnalyticsChatStore(IFusionCache cache, ILogger<AnalyticsChatStore> 
     public async Task DeleteConversationAsync(string userId, string conversationId)
     {
         await cache.RemoveAsync(ConversationKey(userId, conversationId));
+        await cache.RemoveAsync(SharedKey(conversationId));
 
         var stubs = await cache.GetOrDefaultAsync<List<AnalyticsConversation>>(UserListKey(userId)) ?? [];
         stubs.RemoveAll(c => c.Id == conversationId);
         await cache.SetAsync(UserListKey(userId), stubs, o => o.SetDuration(ConversationTtl));
     }
+
+    public async Task ShareConversationAsync(AnalyticsConversation conversation)
+    {
+        await cache.SetAsync(SharedKey(conversation.Id), conversation, o => o.SetDuration(ConversationTtl));
+        logger.LogInformation("Conversation {Id} shared by user {UserId}", conversation.Id, conversation.UserId);
+    }
+
+    public async Task UnshareConversationAsync(string conversationId)
+    {
+        await cache.RemoveAsync(SharedKey(conversationId));
+    }
+
+    public async Task<AnalyticsConversation?> GetSharedConversationAsync(string conversationId) =>
+        await cache.GetOrDefaultAsync<AnalyticsConversation>(SharedKey(conversationId));
+
+    private static string ConversationKey(string userId, string id) =>
+        $"sentinel:analytics:conversations:{userId}:{id}";
+
+    private static string UserListKey(string userId) =>
+        $"sentinel:analytics:conversations:{userId}:all";
+
+    private static string SharedKey(string id) =>
+        $"sentinel:analytics:shared:{id}";
 }
