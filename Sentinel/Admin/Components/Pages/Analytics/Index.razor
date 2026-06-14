@@ -55,7 +55,18 @@
             {
                 <div @onclick="() => LoadConversation(conv.Id)"
                      class="px-2.5 py-2 rounded border cursor-pointer group transition-colors @(conv.Id == activeConversationId ? "bg-gray-800/60 border-emerald-500/30" : "border-transparent hover:bg-gray-900")">
-                    <div class="text-xs text-gray-300 truncate">@conv.Title</div>
+                    <div class="flex items-center gap-1.5 text-xs text-gray-300 truncate">
+                        @if (_loadingConversations.Contains(conv.Id))
+                        {
+                            <svg class="w-3 h-3 animate-spin text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                        stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor"
+                                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            </svg>
+                        }
+                        <span class="truncate">@conv.Title</span>
+                    </div>
                     <div class="flex items-center justify-between mt-0.5">
                         <span class="text-[10px] text-gray-600">@conv.Database</span>
                         <button @onclick="() => DeleteConversation(conv.Id)" @onclick:stopPropagation="true"
@@ -101,7 +112,19 @@
                     {
                         <div @onclick="() => { LoadConversation(conv.Id); showHistoryMobile = false; }"
                              class="px-2.5 py-2 rounded border cursor-pointer group transition-colors @(conv.Id == activeConversationId ? "bg-gray-800/60 border-emerald-500/30" : "border-transparent hover:bg-gray-900")">
-                            <div class="text-xs text-gray-300 truncate">@conv.Title</div>
+                            <div class="flex items-center gap-1.5 text-xs text-gray-300 truncate">
+                                @if (_loadingConversations.Contains(conv.Id))
+                                {
+                                    <svg class="w-3 h-3 animate-spin text-emerald-400 shrink-0" fill="none"
+                                         viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                                stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor"
+                                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                    </svg>
+                                }
+                                <span class="truncate">@conv.Title</span>
+                            </div>
                             <div class="flex items-center justify-between mt-0.5">
                                 <span class="text-[10px] text-gray-600">@conv.Database</span>
                                 <button @onclick="() => DeleteConversation(conv.Id)" @onclick:stopPropagation="true"
@@ -689,7 +712,6 @@
 
     private List<ChatMessage> messages = [];
     private string input = "";
-    private bool loading;
     private string database = "";
     private string mode = "general";
     private bool debugMode;
@@ -699,13 +721,19 @@
     private List<AnalyticsConversation> conversations = [];
     private string? activeConversationId;
     private Dictionary<string, PeriodicTimer> activePolls = [];
+    private Dictionary<string, string> _jobToConversation = [];
+    private HashSet<string> _loadingConversations = [];
+    private Dictionary<string, ChatMessage> _pendingByConversation = [];
+    private Dictionary<string, string> _streamingByConversation = [];
     private ElementReference messagesContainer;
     private ElementReference loadingAnchor;
     private string userId = "default";
     private bool _shouldScrollToBottom;
     private bool _shouldScrollToLoading;
-    private ChatMessage? _pendingMessage;
-    private string _streamingText = "";
+
+    private bool loading => activeConversationId != null && _loadingConversations.Contains(activeConversationId);
+    private ChatMessage? _pendingMessage => activeConversationId != null && _pendingByConversation.TryGetValue(activeConversationId, out var pm) ? pm : null;
+    private string _streamingText => activeConversationId != null && _streamingByConversation.TryGetValue(activeConversationId, out var st) ? st : "";
     private bool showHistoryMobile;
     private bool showHistoryPanel = true;
     private bool showBetaDisclaimer = true;
@@ -946,7 +974,6 @@
         messages.Add(new ChatMessage { Role = "user", Content = prompt });
         _shouldScrollToLoading = true;
         input = "";
-        loading = true;
 
         try
         {
@@ -984,6 +1011,11 @@
 
             await JobStore.CreateAsync(job);
             await Worker.EnqueueAsync(job.Id);
+            if (!string.IsNullOrEmpty(conversationId))
+            {
+                _jobToConversation[job.Id] = conversationId;
+                _loadingConversations.Add(conversationId);
+            }
             StartPolling(job.Id);
         }
         catch (Exception ex)
@@ -992,7 +1024,8 @@
             NormalizeAssistantMessage(assistant);
             messages.Add(assistant);
             SelectLatestAssistantMessage();
-            loading = false;
+            if (activeConversationId != null)
+                _loadingConversations.Remove(activeConversationId);
         }
     }
 
@@ -1047,11 +1080,17 @@
     {
         if (activePolls.ContainsKey(jobId)) return;
 
-        _pendingMessage ??= new ChatMessage
+        _jobToConversation.TryGetValue(jobId, out var convId);
+        convId ??= activeConversationId ?? "";
+
+        if (!string.IsNullOrEmpty(convId) && !_pendingByConversation.ContainsKey(convId))
         {
-            Role = "progress",
-            StreamEvents = [new AnalyticsStreamEvent { Type = "thinking", Message = "Analysing your question…", Attempt = 1 }]
-        };
+            _pendingByConversation[convId] = new ChatMessage
+            {
+                Role = "progress",
+                StreamEvents = [new AnalyticsStreamEvent { Type = "thinking", Message = "Analysing your question…", Attempt = 1 }]
+            };
+        }
 
         var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(150));
         activePolls[jobId] = timer;
@@ -1062,12 +1101,13 @@
             {
                 try
                 {
-                    // Update streaming text from live worker state (no cache round-trip)
+                    var isActive = activeConversationId == convId;
+
                     var liveText = Worker.GetLiveText(jobId);
-                    if (liveText != null && liveText != _streamingText)
+                    if (liveText != null)
                     {
-                        _streamingText = liveText;
-                        await InvokeAsync(StateHasChanged);
+                        _streamingByConversation[convId] = liveText;
+                        if (isActive) await InvokeAsync(StateHasChanged);
                     }
 
                     var job = await JobStore.GetAsync(jobId);
@@ -1077,61 +1117,24 @@
                         break;
                     }
 
-                    if (_pendingMessage != null && job.StreamEvents.Count > (_pendingMessage.StreamEvents?.Count ?? 0))
+                    if (_pendingByConversation.TryGetValue(convId, out var pending) &&
+                        job.StreamEvents.Count > (pending.StreamEvents?.Count ?? 0))
                     {
-                        _pendingMessage.StreamEvents = job.StreamEvents;
-                        await InvokeAsync(StateHasChanged);
+                        pending.StreamEvents = job.StreamEvents;
+                        if (isActive) await InvokeAsync(StateHasChanged);
                     }
 
                     if (job.Status == "completed")
                     {
                         StopPolling(jobId);
-
-                        if (job.Result != null)
-                        {
-                            var assistant = new ChatMessage
-                            {
-                                Role = "assistant",
-                                Thinking = job.Result.Thinking,
-                                Sql = job.Result.Sql,
-                                Explanation = job.Result.Explanation,
-                                Summary = job.Result.Summary,
-                                RiskLevel = job.Result.RiskLevel,
-                                Findings = job.Result.Findings ?? [],
-                                RecommendedActions = job.Result.RecommendedActions ?? [],
-                                Error = job.Result.Error,
-                                ChartType = job.Result.ChartType ?? "none",
-                                Columns = job.Result.Columns ?? [],
-                                Rows = job.Result.Rows ?? [],
-                                RowCount = job.Result.RowCount,
-                                InputTokens = job.Result.InputTokens,
-                                OutputTokens = job.Result.OutputTokens,
-                                StreamEvents = job.StreamEvents,
-                                Results = job.Result.Results ?? []
-                            };
-                            NormalizeAssistantMessage(assistant);
-                            messages.Add(assistant);
-                            SelectLatestAssistantMessage();
-                        }
-
-                        _pendingMessage = null;
-                        _streamingText = "";
-                        loading = false;
-                        _shouldScrollToBottom = true;
+                        FinishJob(convId, jobId, job);
                         await InvokeAsync(StateHasChanged);
                         break;
                     }
                     else if (job.Status == "failed")
                     {
                         StopPolling(jobId);
-                        _pendingMessage = null;
-                        _streamingText = "";
-                        var assistant = new ChatMessage { Role = "assistant", Error = job.Error ?? "Query failed", StreamEvents = job.StreamEvents };
-                        NormalizeAssistantMessage(assistant);
-                        messages.Add(assistant);
-                        SelectLatestAssistantMessage();
-                        loading = false;
-                        _shouldScrollToBottom = true;
+                        FinishJobFailed(convId, jobId, job);
                         await InvokeAsync(StateHasChanged);
                         break;
                     }
@@ -1139,14 +1142,67 @@
                 catch
                 {
                     StopPolling(jobId);
-                    _pendingMessage = null;
-                    _streamingText = "";
-                    loading = false;
+                    CleanupJob(convId, jobId);
                     await InvokeAsync(StateHasChanged);
                     break;
                 }
             }
         });
+    }
+
+    private void FinishJob(string convId, string jobId, AnalyticsQueryJob job)
+    {
+        if (job.Result != null && activeConversationId == convId)
+        {
+            var assistant = new ChatMessage
+            {
+                Role = "assistant",
+                Thinking = job.Result.Thinking,
+                Sql = job.Result.Sql,
+                Explanation = job.Result.Explanation,
+                Summary = job.Result.Summary,
+                RiskLevel = job.Result.RiskLevel,
+                Findings = job.Result.Findings ?? [],
+                RecommendedActions = job.Result.RecommendedActions ?? [],
+                Error = job.Result.Error,
+                ChartType = job.Result.ChartType ?? "none",
+                Columns = job.Result.Columns ?? [],
+                Rows = job.Result.Rows ?? [],
+                RowCount = job.Result.RowCount,
+                InputTokens = job.Result.InputTokens,
+                OutputTokens = job.Result.OutputTokens,
+                StreamEvents = job.StreamEvents,
+                Results = job.Result.Results ?? []
+            };
+            NormalizeAssistantMessage(assistant);
+            messages.Add(assistant);
+            SelectLatestAssistantMessage();
+            _shouldScrollToBottom = true;
+        }
+
+        CleanupJob(convId, jobId);
+    }
+
+    private void FinishJobFailed(string convId, string jobId, AnalyticsQueryJob job)
+    {
+        if (activeConversationId == convId)
+        {
+            var assistant = new ChatMessage { Role = "assistant", Error = job.Error ?? "Query failed", StreamEvents = job.StreamEvents };
+            NormalizeAssistantMessage(assistant);
+            messages.Add(assistant);
+            SelectLatestAssistantMessage();
+            _shouldScrollToBottom = true;
+        }
+
+        CleanupJob(convId, jobId);
+    }
+
+    private void CleanupJob(string convId, string jobId)
+    {
+        _pendingByConversation.Remove(convId);
+        _streamingByConversation.Remove(convId);
+        _loadingConversations.Remove(convId);
+        _jobToConversation.Remove(jobId);
     }
 
     private void StopPolling(string jobId)
@@ -1741,7 +1797,11 @@
     private void ClearChat()
     {
         messages.Clear();
-        _pendingMessage = null;
+        if (activeConversationId != null)
+        {
+            _pendingByConversation.Remove(activeConversationId);
+            _streamingByConversation.Remove(activeConversationId);
+        }
         selectedAssistantIdx = null;
     }
 
