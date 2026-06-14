@@ -299,8 +299,9 @@
                                             </div>
                                             @if (qr.ChartType != "none")
                                             {
-                                                <div class="p-3" style="min-height:330px">
-                                                    <div class="flex items-center gap-1.5 mb-2 flex-wrap">
+                                                <div class="p-3" style="min-height:330px" id="chart-mr-@(idx)-@(ri)">
+                                                    <div class="flex items-center justify-between gap-1.5 mb-2">
+                                                        <div class="flex items-center gap-1.5 flex-wrap">
                                                         @foreach (var ct in GetApplicableChartTypes(qr))
                                                         {
                                                             var chartType = ct;
@@ -311,6 +312,11 @@
                                                                 @ct
                                                             </button>
                                                         }
+                                                        </div>
+                                                        <ChartShareMenu ChartContainerId="@($"chart-mr-{idx}-{ri}")"
+                                                                        ChartTitle="@(!string.IsNullOrEmpty(qr.Label) ? qr.Label : $"Result {ri + 1}")"
+                                                                        ConversationUrl="@GetConversationUrl()"
+                                                                        JS="@JS" />
                                                     </div>
                                                     @if (qr.ChartType is "pie" or "donut" or "doughnut")
                                                     {
@@ -374,8 +380,9 @@
                                 else if (HasChartContent(msg))
                                 {
                                     <div class="border border-gray-800/60 rounded-lg p-3 bg-gray-950/30"
-                                         style="min-height:370px">
-                                        <div class="flex items-center gap-1.5 mb-2 flex-wrap">
+                                         style="min-height:370px" id="chart-main-@(idx)">
+                                        <div class="flex items-center justify-between gap-1.5 mb-2">
+                                            <div class="flex items-center gap-1.5 flex-wrap">
                                             @foreach (var ct in GetApplicableChartTypes(msg))
                                             {
                                                 var chartType = ct;
@@ -385,6 +392,11 @@
                                                     @ct
                                                 </button>
                                             }
+                                            </div>
+                                            <ChartShareMenu ChartContainerId="@($"chart-main-{idx}")"
+                                                            ChartTitle="Chart"
+                                                            ConversationUrl="@GetConversationUrl()"
+                                                            JS="@JS" />
                                         </div>
                                         @if (msg.ChartType is "scatter")
                                         {
@@ -1264,6 +1276,11 @@
         (msg.Findings?.Count > 0) ||
         (msg.RecommendedActions?.Count > 0) ||
         !string.IsNullOrWhiteSpace(msg.Error);
+
+    private string GetConversationUrl() =>
+        string.IsNullOrEmpty(activeConversationId)
+            ? Navigation.BaseUri + "admin/chat"
+            : Navigation.BaseUri + $"admin/chat?id={activeConversationId}";
 
     private static bool HasChartContent(ChatMessage msg) =>
         (!string.IsNullOrWhiteSpace(msg.ChartType) && msg.ChartType != "none" && msg.Rows?.Count > 0)
