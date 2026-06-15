@@ -46,30 +46,28 @@ window.chartInterop = {
         img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
         return true;
     },
-    copyToClipboard: function (text) {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            return navigator.clipboard.writeText(text).then(function () {
+    copyToClipboard: async function (text) {
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
                 return true;
-            }, function () {
-                return this._fallbackCopy(text);
-            }.bind(this));
+            }
+        } catch (e) {
         }
-        return Promise.resolve(this._fallbackCopy(text));
-    },
-    _fallbackCopy: function (text) {
         try {
             var ta = document.createElement('textarea');
             ta.value = text;
-            ta.style.position = 'fixed';
-            ta.style.left = '-9999px';
+            ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0';
             document.body.appendChild(ta);
+            ta.focus();
             ta.select();
-            document.execCommand('copy');
+            var ok = document.execCommand('copy');
             document.body.removeChild(ta);
-            return true;
+            if (ok) return true;
         } catch (e) {
-            return false;
         }
+        window.prompt('Copy this link:', text);
+        return true;
     },
     getChartPngBase64: async function (containerEl) {
         if (!containerEl) return null;

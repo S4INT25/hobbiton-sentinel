@@ -1119,15 +1119,24 @@
 
     private async Task ShareConversation(string convId)
     {
+        _contextMenuConvId = null;
+
         var conv = await ChatStore.GetConversationAsync(userId, convId);
         if (conv == null) return;
 
         await ChatStore.ShareConversationAsync(conv);
-        var url = Navigation.BaseUri + $"shared/{convId}";
-        await JS.InvokeAsync<bool>("chartInterop.copyToClipboard", url);
+        var url = $"{Navigation.BaseUri}shared/{convId}";
+
+        try
+        {
+            await JS.InvokeAsync<bool>("chartInterop.copyToClipboard", url);
+        }
+        catch
+        {
+            await JS.InvokeVoidAsync("window.prompt", "Copy this link:", url);
+        }
 
         _shareCopiedId = convId;
-        _contextMenuConvId = null;
         StateHasChanged();
         await Task.Delay(2000);
         _shareCopiedId = null;
