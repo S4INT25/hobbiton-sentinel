@@ -1,5 +1,4 @@
 @page "/admin/knowledge"
-@using Sentinel.Admin.Models
 @inject IAgentMemoryStore MemoryStore
 @inject IAuditLogStore AuditStore
 @inject AuthenticationStateProvider AuthStateProvider
@@ -81,7 +80,9 @@
         <div class="space-y-2">
             @foreach (var m in _memories)
             {
-                <div class="border border-gray-800 rounded-lg p-4 bg-gray-900/40 hover:border-gray-700 transition-colors">
+                var isExpanded = _expandedIds.Contains(m.Id);
+                <div
+                    class="border border-gray-800 rounded-lg p-4 bg-gray-900/40 hover:border-gray-700 transition-colors @(!m.Enabled ? "opacity-60" : "")">
                     <div class="flex items-start justify-between gap-3">
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center gap-2 flex-wrap">
@@ -99,8 +100,22 @@
                                     <span class="px-1.5 py-0.5 text-xs rounded bg-gray-800 text-gray-500">All databases</span>
                                 }
                             </div>
-                            <p class="mt-1.5 text-xs text-gray-400 leading-relaxed whitespace-pre-wrap">@m.Definition</p>
-                            <p class="mt-2 text-xs text-gray-600">
+                            <div class="relative mt-1.5">
+                                <p class="text-xs text-gray-400 leading-relaxed whitespace-pre-wrap @(isExpanded ? "" : "line-clamp-3")">@m.Definition</p>
+                                @if (!isExpanded && m.Definition?.Length > 200)
+                                {
+                                    <div
+                                        class="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-gray-900/90 to-transparent pointer-events-none"></div>
+                                }
+                            </div>
+                            @if (m.Definition?.Length > 200)
+                            {
+                                <button @onclick="() => ToggleExpand(m.Id)"
+                                        class="mt-1 text-[10px] text-emerald-400 hover:text-emerald-300 transition-colors">
+                                    @(isExpanded ? "Show less" : "Show more")
+                                </button>
+                            }
+                            <p class="mt-1.5 text-xs text-gray-600">
                                 Updated @m.UpdatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm")
                                 @if (!string.IsNullOrEmpty(m.CreatedBy)) { <span> · @m.CreatedBy</span> }
                             </p>
@@ -132,6 +147,13 @@
     private bool _showForm;
     private bool _saving;
     private string? _formError;
+    private HashSet<int> _expandedIds = [];
+
+    private void ToggleExpand(int id)
+    {
+        if (!_expandedIds.Remove(id))
+            _expandedIds.Add(id);
+    }
 
     protected override async Task OnInitializedAsync()
     {
