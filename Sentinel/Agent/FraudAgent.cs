@@ -481,7 +481,8 @@ public class FraudAgent(
                     "Fraud Detector: Run Incomplete",
                     $"Run {currentRunId} reached the iteration limit ({maxIterations} steps) without completing. " +
                     "Review Hangfire logs for partial findings.",
-                    "warning");
+                    "warning",
+                    senderName: "Sentinel");
             }
         }
         else if (!alertSent)
@@ -560,7 +561,8 @@ public class FraudAgent(
                 "send_alert" => await email.SendAsync(
                     root.GetProperty("subject").GetString()!,
                     root.GetProperty("body").GetString()!,
-                    root.TryGetProperty("severity", out var sev) ? sev.GetString()! : "watching"),
+                    root.TryGetProperty("severity", out var sev) ? sev.GetString()! : "watching",
+                    senderName: "Sentinel"),
                 "lookup_ip" => await ipLookup.LookupAsync(
                     JsonHelpers.ToIpList(root.GetProperty("ips"))),
                 "describe_table" => await schemaLoader.DescribeTableAsync(

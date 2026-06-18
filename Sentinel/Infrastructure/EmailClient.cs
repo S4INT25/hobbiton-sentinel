@@ -35,12 +35,13 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
         string severity = "watching",
         IReadOnlyList<string>? recipients = null,
         bool wide = false,
-        IReadOnlyList<EmbeddedChartImage>? chartImages = null)
+        IReadOnlyList<EmbeddedChartImage>? chartImages = null,
+        string? senderName = null)
     {
         try
         {
             var from = config["Email:From"]!;
-            var fromName = config["Email:FromName"] ?? "Sentinel";
+            var fromName = senderName ?? config["Email:FromName"] ?? "Sentinel";
             var defaultRecipient = config["Email:To"] ?? "security@hobbiton.co.zm";
             var prefix = config["Email:SubjectPrefix"] ?? "[SENTINEL]";
             var host = config["Email:Smtp:Host"] ?? "smtp.gmail.com";
