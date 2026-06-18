@@ -375,7 +375,7 @@ public class AnalyticsAgentCore(
                     var subject = firstLine.StartsWith('#') ? firstLine.TrimStart('#', ' ') : firstLine;
 
                     await emailClient.SendAsync(subject, bestExplanation, "watching", wide: true,
-                        senderName: "Analytics · Hobbiton");
+                        senderName: "Analytics · Hobbiton", subjectPrefix: "[ANALYTICS]");
                     response.ReportSent = true;
                     response.EmailSubject = subject;
                     response.EmailBody = bestExplanation;
@@ -729,7 +729,7 @@ public class AnalyticsAgentCore(
             (chartImages is { Count: > 0 } ? $" with {chartImages.Count} chart(s)" : ""));
 
         var result = await emailClient.SendAsync(subject, body, severity, recipients,
-            wide: true, chartImages: chartImages, senderName: "Analytics · Hobbiton");
+            wide: true, chartImages: chartImages, senderName: "Analytics · Hobbiton", subjectPrefix: "[ANALYTICS]");
         response.ReportSent = true;
         response.EmailSubject = subject;
         response.EmailBody = body;

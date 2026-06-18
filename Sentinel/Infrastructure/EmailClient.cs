@@ -36,14 +36,15 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
         IReadOnlyList<string>? recipients = null,
         bool wide = false,
         IReadOnlyList<EmbeddedChartImage>? chartImages = null,
-        string? senderName = null)
+        string? senderName = null,
+        string? subjectPrefix = null)
     {
         try
         {
             var from = config["Email:From"]!;
             var fromName = senderName ?? config["Email:FromName"] ?? "Sentinel";
             var defaultRecipient = config["Email:To"] ?? "security@hobbiton.co.zm";
-            var prefix = config["Email:SubjectPrefix"] ?? "[SENTINEL]";
+            var prefix = subjectPrefix ?? config["Email:SubjectPrefix"] ?? "";
             var host = config["Email:Smtp:Host"] ?? "smtp.gmail.com";
             var port = config.GetValue("Email:Smtp:Port", 587);
             var user = config["Email:Smtp:User"]!;
@@ -64,7 +65,7 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
                     htmlBody = htmlBody.Replace("</body>", chartHtml + "</body>");
             }
 
-            var fullSubject = $"{prefix} {subject}";
+            var fullSubject = string.IsNullOrEmpty(prefix) ? subject : $"{prefix} {subject}";
 
             var builder = new BodyBuilder { TextBody = body };
 
@@ -87,8 +88,11 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
                 Subject = fullSubject,
                 Body = builder.ToMessageBody(),
                 Sender = new MailboxAddress(fromName, from),
-                From = { new MailboxAddress(fromName, from) }
+                From = { new MailboxAddress(fromName, from) },
+                Importance = MessageImportance.High,
+                Priority = MessagePriority.Urgent
             };
+            message.Headers.Add("X-Priority", "1");
 
             var toRecipients = recipients is { Count: > 0 }
                 ? recipients
