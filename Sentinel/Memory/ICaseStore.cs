@@ -10,6 +10,7 @@ public interface ICaseStore
     Task<FraudCase> SaveCaseAsync(FraudCase fraudCase);
     Task<FraudCase?> GetCaseAsync(string id);
     Task ResolveCaseAsync(string id, string resolution);
+    Task<int> ResolveCasesAsync(IReadOnlyList<string> ids, string resolution);
     Task DeleteCaseAsync(string id);
     Task<string> GetOpenCasesSummaryAsync();
 

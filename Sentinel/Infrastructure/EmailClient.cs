@@ -70,9 +70,10 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
             var builder = new BodyBuilder { TextBody = body };
 
             // Embed chart images as CID-linked resources so email clients render them inline
+            // Skip images that use inline HTML (bar charts rendered without QuickChart)
             if (chartImages is { Count: > 0 })
             {
-                foreach (var ci in chartImages)
+                foreach (var ci in chartImages.Where(c => c.InlineHtml == null))
                 {
                     var resource = builder.LinkedResources.Add(ci.ContentId + ".png", ci.PngBytes,
                         new ContentType("image", "png"));
@@ -124,17 +125,42 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
     private static string BuildChartSection(IReadOnlyList<EmbeddedChartImage> charts)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("<h2>Charts</h2>");
-        foreach (var chart in charts)
+        for (int i = 0; i < charts.Count; i += 2)
         {
-            sb.AppendLine("<div style=\"margin: 16px 0;\">");
-            if (!string.IsNullOrWhiteSpace(chart.Title))
-                sb.AppendLine($"<h3>{Encode(chart.Title)}</h3>");
-            sb.AppendLine($"<img src=\"cid:{chart.ContentId}\" alt=\"{Encode(chart.Title ?? "Chart")}\" " +
-                          "style=\"max-width:100%;height:auto;border:1px solid #e4e4e7;border-radius:6px;\" />");
-            sb.AppendLine("</div>");
+            var left = charts[i];
+            var right = i + 1 < charts.Count ? charts[i + 1] : null;
+
+            sb.AppendLine(
+                "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin-bottom:16px\">");
+            sb.AppendLine("  <tr>");
+            var width = right != null ? "50%" : "100%";
+            var padRight = right != null ? "12px" : "0";
+            sb.AppendLine($"    <td width=\"{width}\" valign=\"top\" style=\"padding-right:{padRight}\">");
+            sb.AppendLine(ChartCell(left));
+            sb.AppendLine("    </td>");
+            if (right != null)
+            {
+                sb.AppendLine("    <td width=\"50%\" valign=\"top\" style=\"padding-left:12px\">");
+                sb.AppendLine(ChartCell(right));
+                sb.AppendLine("    </td>");
+            }
+
+            sb.AppendLine("  </tr>");
+            sb.AppendLine("</table>");
         }
 
+        return sb.ToString();
+    }
+
+    private static string ChartCell(EmbeddedChartImage ci)
+    {
+        if (ci.InlineHtml != null) return ci.InlineHtml;
+        var sb = new StringBuilder();
+        if (!string.IsNullOrWhiteSpace(ci.Title))
+            sb.AppendLine(
+                $"<p style=\"font-size:12px;font-weight:600;color:#52525b;margin:0 0 4px\">{Encode(ci.Title)}</p>");
+        sb.AppendLine($"<img src=\"cid:{ci.ContentId}\" alt=\"{Encode(ci.Title ?? "Chart")}\" " +
+                      "style=\"max-width:100%;height:auto;border:1px solid #e4e4e7;border-radius:6px\" />");
         return sb.ToString();
     }
 
@@ -393,4 +419,5 @@ public class EmbeddedChartImage
     public required string ContentId { get; init; }
     public required byte[] PngBytes { get; init; }
     public string? Title { get; init; }
+    public string? InlineHtml { get; init; }
 }

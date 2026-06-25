@@ -61,6 +61,28 @@ public class CaseStore(IFusionCache cache, ILogger<CaseStore> logger) : ICaseSto
         logger.LogInformation("Case {Id} resolved: {Resolution}", id, resolution);
     }
 
+    public async Task<int> ResolveCasesAsync(IReadOnlyList<string> ids, string resolution)
+    {
+        var all = await LoadAsync();
+        var count = 0;
+        foreach (var id in ids)
+        {
+            if (!all.TryGetValue(id, out var c)) continue;
+            c.Status = "resolved";
+            c.Resolution = resolution;
+            c.LastSeen = DateTime.UtcNow;
+            count++;
+        }
+
+        if (count > 0)
+        {
+            await PersistAsync(all);
+            logger.LogInformation("Bulk-resolved {Count} cases: {Resolution}", count, resolution);
+        }
+
+        return count;
+    }
+
     public async Task DeleteCaseAsync(string id)
     {
         var all = await LoadAsync();

@@ -709,15 +709,29 @@ public class AnalyticsAgentCore(
                 if (chart == null) continue;
 
                 await Emit(onEvent, "rendering_chart", $"Rendering chart: {chart.Title}");
-                var pngBytes = chartRenderer.Render(chart);
-                if (pngBytes is { Length: > 0 })
+
+                if (ChartRenderer.IsBarType(chart.Type))
                 {
                     chartImages.Add(new EmbeddedChartImage
                     {
                         ContentId = $"chart-{chartIndex++}-{Guid.NewGuid():N}",
-                        PngBytes = pngBytes,
-                        Title = chart.Title
+                        PngBytes = [],
+                        Title = chart.Title,
+                        InlineHtml = ChartRenderer.RenderHtml(chart)
                     });
+                }
+                else
+                {
+                    var pngBytes = chartRenderer.Render(chart);
+                    if (pngBytes is { Length: > 0 })
+                    {
+                        chartImages.Add(new EmbeddedChartImage
+                        {
+                            ContentId = $"chart-{chartIndex++}-{Guid.NewGuid():N}",
+                            PngBytes = pngBytes,
+                            Title = chart.Title
+                        });
+                    }
                 }
             }
 

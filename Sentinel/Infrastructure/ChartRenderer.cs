@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text;
 using System.Text.Json;
 using QuickChart;
 
@@ -42,6 +44,82 @@ public class ChartRenderer(ILogger<ChartRenderer> logger)
             return null;
         }
     }
+
+    public static bool IsBarType(string? type) =>
+        type?.ToLowerInvariant() is "bar" or "column" or "horizontalbar" or "horizontal_bar";
+
+    public static string RenderHtml(EmailChart chart)
+    {
+        var colors = new[] { "#3b1fa8", "#9b6fd4", "#3b82f6", "#10b981", "#f97316", "#8b5cf6" };
+
+        var labels = chart.Labels ?? [];
+        var datasets = chart.Datasets ?? [];
+        int colCount = labels.Count;
+        if (colCount == 0) return "";
+
+        var colTotals = Enumerable.Range(0, colCount)
+            .Select(i => datasets.Sum(d => i < (d.Data?.Count ?? 0) ? d.Data![i] : 0))
+            .ToList();
+        var maxTotal = colTotals.Max();
+        if (maxTotal == 0) maxTotal = 1;
+
+        var total = datasets.SelectMany(d => d.Data ?? []).Sum();
+        var headline = FormatK(total);
+
+        const int BarAreaPx = 80;
+
+        var sb = new StringBuilder();
+        sb.AppendLine("<div style=\"font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;\">");
+        sb.AppendLine(
+            $"<p style=\"font-size:26px;font-weight:700;color:#18181b;margin:0 0 2px;line-height:1\">{headline}</p>");
+        if (!string.IsNullOrWhiteSpace(chart.Title))
+            sb.AppendLine(
+                $"<p style=\"font-size:12px;font-weight:600;color:#52525b;margin:0 0 12px\">{WebUtility.HtmlEncode(chart.Title)}</p>");
+
+        var widthPct = colCount > 0 ? (100.0 / colCount).ToString("0.##") : "100";
+        sb.AppendLine(
+            $"<table width=\"100%\" cellpadding=\"0\" cellspacing=\"2\" border=\"0\" style=\"height:{BarAreaPx}px\">");
+        sb.AppendLine("  <tr>");
+        for (int i = 0; i < colCount; i++)
+        {
+            var colTotal = colTotals[i];
+            var barHeight = maxTotal > 0 ? (double)(colTotal / maxTotal) * BarAreaPx : 0;
+
+            sb.AppendLine(
+                $"    <td width=\"{widthPct}%\" valign=\"bottom\" style=\"vertical-align:bottom;padding:0 1px\">");
+            for (int d = 0; d < datasets.Count; d++)
+            {
+                var val = i < (datasets[d].Data?.Count ?? 0) ? datasets[d].Data![i] : 0;
+                var segH = colTotal > 0 ? (double)(val / colTotal) * barHeight : 0;
+                if (segH < 1 && val > 0) segH = 1;
+                var color = colors[d % colors.Length];
+                sb.AppendLine($"      <div style=\"height:{segH:0}px;background:{color};display:block\"></div>");
+            }
+
+            sb.AppendLine("    </td>");
+        }
+
+        sb.AppendLine("  </tr>");
+        sb.AppendLine("</table>");
+
+        sb.AppendLine("<table width=\"100%\" cellpadding=\"0\" cellspacing=\"2\" border=\"0\">");
+        sb.AppendLine("  <tr>");
+        foreach (var lbl in labels)
+            sb.AppendLine(
+                $"    <td width=\"{widthPct}%\" style=\"font-size:10px;color:#a1a1aa;text-align:center;padding-top:4px\">{WebUtility.HtmlEncode(lbl)}</td>");
+        sb.AppendLine("  </tr>");
+        sb.AppendLine("</table>");
+        sb.AppendLine("</div>");
+
+        return sb.ToString();
+    }
+
+    private static string FormatK(decimal val) => val switch
+    {
+        >= 1_000_000 => $"{val / 1_000_000:0.#}M",
+        >= 1_000 => $"{val / 1_000:0.#}k",
+        _ => val.ToString("0.#")
+    };
 
     /// <summary>
     /// Build a Chart.js JSON config string from our simplified chart definition.
