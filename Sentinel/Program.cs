@@ -145,6 +145,7 @@ try
     builder.Services.AddScoped<FraudAgent>();
     builder.Services.AddScoped<SentinelJob>();
     builder.Services.AddScoped<WorkflowExecutionJob>();
+    builder.Services.AddScoped<StaleResolutionJob>();
     builder.Services.AddScoped<AnalyticsAgentCore>();
     builder.Services.AddScoped<ChatAnalyticsAgent>();
     builder.Services.AddScoped<WorkflowAnalyticsAgent>();
@@ -249,6 +250,13 @@ try
     }
 
     app.UseHangfireDashboard("/hangfire", dashOptions);
+
+    var staleCron = app.Configuration["Sentinel:StaleCase:Cron"] ?? Cron.Daily(2);
+    RecurringJob.AddOrUpdate<StaleResolutionJob>(
+        "stale-case-resolution",
+        queue: "fraud",
+        j => j.RunAsync(),
+        staleCron);
 
     app.Run();
 }

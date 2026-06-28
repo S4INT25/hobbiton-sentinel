@@ -14,7 +14,7 @@ public class StaleResolutionJob(
 {
     public async Task RunAsync()
     {
-        var staleDays = config.GetValue("Sentinel:StaleCase:ThresholdDays", 7);
+        var staleDays = config.GetValue("Sentinel:StaleCase:ThresholdDays", 1);
 
         // Get stale cases before resolving so we can record outcomes
         var openCases = await caseStore.GetOpenCasesAsync();
