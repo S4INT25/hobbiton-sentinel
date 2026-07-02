@@ -11,29 +11,27 @@
 
     <ItemGroup>
         <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
-        <PackageReference Include="Blazor-ApexCharts" Version="6.1.0" />
-        <PackageReference Include="Cronos" Version="0.8.4" />
+        <PackageReference Include="Cronos" Version="0.13.0"/>
         <PackageReference Include="Hangfire.AspNetCore" Version="1.8.23" />
         <PackageReference Include="Hangfire.Core" Version="1.8.23" />
         <PackageReference Include="Hangfire.Dashboard.BasicAuthorization" Version="1.0.2" />
         <PackageReference Include="Hangfire.InMemory" Version="1.0.0" />
         <PackageReference Include="Hangfire.Redis.StackExchange" Version="1.12.0" />
-        <PackageReference Include="MailKit" Version="4.16.0" />
-        <PackageReference Include="Markdig" Version="0.40.0" />
-        <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.8">
+        <PackageReference Include="MailKit" Version="4.17.0"/>
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
           <PrivateAssets>all</PrivateAssets>
           <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.8" />
+        <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.9"/>
         <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.2" />
-        <PackageReference Include="OpenAI" Version="2.10.0" />
+        <PackageReference Include="OpenAI" Version="2.12.0"/>
         <PackageReference Include="QuickChart" Version="2.3.0"/>
         <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
         <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
         <PackageReference Include="Serilog.Enrichers.Thread" Version="4.0.0" />
         <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
         <PackageReference Include="Serilog.Sinks.Seq" Version="9.1.0" />
-        <PackageReference Include="StackExchange.Redis" Version="2.13.10" />
+        <PackageReference Include="StackExchange.Redis" Version="3.0.11"/>
         <PackageReference Include="ZiggyCreatures.FusionCache" Version="2.6.0" />
         <PackageReference Include="ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis" Version="2.6.0" />
         <PackageReference Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" Version="2.6.0" />
