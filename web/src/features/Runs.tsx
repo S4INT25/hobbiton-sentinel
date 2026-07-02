@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, type ActiveRunState, type RunSummary } from '../api';
-import { PageHeader, Feedback, Spinner, StatusBadge, btnPrimary, fmtDate } from '../components/ui';
+import { PageHeader, Feedback, Spinner, StatusBadge, btnPrimary, fmtDate, tableWrap, thCls, tdCls } from '../components/ui';
 
 const PAGE_SIZE = 20;
 const NO_ACTIVE: ActiveRunState[] = [];
@@ -86,7 +86,7 @@ export default function Runs() {
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-stagger>
       <PageHeader title="Run History">
         <button onClick={() => triggerMut.mutate()} disabled={triggerMut.isPending} className={btnPrimary}>
           {triggerMut.isPending ? 'Queueing…' : 'Run Now'}
@@ -96,12 +96,15 @@ export default function Runs() {
       {feedback && <Feedback message={feedback.message} kind={feedback.kind} onDismiss={() => setFeedback(null)} />}
 
       {active.length > 0 && (
-        <div className="border border-gray-800 rounded-lg p-3 bg-gray-900/30 space-y-2">
+        <div className="panel p-3.5 space-y-2 border-l-2 border-l-emerald-500/50">
+          <div className="flex items-center gap-2">
+            <span className="glow-dot" />
+            <span className="kicker text-emerald-500/90">Active run</span>
+          </div>
           {/* ponytail: Blazor also showed a live tool-call count here; needs per-run getRun polling — add if missed */}
           {active.map((a) => (
             <div key={a.runId} className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs">
-                <span className="text-gray-400">Current run:</span>
                 <Link to={`/runs/${a.runId}`} className="text-emerald-400 hover:text-emerald-300 font-mono">
                   {a.runId}
                 </Link>
@@ -111,7 +114,7 @@ export default function Runs() {
                 <button
                   onClick={() => stopMut.mutate(a.runId)}
                   disabled={stopMut.isPending}
-                  className="px-2.5 py-1 text-xs font-medium bg-rose-600/80 hover:bg-rose-500 text-white rounded-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-2.5 py-1 text-xs font-semibold bg-rose-600/80 hover:bg-rose-500 text-white rounded-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {stopMut.isPending ? 'Stopping…' : 'Stop'}
                 </button>
@@ -121,42 +124,42 @@ export default function Runs() {
         </div>
       )}
 
-      <div className="border border-gray-800 rounded-lg overflow-hidden">
+      <div className={tableWrap}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[860px]">
-            <thead className="bg-gray-900/50">
-              <tr className="text-xs text-gray-500 border-b border-gray-800">
-                <th className="text-left px-4 py-2 font-medium">Run ID</th>
-                <th className="text-left px-4 py-2 font-medium">Started</th>
-                <th className="text-left px-4 py-2 font-medium">Duration</th>
-                <th className="text-left px-4 py-2 font-medium">Iterations</th>
-                <th className="text-left px-4 py-2 font-medium">Tokens (in/out)</th>
-                <th className="text-left px-4 py-2 font-medium">Cases</th>
-                <th className="text-left px-4 py-2 font-medium">Alerts</th>
-                <th className="text-left px-4 py-2 font-medium">Status</th>
-                <th className="text-left px-4 py-2 font-medium">Trigger</th>
+            <thead className="bg-gray-900/60">
+              <tr className="border-b border-gray-800">
+                <th className={thCls}>Run ID</th>
+                <th className={thCls}>Started</th>
+                <th className={thCls}>Duration</th>
+                <th className={thCls}>Iterations</th>
+                <th className={thCls}>Tokens (in/out)</th>
+                <th className={thCls}>Cases</th>
+                <th className={thCls}>Alerts</th>
+                <th className={thCls}>Status</th>
+                <th className={thCls}>Trigger</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800/50">
               {paged.map((run) => (
-                <tr key={run.runId} className="hover:bg-gray-900/30 transition-colors">
-                  <td className="px-4 py-2.5">
+                <tr key={run.runId} className="hover:bg-emerald-500/[0.03] transition-colors">
+                  <td className={tdCls}>
                     <Link to={`/runs/${run.runId}`} className="text-emerald-400 hover:text-emerald-300 font-mono text-xs">
                       {run.runId}
                     </Link>
                   </td>
-                  <td className="px-4 py-2.5 text-gray-400 text-xs">{fmtDate(run.startedAt)}</td>
-                  <td className="px-4 py-2.5 text-gray-400 font-mono text-xs">{durationOf(run)}</td>
-                  <td className="px-4 py-2.5 text-gray-300 font-mono text-xs">{run.iterations}</td>
-                  <td className="px-4 py-2.5 text-gray-300 font-mono text-xs">
+                  <td className={`${tdCls} font-mono text-gray-400`}>{fmtDate(run.startedAt)}</td>
+                  <td className={`${tdCls} font-mono text-gray-400 tnum`}>{durationOf(run)}</td>
+                  <td className={`${tdCls} font-mono tnum`}>{run.iterations}</td>
+                  <td className={`${tdCls} font-mono tnum`}>
                     {run.inputTokens.toLocaleString()} / {run.outputTokens.toLocaleString()}
                   </td>
-                  <td className="px-4 py-2.5 text-gray-300 font-mono text-xs">{run.casesCreated}</td>
-                  <td className="px-4 py-2.5 text-gray-300 font-mono text-xs">{run.alertsSent}</td>
-                  <td className="px-4 py-2.5">
+                  <td className={`${tdCls} font-mono tnum`}>{run.casesCreated}</td>
+                  <td className={`${tdCls} font-mono tnum`}>{run.alertsSent}</td>
+                  <td className={tdCls}>
                     <StatusBadge status={run.status} />
                   </td>
-                  <td className="px-4 py-2.5 text-gray-500 text-xs max-w-[220px] truncate" title={run.triggeredBy}>
+                  <td className={`${tdCls} text-gray-500 max-w-[220px] truncate`} title={run.triggeredBy}>
                     {fmtTrigger(run.triggeredBy)}
                   </td>
                 </tr>
@@ -180,19 +183,19 @@ export default function Runs() {
 
       {displayRuns.length > PAGE_SIZE && (
         <div className="mt-3 flex items-center justify-between text-xs">
-          <span className="text-gray-500">Page {page} / {totalPages}</span>
+          <span className="font-mono text-[11px] text-gray-500 tnum">Page {page} / {totalPages}</span>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page <= 1}
-              className="px-2.5 py-1 border border-gray-800 rounded text-gray-300 disabled:opacity-40"
+              className="px-2.5 py-1 border border-gray-800 rounded-md text-gray-300 disabled:opacity-40 hover:border-gray-700 hover:bg-gray-900/60 transition-colors"
             >
               Previous
             </button>
             <button
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages}
-              className="px-2.5 py-1 border border-gray-800 rounded text-gray-300 disabled:opacity-40"
+              className="px-2.5 py-1 border border-gray-800 rounded-md text-gray-300 disabled:opacity-40 hover:border-gray-700 hover:bg-gray-900/60 transition-colors"
             >
               Next
             </button>

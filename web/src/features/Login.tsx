@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api, type Me } from '../api';
 import { btnPrimary, inputCls, Spinner } from '../components/ui';
 
+const labelCls = 'block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1';
+
 export default function Login({ onLogin }: { onLogin: (me: Me) => void }) {
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
@@ -26,22 +28,24 @@ export default function Login({ onLogin }: { onLogin: (me: Me) => void }) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        <div className="flex items-center justify-center gap-2.5 mb-6">
-          <img src="https://hobbiton.tech/assets/logo2-7db998ca.png" alt="Hobbiton" className="h-9 w-9 rounded object-contain" />
-          <div>
-            <div className="font-semibold text-white leading-none tracking-tight">Sentinel</div>
-            <div className="text-[10px] text-gray-500 leading-none mt-1">by Hobbiton</div>
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4 relative">
+      <div className="atmosphere" aria-hidden />
+      <div className="w-full max-w-sm relative z-10" data-stagger>
+        <div className="flex flex-col items-center mb-7">
+          <img src="https://hobbiton.tech/assets/logo2-7db998ca.png" alt="Hobbiton" className="h-10 w-10 rounded object-contain mb-3" />
+          <div className="font-display font-semibold text-lg text-white leading-none tracking-[0.22em]">SENTINEL</div>
+          <div className="flex items-center gap-1.5 mt-2">
+            <span className="glow-dot" style={{ height: 5, width: 5 }} />
+            <span className="font-mono text-[9px] text-gray-500 uppercase tracking-wider">Fraud intelligence by Hobbiton</span>
           </div>
         </div>
-        <form onSubmit={submit} className="border border-gray-800 rounded-xl bg-gray-900/40 p-5 space-y-4">
-          <h1 className="text-sm font-semibold text-white">Sign in</h1>
+        <form onSubmit={submit} className="panel p-5 space-y-4">
+          <h1 className="font-display text-sm font-semibold text-white">Sign in</h1>
           {error && (
-            <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</div>
+            <div className="rise rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</div>
           )}
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Username or email</label>
+            <label className={labelCls}>Username or email</label>
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -51,7 +55,7 @@ export default function Login({ onLogin }: { onLogin: (me: Me) => void }) {
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Password</label>
+            <label className={labelCls}>Password</label>
             <input
               type="password"
               value={password}
@@ -60,7 +64,7 @@ export default function Login({ onLogin }: { onLogin: (me: Me) => void }) {
               autoComplete="current-password"
             />
           </div>
-          <button type="submit" disabled={busy || !username || !password} className={`${btnPrimary} w-full flex items-center justify-center gap-2`}>
+          <button type="submit" disabled={busy || !username || !password} className={`${btnPrimary} w-full flex items-center justify-center gap-2 py-2`}>
             {busy && <Spinner className="h-3 w-3" />}
             {busy ? 'Signing in…' : 'Sign in'}
           </button>

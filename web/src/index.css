@@ -1,19 +1,233 @@
 @import 'tailwindcss';
 
-/* Match the Blazor app's dark theme */
+/* ── Sentinel command-center theme ──
+   The gray scale is re-tinted toward green-graphite so every existing
+   `gray-*` utility in the app picks up the theme without class changes. */
+@theme {
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-display: 'Chakra Petch', 'IBM Plex Sans', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+
+  --color-gray-50: #f2f7f4;
+  --color-gray-100: #e4ede8;
+  --color-gray-200: #cbdad1;
+  --color-gray-300: #a8bfb2;
+  --color-gray-400: #859c8f;
+  --color-gray-500: #647a6d;
+  --color-gray-600: #4a5c52;
+  --color-gray-700: #32423a;
+  --color-gray-800: #1d2a23;
+  --color-gray-900: #101915;
+  --color-gray-950: #070d0a;
+}
+
 html,
 body {
   @apply bg-gray-950 text-gray-200 antialiased;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  font-family: var(--font-sans);
 }
 
-/* Markdown content inside chat messages */
+::selection {
+  background: rgb(16 185 129 / 0.28);
+  color: #f2f7f4;
+}
+
+:focus-visible {
+  outline: 2px solid rgb(52 211 153 / 0.7);
+  outline-offset: 2px;
+}
+
+/* ── custom scrollbars, everywhere ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(50 66 58 / 0.7) transparent;
+}
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(50 66 58 / 0.7);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(100 122 109 / 0.9);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ── surfaces ── */
+.panel {
+  background: linear-gradient(180deg, rgb(16 25 21 / 0.75), rgb(16 25 21 / 0.45));
+  border: 1px solid rgb(29 42 35 / 0.9);
+  box-shadow: inset 0 1px 0 rgb(242 247 244 / 0.03);
+  border-radius: 0.75rem;
+}
+.panel-hover {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+.panel-hover:hover {
+  border-color: rgb(50 66 58);
+  box-shadow:
+    inset 0 1px 0 rgb(242 247 244 / 0.04),
+    0 4px 24px -12px rgb(0 0 0 / 0.8);
+}
+
+/* fixed backdrop: radial glow + blueprint grid */
+.atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 45% at 12% -5%, rgb(16 185 129 / 0.07), transparent 60%),
+    radial-gradient(ellipse 50% 40% at 95% 105%, rgb(14 165 233 / 0.04), transparent 60%),
+    linear-gradient(rgb(133 156 143 / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(133 156 143 / 0.035) 1px, transparent 1px);
+  background-size:
+    100% 100%,
+    100% 100%,
+    36px 36px,
+    36px 36px;
+  mask-image: radial-gradient(ellipse 90% 90% at 50% 30%, black 30%, transparent 100%);
+}
+
+.kicker {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  @apply text-gray-500;
+}
+
+kbd {
+  font-family: var(--font-mono);
+  @apply inline-flex items-center gap-0.5 rounded border border-gray-700/80 bg-gray-900 px-1.5 py-0.5 text-[10px] text-gray-400;
+  box-shadow: 0 1px 0 rgb(29 42 35);
+}
+
+@utility tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── motion ── */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes sweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes ping-dot {
+  0% {
+    box-shadow: 0 0 0 0 rgb(16 185 129 / 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 7px rgb(16 185 129 / 0);
+  }
+}
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.rise {
+  animation: rise 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.fade-in {
+  animation: fade 0.3s ease both;
+}
+/* staggered reveal for direct children; capped at 12 */
+[data-stagger] > * {
+  animation: rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+[data-stagger] > *:nth-child(1) { animation-delay: 0.03s; }
+[data-stagger] > *:nth-child(2) { animation-delay: 0.07s; }
+[data-stagger] > *:nth-child(3) { animation-delay: 0.11s; }
+[data-stagger] > *:nth-child(4) { animation-delay: 0.15s; }
+[data-stagger] > *:nth-child(5) { animation-delay: 0.19s; }
+[data-stagger] > *:nth-child(6) { animation-delay: 0.23s; }
+[data-stagger] > *:nth-child(7) { animation-delay: 0.27s; }
+[data-stagger] > *:nth-child(8) { animation-delay: 0.31s; }
+[data-stagger] > *:nth-child(9) { animation-delay: 0.35s; }
+[data-stagger] > *:nth-child(10) { animation-delay: 0.39s; }
+[data-stagger] > *:nth-child(11) { animation-delay: 0.43s; }
+[data-stagger] > *:nth-child(12) { animation-delay: 0.47s; }
+
+.glow-dot {
+  @apply inline-block h-1.5 w-1.5 rounded-full bg-emerald-400;
+  animation: ping-dot 2s ease-out infinite;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, rgb(29 42 35 / 0.4) 25%, rgb(50 66 58 / 0.5) 50%, rgb(29 42 35 / 0.4) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+  @apply rounded;
+}
+
+/* radar sweep for empty/loading hero states */
+.radar {
+  position: relative;
+  border-radius: 9999px;
+  border: 1px solid rgb(50 66 58 / 0.8);
+  background:
+    radial-gradient(circle, transparent 55%, rgb(16 185 129 / 0.06) 100%),
+    repeating-radial-gradient(circle, transparent 0 23%, rgb(50 66 58 / 0.5) 24% 24.5%);
+}
+.radar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: conic-gradient(from 0deg, rgb(16 185 129 / 0.45), transparent 60deg, transparent);
+  animation: sweep 3.2s linear infinite;
+  mask-image: radial-gradient(circle, black 0 70%, transparent 71%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── markdown inside chat messages ── */
 .prose-chat {
   @apply text-sm text-gray-300 leading-relaxed;
 }
 .prose-chat h1,
 .prose-chat h2,
 .prose-chat h3 {
+  font-family: var(--font-display);
   @apply text-white font-semibold mt-3 mb-1.5;
 }
 .prose-chat h1 { @apply text-base; }
@@ -22,8 +236,8 @@ body {
 .prose-chat p { @apply my-1.5; }
 .prose-chat ul,
 .prose-chat ol { @apply pl-5 my-1.5 space-y-0.5; }
-.prose-chat ul { @apply list-disc; }
-.prose-chat ol { @apply list-decimal; }
+.prose-chat ul { @apply list-disc marker:text-emerald-500/60; }
+.prose-chat ol { @apply list-decimal marker:text-gray-500; }
 .prose-chat code {
   @apply bg-gray-800/80 text-emerald-300 px-1 py-0.5 rounded text-xs font-mono;
 }
@@ -35,30 +249,34 @@ body {
   @apply w-full text-xs my-2 border-collapse;
 }
 .prose-chat th {
+  font-family: var(--font-mono);
   @apply text-left px-2 py-1.5 border-b border-gray-700 text-gray-400 font-medium;
 }
-.prose-chat td { @apply px-2 py-1.5 border-b border-gray-800/60; }
-.prose-chat blockquote { @apply border-l-2 border-gray-700 pl-3 text-gray-400 italic my-2; }
+.prose-chat td { @apply px-2 py-1.5 border-b border-gray-800/60 tnum; }
+.prose-chat blockquote { @apply border-l-2 border-emerald-500/40 pl-3 text-gray-400 italic my-2; }
 .prose-chat strong { @apply text-white; }
-.prose-chat a { @apply text-emerald-400 hover:text-emerald-300; }
+.prose-chat a { @apply text-emerald-400 hover:text-emerald-300 underline decoration-emerald-500/30 underline-offset-2; }
 
-/* ApexCharts dark-theme fixups */
+/* ── ApexCharts dark-theme fixups ── */
 .apexcharts-tooltip {
   @apply !bg-gray-900 !border-gray-700 !text-gray-200;
+  font-family: var(--font-mono) !important;
 }
 .apexcharts-menu {
   @apply !bg-gray-900 !border-gray-700;
 }
 .apexcharts-text {
-  fill: #9ca3af;
+  fill: #859c8f;
 }
 .apexcharts-legend-text {
-  color: #9ca3af !important;
+  color: #859c8f !important;
 }
 
 @media print {
   aside,
   header,
+  nav,
+  .atmosphere,
   #chat-toolbar,
   #chat-input-area,
   .print\:hidden {

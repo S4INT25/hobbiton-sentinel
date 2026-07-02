@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { AnimatePresence } from 'motion/react';
 import { api, type WorkflowDefinition } from '../api';
 import {
-  PageHeader, Feedback, Dialog, Spinner,
+  PageHeader, Feedback, Dialog, Spinner, EmptyState,
   btnPrimary, btnDanger, btnGhost, inputCls, fmtDate,
 } from '../components/ui';
 
@@ -42,34 +43,34 @@ export function WorkflowForm({
     <div className="space-y-3">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Name</label>
+          <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1">Name</label>
           <input value={value.name ?? ''} onChange={(e) => onChange({ ...value, name: e.target.value })} className={inputCls} />
         </div>
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Action</label>
+          <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1">Action</label>
           <select value={value.actionType} onChange={(e) => onChange({ ...value, actionType: e.target.value })} className={inputCls}>
             {ACTION_TYPES.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
           </select>
         </div>
       </div>
       <div>
-        <label className="block text-xs text-gray-400 mb-1">Description</label>
+        <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1">Description</label>
         <input value={value.description ?? ''} onChange={(e) => onChange({ ...value, description: e.target.value })} className={inputCls} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Cron expression</label>
+          <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1">Cron expression</label>
           <input value={value.cronExpression ?? ''} onChange={(e) => onChange({ ...value, cronExpression: e.target.value })} className={`${inputCls} font-mono`} placeholder="0 8 * * *" />
         </div>
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Time zone</label>
+          <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1">Time zone</label>
           <select value={value.timeZoneId} onChange={(e) => onChange({ ...value, timeZoneId: e.target.value })} className={inputCls}>
             {TIMEZONES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
         </div>
       </div>
       <div>
-        <label className="block text-xs text-gray-400 mb-1">Target database</label>
+        <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1">Target database</label>
         <select value={value.targetDatabase ?? ''} onChange={(e) => onChange({ ...value, targetDatabase: e.target.value })} className={inputCls}>
           <option value="">— select —</option>
           {products.map((p) => <option key={p.databaseName} value={p.databaseName}>{p.displayName}</option>)}
@@ -78,17 +79,17 @@ export function WorkflowForm({
       {value.actionType !== 'fraud_run' && (
         <>
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Email subject</label>
+            <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1">Email subject</label>
             <input value={value.emailSubject ?? ''} onChange={(e) => onChange({ ...value, emailSubject: e.target.value })} className={inputCls} />
           </div>
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Recipients (comma-separated)</label>
+            <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1">Recipients (comma-separated)</label>
             <input value={value.emailRecipients ?? ''} onChange={(e) => onChange({ ...value, emailRecipients: e.target.value })} className={inputCls} placeholder="a@hobbiton.co.zm, b@hobbiton.co.zm" />
           </div>
         </>
       )}
       <div>
-        <label className="block text-xs text-gray-400 mb-1">Prompt / instructions for the agent</label>
+        <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1">Prompt / instructions for the agent</label>
         <textarea value={value.customPrompt ?? ''} onChange={(e) => onChange({ ...value, customPrompt: e.target.value })} rows={4} className={`${inputCls} leading-relaxed`} placeholder="What should this workflow analyse and report?" />
       </div>
       <label className="flex items-center gap-2 cursor-pointer">
@@ -147,22 +148,25 @@ export default function Workflows() {
 
       {isLoading && <div className="flex justify-center py-8"><Spinner /></div>}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3" data-stagger>
         {visible.map((w) => (
-          <div key={w.id} className={`border border-gray-800 rounded-lg p-4 bg-gray-900/40 hover:border-gray-700 transition-colors ${!w.enabled ? 'opacity-60' : ''}`}>
+          <div key={w.id} className={`panel panel-hover p-4 ${!w.enabled ? 'opacity-60' : ''}`}>
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <Link to={`/workflows/${w.id}`} className="text-sm font-semibold text-white hover:text-emerald-300 transition-colors">
-                  {w.name}
+                <Link to={`/workflows/${w.id}`} className="font-display text-sm font-semibold text-white hover:text-emerald-300 transition-colors flex items-center gap-2">
+                  {w.enabled && <span className="glow-dot shrink-0" style={{ height: 5, width: 5 }} />}
+                  <span className="truncate">{w.name}</span>
                 </Link>
-                <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{w.description || w.customPrompt}</p>
+                <p className="text-xs text-gray-500 mt-1 line-clamp-2">{w.description || w.customPrompt}</p>
               </div>
-              {!w.enabled && <span className="px-1.5 py-0.5 text-[10px] rounded bg-gray-800 text-gray-500 shrink-0">Disabled</span>}
+              {!w.enabled && (
+                <span className="px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide rounded bg-gray-800 text-gray-500 shrink-0">Disabled</span>
+              )}
             </div>
-            <div className="flex items-center gap-3 mt-3 text-[10px] text-gray-600">
-              <span className="font-mono bg-gray-800/80 px-1.5 py-0.5 rounded">{w.cronExpression}</span>
+            <div className="flex items-center gap-3 mt-3 font-mono text-[10px] text-gray-600">
+              <span className="bg-gray-800/80 border border-gray-700/50 px-1.5 py-0.5 rounded">{w.cronExpression}</span>
               <span>{w.timeZoneId}</span>
-              {w.targetDatabase && <span className="text-blue-400/80">{w.targetDatabase}</span>}
+              {w.targetDatabase && <span className="text-sky-400/80">{w.targetDatabase}</span>}
               <span>updated {fmtDate(w.updatedAt)}</span>
             </div>
             <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-800/60">
@@ -180,13 +184,10 @@ export default function Workflows() {
       </div>
 
       {!isLoading && visible.length === 0 && (
-        <div className="border border-dashed border-gray-700 rounded-lg p-8 text-center">
-          <div className="text-2xl mb-2">⏰</div>
-          <p className="text-sm text-gray-400">No workflows yet.</p>
-          <p className="text-xs text-gray-600 mt-1">Create one to get scheduled reports or fraud sweeps.</p>
-        </div>
+        <EmptyState title="No workflows yet" hint="Create one to get scheduled reports or fraud sweeps." />
       )}
 
+      <AnimatePresence>
       {editing && (
         <Dialog title={editing.id ? 'Edit workflow' : 'New workflow'} onClose={() => setEditing(null)}>
           <WorkflowForm value={editing} onChange={setEditing} />
@@ -216,6 +217,7 @@ export default function Workflows() {
           </div>
         </Dialog>
       )}
+      </AnimatePresence>
     </div>
   );
 }

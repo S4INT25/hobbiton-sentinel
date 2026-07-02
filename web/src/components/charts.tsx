@@ -39,7 +39,8 @@ export function chartSeries(columns: string[], rows: Record<string, string>[]) {
   };
 }
 
-const PALETTE = ['#3b82f6', '#10b981', '#f97316', '#8b5cf6', '#ec4899', '#f59e0b', '#06b6d4', '#f43f5e'];
+const PALETTE = ['#10b981', '#38bdf8', '#f59e0b', '#a78bfa', '#f43f5e', '#34d399', '#fb923c', '#22d3ee'];
+const MONO = "'IBM Plex Mono', ui-monospace, monospace";
 
 function baseOptions(categories: string[]): ApexOptions {
   return {
@@ -47,20 +48,21 @@ function baseOptions(categories: string[]): ApexOptions {
       background: 'transparent',
       toolbar: { show: false },
       animations: { enabled: false },
-      foreColor: '#9ca3af',
+      foreColor: '#859c8f',
+      fontFamily: MONO,
     },
     theme: { mode: 'dark' },
     colors: PALETTE,
-    grid: { borderColor: '#1f2937', strokeDashArray: 3 },
+    grid: { borderColor: '#1d2a23', strokeDashArray: 3 },
     xaxis: {
       categories,
-      labels: { style: { fontSize: '10px' }, rotate: -35, trim: true },
-      axisBorder: { color: '#374151' },
-      axisTicks: { color: '#374151' },
+      labels: { style: { fontSize: '10px', fontFamily: MONO }, rotate: -35, trim: true },
+      axisBorder: { color: '#32423a' },
+      axisTicks: { color: '#32423a' },
     },
-    yaxis: { labels: { style: { fontSize: '10px' } } },
+    yaxis: { labels: { style: { fontSize: '10px', fontFamily: MONO } } },
     dataLabels: { enabled: false },
-    legend: { position: 'bottom', fontSize: '11px' },
+    legend: { position: 'bottom', fontSize: '11px', fontFamily: MONO },
     tooltip: { theme: 'dark' },
     stroke: { width: 2, curve: 'smooth' },
   };
@@ -83,7 +85,7 @@ export function DataChart({
     const options: ApexOptions = {
       ...baseOptions(categories),
       labels: categories,
-      stroke: { width: 1, colors: ['#111827'] },
+      stroke: { width: 1, colors: ['#101915'] },
     };
     return (
       <ReactApexChart
@@ -112,25 +114,25 @@ export function DataTable({ columns, rows, maxRows = 50 }: { columns: string[]; 
   return (
     <div className="overflow-x-auto border border-gray-800/60 rounded-lg">
       <table className="w-full text-xs">
-        <thead className="bg-gray-900/50">
-          <tr className="text-gray-500 border-b border-gray-800">
+        <thead className="bg-gray-900/60">
+          <tr className="border-b border-gray-800">
             {columns.map((c) => (
-              <th key={c} className="text-left px-3 py-2 font-medium whitespace-nowrap">{c}</th>
+              <th key={c} className="text-left px-3 py-2 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-gray-500 whitespace-nowrap">{c}</th>
             ))}
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-800/40">
           {shown.map((r, i) => (
-            <tr key={i} className="hover:bg-gray-900/30">
+            <tr key={i} className="hover:bg-emerald-500/[0.03] transition-colors">
               {columns.map((c) => (
-                <td key={c} className="px-3 py-1.5 text-gray-300 whitespace-nowrap">{r[c]}</td>
+                <td key={c} className="px-3 py-1.5 text-gray-300 whitespace-nowrap tnum">{r[c]}</td>
               ))}
             </tr>
           ))}
         </tbody>
       </table>
       {rows.length > maxRows && (
-        <div className="px-3 py-1.5 text-[10px] text-gray-600 border-t border-gray-800/40">
+        <div className="px-3 py-1.5 font-mono text-[10px] text-gray-600 border-t border-gray-800/40">
           Showing {maxRows} of {rows.length} rows — download CSV for the full set
         </div>
       )}

@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { AnimatePresence } from 'motion/react';
 import { api, type FraudCase } from '../api';
 import {
   PageHeader, Feedback, Dialog, SeverityBadge, ConfidenceBadge, Spinner,
-  btnPrimary, btnDanger, btnGhost, inputCls, selectCls, fmtDate,
+  btnPrimary, btnDanger, btnGhost, inputCls, selectCls, fmtDate, tableWrap, thCls, tdCls,
 } from '../components/ui';
 
 const PAGE_SIZE = 15;
+const dlgLabel = 'block font-mono text-[10px] text-gray-500 uppercase tracking-wider mb-1';
 
 export default function Cases() {
   const qc = useQueryClient();
@@ -84,12 +86,12 @@ export default function Cases() {
   const allPageSelected = paged.length > 0 && paged.every((c) => selected.has(c.id));
 
   return (
-    <div className="space-y-4">
-      <PageHeader title="Cases">
+    <div className="space-y-4" data-stagger>
+      <PageHeader title="Cases" subtitle={`${cases.length} open`}>
         {selected.size > 0 && (
           <button
             onClick={() => { setReason('Bulk resolved by analyst'); setBulkOpen(true); }}
-            className="px-3 py-1.5 text-xs font-medium bg-emerald-700 hover:bg-emerald-600 text-white rounded-md transition-all"
+            className={btnPrimary}
           >
             Resolve {selected.size} selected
           </button>
@@ -103,12 +105,12 @@ export default function Cases() {
 
       {feedback && <Feedback message={feedback.message} kind={feedback.kind} onDismiss={() => setFeedback(null)} />}
 
-      <div className="border border-gray-800 rounded-lg overflow-hidden">
+      <div className={tableWrap}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[640px]">
-            <thead className="bg-gray-900/50">
-              <tr className="text-xs text-gray-500 border-b border-gray-800">
-                <th className="px-4 py-2 w-8">
+            <thead className="bg-gray-900/60">
+              <tr className="border-b border-gray-800">
+                <th className="px-4 py-2.5 w-8">
                   <input
                     type="checkbox"
                     checked={allPageSelected}
@@ -117,18 +119,23 @@ export default function Cases() {
                     title="Select all on this page"
                   />
                 </th>
-                <th className="text-left px-4 py-2 font-medium">ID</th>
-                <th className="text-left px-4 py-2 font-medium">Title</th>
-                <th className="text-left px-4 py-2 font-medium">Severity</th>
-                <th className="text-left px-4 py-2 font-medium">Confidence</th>
-                <th className="text-left px-4 py-2 font-medium">Status</th>
-                <th className="text-left px-4 py-2 font-medium">Created</th>
-                <th className="text-left px-4 py-2 font-medium">Actions</th>
+                <th className={thCls}>ID</th>
+                <th className={thCls}>Title</th>
+                <th className={thCls}>Severity</th>
+                <th className={thCls}>Confidence</th>
+                <th className={thCls}>Status</th>
+                <th className={thCls}>Created</th>
+                <th className={thCls}>Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800/50">
               {paged.map((c) => (
-                <tr key={c.id} className={`hover:bg-gray-900/30 transition-colors ${selected.has(c.id) ? 'bg-emerald-950/20' : ''}`}>
+                <tr
+                  key={c.id}
+                  className={`transition-colors ${
+                    selected.has(c.id) ? 'bg-emerald-500/[0.06]' : 'hover:bg-emerald-500/[0.03]'
+                  }`}
+                >
                   <td className="px-4 py-2.5 w-8">
                     <input
                       type="checkbox"
@@ -137,13 +144,13 @@ export default function Cases() {
                       className="accent-emerald-500 cursor-pointer"
                     />
                   </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{c.id.slice(0, 8)}</td>
-                  <td className="px-4 py-2.5 text-xs text-gray-200 max-w-sm truncate">{c.title}</td>
-                  <td className="px-4 py-2.5"><SeverityBadge severity={c.severity} /></td>
-                  <td className="px-4 py-2.5"><ConfidenceBadge confidence={c.confidence} /></td>
-                  <td className="px-4 py-2.5 text-xs text-gray-500">{c.status}</td>
-                  <td className="px-4 py-2.5 text-xs text-gray-500">{fmtDate(c.firstSeen)}</td>
-                  <td className="px-4 py-2.5">
+                  <td className={`${tdCls} font-mono text-gray-400`}>{c.id.slice(0, 8)}</td>
+                  <td className={`${tdCls} text-gray-200 max-w-sm truncate`}>{c.title}</td>
+                  <td className={tdCls}><SeverityBadge severity={c.severity} /></td>
+                  <td className={tdCls}><ConfidenceBadge confidence={c.confidence} /></td>
+                  <td className={`${tdCls} text-gray-500`}>{c.status}</td>
+                  <td className={`${tdCls} font-mono text-gray-500`}>{fmtDate(c.firstSeen)}</td>
+                  <td className={tdCls}>
                     <div className="flex items-center gap-2">
                       <Link to={`/cases/${c.id}`} className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors">
                         View
@@ -183,71 +190,73 @@ export default function Cases() {
 
       {sorted.length > PAGE_SIZE && (
         <div className="flex items-center justify-between text-xs">
-          <span className="text-gray-500">{sorted.length} cases · page {page} of {totalPages}</span>
+          <span className="font-mono text-[11px] text-gray-500 tnum">{sorted.length} cases · page {page} of {totalPages}</span>
           <div className="flex items-center gap-2">
             <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}
-                    className="px-2.5 py-1 border border-gray-800 rounded text-gray-300 disabled:opacity-40 hover:border-gray-700 transition-colors">
+                    className="px-2.5 py-1 border border-gray-800 rounded-md text-gray-300 disabled:opacity-40 hover:border-gray-700 hover:bg-gray-900/60 transition-colors">
               Previous
             </button>
             <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
-                    className="px-2.5 py-1 border border-gray-800 rounded text-gray-300 disabled:opacity-40 hover:border-gray-700 transition-colors">
+                    className="px-2.5 py-1 border border-gray-800 rounded-md text-gray-300 disabled:opacity-40 hover:border-gray-700 hover:bg-gray-900/60 transition-colors">
               Next
             </button>
           </div>
         </div>
       )}
 
-      {resolveTarget && (
-        <Dialog title="Resolve case" onClose={() => setResolveTarget(null)}>
-          <p className="text-xs text-gray-400">
-            Resolve case <span className="text-gray-200 font-mono">{resolveTarget.id.slice(0, 8)}</span> directly from this list.
-          </p>
-          <div>
-            <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Resolution note</label>
-            <input value={reason} onChange={(e) => setReason(e.target.value)} className={inputCls} />
-          </div>
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <button onClick={() => setResolveTarget(null)} className={btnGhost}>Cancel</button>
-            <button
-              onClick={() => resolveMut.mutate({ id: resolveTarget.id, reason })}
-              disabled={resolveMut.isPending}
-              className={btnPrimary}
-            >
-              {resolveMut.isPending ? 'Resolving…' : 'Resolve'}
-            </button>
-          </div>
-        </Dialog>
-      )}
+      <AnimatePresence>
+        {resolveTarget && (
+          <Dialog title="Resolve case" onClose={() => setResolveTarget(null)}>
+            <p className="text-xs text-gray-400">
+              Resolve case <span className="text-gray-200 font-mono">{resolveTarget.id.slice(0, 8)}</span> directly from this list.
+            </p>
+            <div>
+              <label className={dlgLabel}>Resolution note</label>
+              <input value={reason} onChange={(e) => setReason(e.target.value)} className={inputCls} />
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button onClick={() => setResolveTarget(null)} className={btnGhost}>Cancel</button>
+              <button
+                onClick={() => resolveMut.mutate({ id: resolveTarget.id, reason })}
+                disabled={resolveMut.isPending}
+                className={btnPrimary}
+              >
+                {resolveMut.isPending ? 'Resolving…' : 'Resolve'}
+              </button>
+            </div>
+          </Dialog>
+        )}
 
-      {deleteTarget && (
-        <Dialog title="Confirm delete" onClose={() => setDeleteTarget(null)}>
-          <p className="text-xs text-gray-400">
-            Delete case <span className="text-gray-200 font-mono">{deleteTarget.id.slice(0, 8)}</span>? This action cannot be undone.
-          </p>
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <button onClick={() => setDeleteTarget(null)} className={btnGhost}>Cancel</button>
-            <button onClick={() => deleteMut.mutate(deleteTarget.id)} disabled={deleteMut.isPending} className={btnDanger}>
-              {deleteMut.isPending ? 'Deleting…' : 'Delete'}
-            </button>
-          </div>
-        </Dialog>
-      )}
+        {deleteTarget && (
+          <Dialog title="Confirm delete" onClose={() => setDeleteTarget(null)}>
+            <p className="text-xs text-gray-400">
+              Delete case <span className="text-gray-200 font-mono">{deleteTarget.id.slice(0, 8)}</span>? This action cannot be undone.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button onClick={() => setDeleteTarget(null)} className={btnGhost}>Cancel</button>
+              <button onClick={() => deleteMut.mutate(deleteTarget.id)} disabled={deleteMut.isPending} className={btnDanger}>
+                {deleteMut.isPending ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </Dialog>
+        )}
 
-      {bulkOpen && (
-        <Dialog title={`Resolve ${selected.size} case${selected.size === 1 ? '' : 's'}`} onClose={() => setBulkOpen(false)}>
-          <p className="text-xs text-gray-400">This will mark all selected cases as resolved. This action cannot be undone.</p>
-          <div>
-            <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Resolution note</label>
-            <input value={reason} onChange={(e) => setReason(e.target.value)} className={inputCls} />
-          </div>
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <button onClick={() => setBulkOpen(false)} className={btnGhost}>Cancel</button>
-            <button onClick={() => bulkMut.mutate()} disabled={bulkMut.isPending} className={btnPrimary}>
-              {bulkMut.isPending ? 'Resolving…' : `Resolve ${selected.size}`}
-            </button>
-          </div>
-        </Dialog>
-      )}
+        {bulkOpen && (
+          <Dialog title={`Resolve ${selected.size} case${selected.size === 1 ? '' : 's'}`} onClose={() => setBulkOpen(false)}>
+            <p className="text-xs text-gray-400">This will mark all selected cases as resolved. This action cannot be undone.</p>
+            <div>
+              <label className={dlgLabel}>Resolution note</label>
+              <input value={reason} onChange={(e) => setReason(e.target.value)} className={inputCls} />
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button onClick={() => setBulkOpen(false)} className={btnGhost}>Cancel</button>
+              <button onClick={() => bulkMut.mutate()} disabled={bulkMut.isPending} className={btnPrimary}>
+                {bulkMut.isPending ? 'Resolving…' : `Resolve ${selected.size}`}
+              </button>
+            </div>
+          </Dialog>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

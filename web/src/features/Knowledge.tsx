@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { AnimatePresence } from 'motion/react';
 import { api, type AgentMemory } from '../api';
 import {
   PageHeader, Dialog, Spinner, EmptyState,
@@ -15,6 +16,7 @@ const DATABASES = [
 ];
 
 const EMPTY: Partial<AgentMemory> = { term: '', definition: '', database: '', enabled: true };
+const label = 'block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1';
 
 export default function Knowledge() {
   const qc = useQueryClient();
@@ -70,33 +72,32 @@ export default function Knowledge() {
 
       {!isLoading && memories.length === 0 && (
         <EmptyState
-          icon="🧠"
           title="No definitions yet."
           hint='Add terms like "Revenue", "Active Merchant", or "Churn Rate" and tell the agent exactly how to calculate them.'
         />
       )}
 
       {memories.length > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-2" data-stagger>
           {memories.map((m) => {
             const isExpanded = expanded.has(m.id);
             const isLong = (m.definition?.length ?? 0) > 200;
             return (
               <div
                 key={m.id}
-                className={`border border-gray-800 rounded-lg p-4 bg-gray-900/40 hover:border-gray-700 transition-colors ${!m.enabled ? 'opacity-60' : ''}`}
+                className={`panel panel-hover p-4 ${!m.enabled ? 'opacity-60' : ''}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-semibold text-white">{m.term}</span>
+                      <span className="font-display text-sm font-semibold text-white">{m.term}</span>
                       {!m.enabled && (
-                        <span className="px-1.5 py-0.5 text-xs rounded bg-gray-800 text-gray-500">Disabled</span>
+                        <span className="px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide rounded bg-gray-800 text-gray-500">Disabled</span>
                       )}
                       {m.database ? (
-                        <span className="px-1.5 py-0.5 text-xs rounded bg-blue-900/60 text-blue-300">{m.database}</span>
+                        <span className="px-1.5 py-0.5 font-mono text-[10px] rounded bg-sky-500/10 border border-sky-500/25 text-sky-300">{m.database}</span>
                       ) : (
-                        <span className="px-1.5 py-0.5 text-xs rounded bg-gray-800 text-gray-500">All databases</span>
+                        <span className="px-1.5 py-0.5 font-mono text-[10px] rounded bg-gray-800 text-gray-500">All databases</span>
                       )}
                     </div>
                     <div className="relative mt-1.5">
@@ -112,7 +113,7 @@ export default function Knowledge() {
                         {isExpanded ? 'Show less' : 'Show more'}
                       </button>
                     )}
-                    <p className="mt-1.5 text-xs text-gray-600">
+                    <p className="mt-1.5 font-mono text-[10px] text-gray-600">
                       Updated {fmtDateFull(m.updatedAt)}
                       {m.createdBy && <span> · {m.createdBy}</span>}
                     </p>
@@ -144,57 +145,59 @@ export default function Knowledge() {
         </div>
       )}
 
-      {editing && (
-        <Dialog title={editing.id ? 'Edit Definition' : 'New Definition'} onClose={() => setEditing(null)}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Term <span className="text-red-400">*</span></label>
-              <input value={editing.term ?? ''} onChange={(e) => setEditing({ ...editing, term: e.target.value })} className={inputCls} placeholder="e.g. Revenue" />
+      <AnimatePresence>
+        {editing && (
+          <Dialog title={editing.id ? 'Edit Definition' : 'New Definition'} onClose={() => setEditing(null)}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className={label}>Term <span className="text-rose-400">*</span></label>
+                <input value={editing.term ?? ''} onChange={(e) => setEditing({ ...editing, term: e.target.value })} className={inputCls} placeholder="e.g. Revenue" />
+              </div>
+              <div>
+                <label className={label}>Database Scope</label>
+                <select value={editing.database ?? ''} onChange={(e) => setEditing({ ...editing, database: e.target.value })} className={inputCls}>
+                  {DATABASES.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+                </select>
+              </div>
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Database Scope</label>
-              <select value={editing.database ?? ''} onChange={(e) => setEditing({ ...editing, database: e.target.value })} className={inputCls}>
-                {DATABASES.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
-              </select>
+              <label className={label}>Definition / Calculation Rule <span className="text-rose-400">*</span></label>
+              <textarea
+                value={editing.definition ?? ''}
+                onChange={(e) => setEditing({ ...editing, definition: e.target.value })}
+                rows={5}
+                className={`${inputCls} leading-relaxed`}
+                placeholder="Explain exactly how this metric is calculated. E.g.: Revenue is the SUM of the `amount` column in public_transactions WHERE status = 'completed'..."
+              />
             </div>
-          </div>
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Definition / Calculation Rule <span className="text-red-400">*</span></label>
-            <textarea
-              value={editing.definition ?? ''}
-              onChange={(e) => setEditing({ ...editing, definition: e.target.value })}
-              rows={5}
-              className={`${inputCls} leading-relaxed`}
-              placeholder="Explain exactly how this metric is calculated. E.g.: Revenue is the SUM of the `amount` column in public_transactions WHERE status = 'completed'..."
-            />
-          </div>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={editing.enabled ?? true} onChange={(e) => setEditing({ ...editing, enabled: e.target.checked })} className="accent-emerald-500" />
-            <span className="text-xs text-gray-400">Enabled (agent will use this definition)</span>
-          </label>
-          {formError && <p className="text-xs text-red-400">{formError}</p>}
-          <div className="flex items-center gap-2 pt-1">
-            <button onClick={save} disabled={saveMut.isPending} className={btnPrimary}>
-              {saveMut.isPending ? 'Saving…' : 'Save'}
-            </button>
-            <button onClick={() => setEditing(null)} className={btnGhost}>Cancel</button>
-          </div>
-        </Dialog>
-      )}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={editing.enabled ?? true} onChange={(e) => setEditing({ ...editing, enabled: e.target.checked })} className="accent-emerald-500" />
+              <span className="text-xs text-gray-400">Enabled (agent will use this definition)</span>
+            </label>
+            {formError && <p className="text-xs text-rose-400">{formError}</p>}
+            <div className="flex items-center gap-2 pt-1">
+              <button onClick={save} disabled={saveMut.isPending} className={btnPrimary}>
+                {saveMut.isPending ? 'Saving…' : 'Save'}
+              </button>
+              <button onClick={() => setEditing(null)} className={btnGhost}>Cancel</button>
+            </div>
+          </Dialog>
+        )}
 
-      {deleteTarget && (
-        <Dialog title="Delete definition" onClose={() => setDeleteTarget(null)}>
-          <p className="text-xs text-gray-400">
-            Delete <span className="text-gray-200">{deleteTarget.term}</span>? The agent will stop using this definition.
-          </p>
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <button onClick={() => setDeleteTarget(null)} className={btnGhost}>Cancel</button>
-            <button onClick={() => deleteMut.mutate(deleteTarget.id)} disabled={deleteMut.isPending} className={btnDanger}>
-              {deleteMut.isPending ? 'Deleting…' : 'Delete'}
-            </button>
-          </div>
-        </Dialog>
-      )}
+        {deleteTarget && (
+          <Dialog title="Delete definition" onClose={() => setDeleteTarget(null)}>
+            <p className="text-xs text-gray-400">
+              Delete <span className="text-gray-200">{deleteTarget.term}</span>? The agent will stop using this definition.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button onClick={() => setDeleteTarget(null)} className={btnGhost}>Cancel</button>
+              <button onClick={() => deleteMut.mutate(deleteTarget.id)} disabled={deleteMut.isPending} className={btnDanger}>
+                {deleteMut.isPending ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </Dialog>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
