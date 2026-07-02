@@ -46,6 +46,15 @@ window.chartInterop = {
         img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
         return true;
     },
+    downloadCsv: function (filename, csv) {
+        var blob = new Blob(['﻿' + csv], {type: 'text/csv;charset=utf-8;'});
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+    },
     copyToClipboard: async function (text) {
         try {
             if (navigator.clipboard && window.isSecureContext) {

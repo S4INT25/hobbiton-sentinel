@@ -12,6 +12,7 @@
 @inject NavigationManager Navigation
 @attribute [Authorize(Policy = AuthConstants.Policy)]
 @using System.Globalization
+@using System.Text
 @using System.Text.Json
 @using System.Text.RegularExpressions
 @using Sentinel.Infrastructure
@@ -29,11 +30,31 @@
             transform: translateX(0);
         }
     }
+
+    @@media print {
+        header, aside, #chat-history-panel, #chat-toolbar, #chat-input-area {
+            display: none !important;
+        }
+
+        body, html {
+            background: white !important;
+            color: black !important;
+        }
+
+        .prose {
+            color: black !important;
+        }
+
+        .border, .rounded-xl {
+            border-color: #ccc !important;
+        }
+    }
 </style>
 
 <div class="flex flex-col md:flex-row h-[calc(100vh-6rem)]">
     <!-- Conversation Sidebar -->
-    <div class="@(showHistoryPanel ? "w-full md:w-64" : "w-0") border-r border-gray-800 flex-col shrink-0 max-h-64 md:max-h-none overflow-hidden transition-all duration-300 ease-in-out hidden md:flex">
+    <div id="chat-history-panel"
+         class="@(showHistoryPanel ? "w-full md:w-64" : "w-0") border-r border-gray-800 flex-col shrink-0 max-h-64 md:max-h-none overflow-hidden transition-all duration-300 ease-in-out hidden md:flex">
         <div class="flex items-center justify-between px-3 py-2 border-b border-gray-800 min-w-[16rem]">
             <span class="text-xs font-medium text-gray-400">History</span>
             <div class="flex items-center gap-1.5">
@@ -304,7 +325,18 @@
                     </span>
                 }
             </div>
-            <div class="flex items-center gap-2">
+            <div id="chat-toolbar" class="flex items-center gap-2">
+                <button @onclick="PrintChat" disabled="@(!messages.Any(m => m.Role == "assistant"))"
+                        class="px-2.5 py-1.5 text-xs border rounded transition-colors @(messages.Any(m => m.Role == "assistant") ? "border-gray-800 text-gray-500 hover:text-gray-300 hover:bg-gray-900" : "border-gray-800 text-gray-700 cursor-not-allowed opacity-50") whitespace-nowrap"
+                        title="Save chat as PDF">
+                    <span class="flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        Save PDF
+                    </span>
+                </button>
                 <a href="@($"/admin/present{(string.IsNullOrEmpty(activeConversationId) ? "" : "?conv=" + activeConversationId)}")"
                    class="px-2.5 py-1.5 text-xs border rounded transition-colors @(messages.Any(m => m.Role == "assistant") ? "border-gray-800 text-gray-500 hover:text-gray-300 hover:bg-gray-900" : "border-gray-800 text-gray-700 cursor-not-allowed pointer-events-none") whitespace-nowrap"
                    title="View insights as presentation">
@@ -432,7 +464,24 @@
                                                 class="px-3 py-2 border-b border-gray-800/60 flex items-center justify-between">
                                                 <span
                                                     class="text-xs font-medium text-gray-300">@(!string.IsNullOrEmpty(qr.Label) ? qr.Label : $"Result {ri + 1}")</span>
-                                                <span class="text-[10px] text-gray-600">@qr.RowCount rows</span>
+                                                <div class="flex items-center gap-2">
+                                                    <span class="text-[10px] text-gray-600">@qr.RowCount rows</span>
+                                                    @{
+                                                        var r = qr;
+                                                        var csvName = (r.Label ?? $"result-{ri + 1}") + ".csv";
+                                                    }
+                                                    <button
+                                                        @onclick="() => DownloadCsvAsync(r.Columns, r.Rows, csvName)"
+                                                        class="text-[10px] text-gray-500 hover:text-emerald-400 transition-colors flex items-center gap-0.5 print:hidden">
+                                                        <svg class="w-3 h-3" fill="none" stroke="currentColor"
+                                                             viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                                  stroke-width="2"
+                                                                  d="M12 10v6m0 0l-3-3m3 3l3-3M4 20h16"/>
+                                                        </svg>
+                                                        CSV
+                                                    </button>
+                                                </div>
                                             </div>
                                             @if (qr.ChartType != "none")
                                             {
@@ -650,6 +699,18 @@
                                     {
                                         <span>@((msg.InputTokens + msg.OutputTokens).ToString("N0")) tokens</span>
                                     }
+                                    @if (msg.Rows?.Count > 0 && msg.Columns?.Count > 0)
+                                    {
+                                        var m = msg;
+                                        <button @onclick="() => DownloadCsvAsync(m.Columns!, m.Rows!)"
+                                                class="flex items-center gap-1 text-gray-500 hover:text-emerald-400 transition-colors print:hidden">
+                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                      d="M12 10v6m0 0l-3-3m3 3l3-3M4 20h16"/>
+                                            </svg>
+                                            CSV
+                                        </button>
+                                    }
                                 </div>
 
                                 @if (debugMode && HasSqlContent(msg))
@@ -781,7 +842,7 @@
                 </div>
 
                 <!-- Input -->
-                <div class="border-t border-gray-800 p-3">
+                <div id="chat-input-area" class="border-t border-gray-800 p-3">
                     <div class="mb-2 flex flex-wrap gap-2">
                         @foreach (var suggestion in quickAskSuggestions)
                         {
@@ -1970,6 +2031,20 @@
 
         return types;
     }
+
+    private static string BuildCsv(List<string> cols, List<Dictionary<string, string>> rows)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(string.Join(",", cols.Select(c => $"\"{c.Replace("\"", "\"\"")}\"")));
+        foreach (var row in rows)
+            sb.AppendLine(string.Join(",", cols.Select(c => $"\"{(row.TryGetValue(c, out var v) ? v : "").Replace("\"", "\"\"")}\"")));
+        return sb.ToString();
+    }
+
+    private async Task DownloadCsvAsync(List<string> cols, List<Dictionary<string, string>> rows, string filename = "report.csv")
+        => await JS.InvokeVoidAsync("chartInterop.downloadCsv", filename, BuildCsv(cols, rows));
+
+    private async Task PrintChat() => await JS.InvokeVoidAsync("window.print");
 
     private void ClearChat()
     {
