@@ -1,0 +1,72 @@
+@import 'tailwindcss';
+
+/* Match the Blazor app's dark theme */
+html,
+body {
+  @apply bg-gray-950 text-gray-200 antialiased;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+}
+
+/* Markdown content inside chat messages */
+.prose-chat {
+  @apply text-sm text-gray-300 leading-relaxed;
+}
+.prose-chat h1,
+.prose-chat h2,
+.prose-chat h3 {
+  @apply text-white font-semibold mt-3 mb-1.5;
+}
+.prose-chat h1 { @apply text-base; }
+.prose-chat h2 { @apply text-sm; }
+.prose-chat h3 { @apply text-sm; }
+.prose-chat p { @apply my-1.5; }
+.prose-chat ul,
+.prose-chat ol { @apply pl-5 my-1.5 space-y-0.5; }
+.prose-chat ul { @apply list-disc; }
+.prose-chat ol { @apply list-decimal; }
+.prose-chat code {
+  @apply bg-gray-800/80 text-emerald-300 px-1 py-0.5 rounded text-xs font-mono;
+}
+.prose-chat pre {
+  @apply bg-gray-950 border border-gray-800 rounded-lg p-3 my-2 overflow-x-auto;
+}
+.prose-chat pre code { @apply bg-transparent p-0; }
+.prose-chat table {
+  @apply w-full text-xs my-2 border-collapse;
+}
+.prose-chat th {
+  @apply text-left px-2 py-1.5 border-b border-gray-700 text-gray-400 font-medium;
+}
+.prose-chat td { @apply px-2 py-1.5 border-b border-gray-800/60; }
+.prose-chat blockquote { @apply border-l-2 border-gray-700 pl-3 text-gray-400 italic my-2; }
+.prose-chat strong { @apply text-white; }
+.prose-chat a { @apply text-emerald-400 hover:text-emerald-300; }
+
+/* ApexCharts dark-theme fixups */
+.apexcharts-tooltip {
+  @apply !bg-gray-900 !border-gray-700 !text-gray-200;
+}
+.apexcharts-menu {
+  @apply !bg-gray-900 !border-gray-700;
+}
+.apexcharts-text {
+  fill: #9ca3af;
+}
+.apexcharts-legend-text {
+  color: #9ca3af !important;
+}
+
+@media print {
+  aside,
+  header,
+  #chat-toolbar,
+  #chat-input-area,
+  .print\:hidden {
+    display: none !important;
+  }
+  html,
+  body {
+    background: white !important;
+    color: black !important;
+  }
+}

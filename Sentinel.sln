@@ -1,8 +1,8 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sentinel", "Sentinel\Sentinel.csproj", "{8EE07B1E-1932-4947-99D1-59B72FD03E8D}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sentinel.Api", "src\Sentinel.Api\Sentinel.Api.csproj", "{8EE07B1E-1932-4947-99D1-59B72FD03E8D}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sentinel.Tests", "Sentinel.Tests\Sentinel.Tests.csproj", "{518844D9-4D21-4A1D-B01F-C10921D65394}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sentinel.Tests", "src\Sentinel.Tests\Sentinel.Tests.csproj", "{518844D9-4D21-4A1D-B01F-C10921D65394}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
