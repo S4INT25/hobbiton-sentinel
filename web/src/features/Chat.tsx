@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
-import { api, type ChatEntry, type QueryResult, type StreamEvent } from '../api';
-import { Markdown, downloadCsv, Dialog, btnGhost, btnDanger, selectCls } from '../components/ui';
+import { api, type ChatEntry, type Conversation, type QueryResult, type StreamEvent } from '../api';
+import { Markdown, downloadCsv, Dialog, btnGhost, btnDanger } from '../components/ui';
 import { DataChart, DataTable, applicableChartTypes } from '../components/charts';
 
 // user prefs survive reloads; server-side cache prefs from the Blazor app move to localStorage
@@ -29,8 +29,8 @@ export default function Chat() {
   const [input, setInput] = useState('');
   const [jobId, setJobId] = useState<string | null>(null);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
-  const [debugMode, setDebugMode] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(true);
+  const [historyQuery, setHistoryQuery] = useState('');
   const [menuConvId, setMenuConvId] = useState<string | null>(null);
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState('');
@@ -99,6 +99,12 @@ export default function Chat() {
     if (pendingPrompt) list.push({ role: 'user', content: pendingPrompt, entry: null });
     return list;
   }, [conversation, pendingPrompt]);
+
+  const historyGroups = useMemo(() => {
+    const q = historyQuery.trim().toLowerCase();
+    const filtered = q ? conversations.filter((c) => c.title.toLowerCase().includes(q)) : conversations;
+    return groupConversations(filtered);
+  }, [conversations, historyQuery]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -171,7 +177,6 @@ export default function Chat() {
 
   const loading = !!jobId;
   const streamEvents = (job?.streamEvents ?? []).filter((e) => e.type !== 'token' && e.type !== 'result');
-  const hasAssistant = messages.some((m) => m.role === 'assistant');
   const empty = messages.length === 0 && !loading;
 
   const quickAskSuggestions = [
@@ -218,8 +223,25 @@ export default function Chat() {
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5 min-w-[16.5rem]" data-stagger>
-          {conversations.map((conv) => (
+        <div className="px-2 pt-2 min-w-[16.5rem]">
+          <div className="relative">
+            <svg className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-600 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+            </svg>
+            <input
+              value={historyQuery}
+              onChange={(e) => setHistoryQuery(e.target.value)}
+              placeholder="Search chats…"
+              className="w-full bg-gray-900/60 border border-gray-800 rounded-lg pl-7 pr-2 py-1.5 text-xs text-gray-200 placeholder-gray-600 focus:border-emerald-400/50 focus:outline-none transition-colors"
+            />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-1.5 min-w-[16.5rem]">
+          {historyGroups.map((g) => (
+            <div key={g.label}>
+              <div className="kicker px-2 pt-2.5 pb-1">{g.label}</div>
+              <div className="space-y-0.5">
+              {g.items.map((conv) => (
             <div
               key={conv.id}
               onClick={() => { selectConv(conv.id); setJobId(null); setPendingPrompt(null); }}
@@ -246,7 +268,7 @@ export default function Chat() {
                     {shareCopiedId === conv.id ? (
                       <span className="text-emerald-400">Link copied!</span>
                     ) : (
-                      new Date(conv.updatedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+                      fmtRelative(conv.updatedAt)
                     )}
                   </div>
                   <button
@@ -264,7 +286,7 @@ export default function Chat() {
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: -4 }}
                         transition={{ duration: 0.12 }}
-                        className="absolute right-1 top-8 z-20 w-36 panel py-1 shadow-xl"
+                        className="absolute right-1 top-8 z-20 w-36 rounded-xl border border-gray-700/80 bg-gray-900 py-1 shadow-xl"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <button onClick={() => shareConv(conv.id)} className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-800 transition-colors">
@@ -288,15 +310,21 @@ export default function Chat() {
                 </>
               )}
             </div>
+              ))}
+              </div>
+            </div>
           ))}
           {conversations.length === 0 && <div className="px-2.5 py-4 font-mono text-[11px] text-gray-600">No conversations yet</div>}
+          {conversations.length > 0 && historyGroups.length === 0 && (
+            <div className="px-2.5 py-4 font-mono text-[11px] text-gray-600">No chats match “{historyQuery}”</div>
+          )}
         </div>
       </motion.div>
 
       {/* Main column */}
       <div className="flex flex-col flex-1 min-w-0">
         {/* Toolbar */}
-        <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-gray-800/80 bg-gray-950/40 backdrop-blur-sm">
+        <div id="chat-toolbar" className="flex items-center justify-between gap-2 px-4 py-2 border-b border-gray-800/80 bg-gray-950/40 backdrop-blur-sm">
           <div className="flex items-center gap-2 min-w-0">
             {!historyOpen && (
               <button onClick={() => setHistoryOpen(true)} className="p-1.5 text-gray-500 hover:text-gray-300 rounded-md hover:bg-gray-900 transition-colors hidden md:block" title="Show history">
@@ -305,45 +333,21 @@ export default function Chat() {
                 </svg>
               </button>
             )}
-            <select value={database} onChange={(e) => setDatabase(e.target.value)} className={selectCls} disabled={loading}>
-              {products.map((p) => (
-                <option key={p.databaseName} value={p.databaseName}>{p.displayName}</option>
-              ))}
-              {products.length === 0 && <option value="">Loading…</option>}
-            </select>
-            <select value={mode} onChange={(e) => setMode(e.target.value)} className={selectCls} disabled={loading}>
-              <option value="general">General</option>
-              <option value="fraud">Fraud</option>
-            </select>
             {loading && (
               <span className="hidden sm:flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-emerald-400">
                 <span className="glow-dot" /> Live
               </span>
             )}
           </div>
-          <div id="chat-toolbar" className="flex items-center gap-1.5">
-            <button
-              onClick={() => window.print()}
-              disabled={!hasAssistant}
-              className="px-2.5 py-1.5 text-xs border border-gray-800 rounded-md text-gray-500 hover:text-gray-300 hover:bg-gray-900 transition-colors disabled:opacity-40 whitespace-nowrap"
-              title="Save chat as PDF"
-            >
-              PDF
-            </button>
-            <button
-              onClick={() => setDebugMode((v) => !v)}
-              className={`px-2.5 py-1.5 text-xs border rounded-md transition-colors whitespace-nowrap ${
-                debugMode
-                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
-                  : 'border-gray-800 text-gray-500 hover:text-gray-300 hover:bg-gray-900'
-              }`}
-            >
-              Debug
-            </button>
-            <button onClick={newConversation} className="px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-300 border border-gray-800 rounded-md hover:bg-gray-900 transition-colors whitespace-nowrap">
-              Clear
-            </button>
-          </div>
+          <button
+            onClick={newConversation}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-gray-800 rounded-lg text-gray-400 hover:text-gray-200 hover:border-gray-700 hover:bg-gray-900/60 transition-colors whitespace-nowrap shrink-0"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+            </svg>
+            New chat
+          </button>
         </div>
 
         {/* Messages */}
@@ -386,7 +390,6 @@ export default function Chat() {
                   <AssistantMessage
                     entry={msg.entry!}
                     idx={idx}
-                    debugMode={debugMode}
                     chartTypeOverrides={chartTypeOverrides}
                     onChartTypeChange={(key, t) => setChartTypeOverrides((prev) => ({ ...prev, [key]: t }))}
                   />
@@ -448,7 +451,7 @@ export default function Chat() {
         <div id="chat-input-area" className="px-4 pb-4 pt-1">
           <form
             onSubmit={(e) => { e.preventDefault(); send(); }}
-            className="max-w-4xl mx-auto flex items-end gap-2 rounded-2xl border border-gray-700/70 bg-gray-900/70 backdrop-blur-md px-4 py-2.5 transition-all focus-within:border-emerald-400/50 focus-within:shadow-[0_0_28px_-10px_rgb(16_185_129/0.4)]"
+            className="max-w-4xl mx-auto rounded-2xl border border-gray-700/70 bg-gray-900/70 backdrop-blur-md px-3.5 pt-3 pb-2.5 transition-all focus-within:border-emerald-400/50 focus-within:shadow-[0_0_28px_-10px_rgb(16_185_129/0.4)]"
           >
             <textarea
               ref={inputRef}
@@ -460,22 +463,29 @@ export default function Chat() {
               rows={1}
               disabled={loading}
               placeholder="Message Sentinel…"
-              className="flex-1 bg-transparent border-0 text-sm text-white placeholder-gray-500 focus:outline-none disabled:opacity-50 resize-none max-h-[200px] py-1"
+              className="w-full bg-transparent border-0 text-sm text-white placeholder-gray-500 focus:outline-none disabled:opacity-50 resize-none max-h-[200px] px-1"
             />
-            <button
-              type="submit"
-              disabled={loading || !input.trim()}
-              title="Send"
-              className="shrink-0 h-8 w-8 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-30 disabled:hover:bg-emerald-500 text-gray-950 flex items-center justify-center transition-all active:scale-95 hover:shadow-[0_0_16px_-4px_rgb(16_185_129/0.6)]"
-            >
-              {loading ? (
-                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-950/30 border-t-gray-950" />
-              ) : (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 10l7-7m0 0l7 7m-7-7v18" />
-                </svg>
-              )}
-            </button>
+            {/* context controls live in the composer — always visible where the user types */}
+            <div className="flex items-center justify-between gap-2 pt-2 mt-1.5 border-t border-gray-800/60">
+              <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                <ProductSelect products={products} value={database} onChange={setDatabase} disabled={loading} />
+                <ModeSwitch value={mode} onChange={setMode} disabled={loading} />
+              </div>
+              <button
+                type="submit"
+                disabled={loading || !input.trim()}
+                title="Send"
+                className="shrink-0 h-8 w-8 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-30 disabled:hover:bg-emerald-500 text-gray-950 flex items-center justify-center transition-all active:scale-95 hover:shadow-[0_0_16px_-4px_rgb(16_185_129/0.6)]"
+              >
+                {loading ? (
+                  <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-950/30 border-t-gray-950" />
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                  </svg>
+                )}
+              </button>
+            </div>
           </form>
           <div className="max-w-4xl mx-auto mt-1.5 px-1 font-mono text-[10px] text-gray-700">
             Enter to send · Shift+Enter for a new line
@@ -498,6 +508,177 @@ export default function Chat() {
   );
 }
 
+function ProductSelect({
+  products,
+  value,
+  onChange,
+  disabled,
+}: {
+  products: { databaseName: string; displayName: string }[];
+  value: string;
+  onChange: (v: string) => void;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = products.find((p) => p.databaseName === value);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="flex items-center gap-2 pl-2.5 pr-2 py-1.5 rounded-lg border border-gray-800 bg-gray-950/60 text-xs text-gray-200 hover:border-gray-700 transition-colors disabled:opacity-50"
+      >
+        <svg className="w-3.5 h-3.5 text-emerald-500/80 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+        </svg>
+        <span className="max-w-[9rem] truncate">{current?.displayName ?? 'Select database'}</span>
+        <svg className={`w-3 h-3 text-gray-600 transition-transform duration-200 shrink-0 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: 4, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.98 }}
+            transition={{ duration: 0.12 }}
+            role="listbox"
+            className="absolute left-0 bottom-full mb-1.5 z-30 w-60 rounded-xl border border-gray-700/80 bg-gray-900 py-1 shadow-xl"
+          >
+            {products.map((p) => (
+              <button
+                key={p.databaseName}
+                type="button"
+                role="option"
+                aria-selected={p.databaseName === value}
+                onClick={() => { onChange(p.databaseName); setOpen(false); }}
+                className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-left transition-colors ${
+                  p.databaseName === value ? 'bg-emerald-500/[0.07]' : 'hover:bg-gray-800/60'
+                }`}
+              >
+                <span className="min-w-0">
+                  <span className={`block text-xs truncate ${p.databaseName === value ? 'text-emerald-300' : 'text-gray-200'}`}>
+                    {p.displayName}
+                  </span>
+                  <span className="block font-mono text-[10px] text-gray-600 truncate">{p.databaseName}</span>
+                </span>
+                {p.databaseName === value && (
+                  <svg className="w-3.5 h-3.5 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+            ))}
+            {products.length === 0 && <div className="px-3 py-2 text-xs text-gray-600">Loading…</div>}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+const MODES = [
+  {
+    id: 'general',
+    label: 'General',
+    icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
+    active: 'bg-emerald-500/10 border-emerald-500/30',
+    activeText: 'text-emerald-300',
+  },
+  {
+    id: 'fraud',
+    label: 'Fraud',
+    icon: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z',
+    active: 'bg-amber-500/10 border-amber-500/35',
+    activeText: 'text-amber-300',
+  },
+];
+
+function ModeSwitch({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled: boolean }) {
+  return (
+    <div className="flex items-center rounded-lg border border-gray-800 bg-gray-950/60 p-0.5">
+      {MODES.map((m) => (
+        <button
+          key={m.id}
+          type="button"
+          onClick={() => onChange(m.id)}
+          disabled={disabled}
+          title={`${m.label} mode`}
+          className={`relative flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-md transition-colors disabled:opacity-50 ${
+            value === m.id ? m.activeText : 'text-gray-500 hover:text-gray-300'
+          }`}
+        >
+          {value === m.id && (
+            <motion.span
+              layoutId="chat-mode-pill"
+              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+              className={`absolute inset-0 rounded-md border ${m.active}`}
+            />
+          )}
+          <svg className="relative w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d={m.icon} />
+          </svg>
+          <span className="relative">{m.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Today / Yesterday / Previous 7 days / Older buckets for the history panel
+function groupConversations(convs: Conversation[]) {
+  const now = new Date();
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const today = startOfDay(now);
+  const yesterday = today - 86_400_000;
+  const week = today - 6 * 86_400_000;
+  const groups = [
+    { label: 'Today', items: [] as Conversation[] },
+    { label: 'Yesterday', items: [] as Conversation[] },
+    { label: 'Previous 7 days', items: [] as Conversation[] },
+    { label: 'Older', items: [] as Conversation[] },
+  ];
+  for (const c of convs) {
+    const t = new Date(c.updatedAt).getTime();
+    if (t >= today) groups[0].items.push(c);
+    else if (t >= yesterday) groups[1].items.push(c);
+    else if (t >= week) groups[2].items.push(c);
+    else groups[3].items.push(c);
+  }
+  return groups.filter((g) => g.items.length > 0);
+}
+
+function fmtRelative(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86_400_000);
+  if (diffDays === 0) return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return d.toLocaleDateString('en-GB', { weekday: 'short' });
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+}
+
 function streamEventLabel(evt: StreamEvent): string {
   if (evt.message) return evt.message;
   switch (evt.type) {
@@ -512,13 +693,11 @@ function streamEventLabel(evt: StreamEvent): string {
 function AssistantMessage({
   entry,
   idx,
-  debugMode,
   chartTypeOverrides,
   onChartTypeChange,
 }: {
   entry: ChatEntry;
   idx: number;
-  debugMode: boolean;
   chartTypeOverrides: Record<string, string>;
   onChartTypeChange: (key: string, t: string) => void;
 }) {
@@ -596,26 +775,6 @@ function AssistantMessage({
         {tokens > 0 && <span className="tnum">{tokens.toLocaleString()} tokens</span>}
         {r.reportSent && <span className="text-emerald-500">✓ Report emailed</span>}
       </div>
-
-      {debugMode && (r.sql || multiResults.some((q) => q.sql)) && (
-        <details className="border border-gray-800/60 rounded-lg overflow-hidden">
-          <summary className="px-3 py-2 font-mono text-[11px] uppercase tracking-wider text-gray-400 cursor-pointer hover:text-gray-300 select-none bg-gray-900/40">
-            SQL{multiResults.length > 1 ? ` · ${multiResults.length} queries` : ''}
-          </summary>
-          {multiResults.length > 1 ? (
-            <div className="divide-y divide-gray-800/40">
-              {multiResults.filter((q) => q.sql).map((q, i) => (
-                <div key={i}>
-                  <div className="px-3 py-1 font-mono text-[10px] text-gray-500 bg-gray-900/50">{q.label || `Query ${i + 1}`}</div>
-                  <pre className="px-3 py-2 text-xs text-emerald-300 font-mono whitespace-pre-wrap bg-gray-950">{q.sql}</pre>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <pre className="p-3 text-xs text-emerald-300 font-mono whitespace-pre-wrap bg-gray-950">{r.sql}</pre>
-          )}
-        </details>
-      )}
 
       {r.thinking && (
         <details className="border border-gray-800/60 rounded-lg overflow-hidden">

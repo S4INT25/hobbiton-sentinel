@@ -48,17 +48,17 @@ function baseOptions(categories: string[]): ApexOptions {
       background: 'transparent',
       toolbar: { show: false },
       animations: { enabled: false },
-      foreColor: '#859c8f',
+      foreColor: '#8b929c',
       fontFamily: MONO,
     },
     theme: { mode: 'dark' },
     colors: PALETTE,
-    grid: { borderColor: '#1d2a23', strokeDashArray: 3 },
+    grid: { borderColor: '#20242b', strokeDashArray: 3 },
     xaxis: {
       categories,
       labels: { style: { fontSize: '10px', fontFamily: MONO }, rotate: -35, trim: true },
-      axisBorder: { color: '#32423a' },
-      axisTicks: { color: '#32423a' },
+      axisBorder: { color: '#343a43' },
+      axisTicks: { color: '#343a43' },
     },
     yaxis: { labels: { style: { fontSize: '10px', fontFamily: MONO } } },
     dataLabels: { enabled: false },
@@ -85,7 +85,7 @@ export function DataChart({
     const options: ApexOptions = {
       ...baseOptions(categories),
       labels: categories,
-      stroke: { width: 1, colors: ['#101915'] },
+      stroke: { width: 1, colors: ['#131619'] },
     };
     return (
       <ReactApexChart

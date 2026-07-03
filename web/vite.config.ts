@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {
-      '/api': 'http://localhost:5101',
+      '/api': 'https://sentinel.bi.hobbiton.tech',
     },
   },
   build: {

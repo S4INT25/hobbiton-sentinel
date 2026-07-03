@@ -102,7 +102,7 @@ export default function CommandPalette({ items, onClose }: { items: PaletteItem[
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.97, y: -8 }}
         transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-        className="panel w-full max-w-lg shadow-2xl overflow-hidden"
+        className="w-full max-w-lg rounded-xl border border-gray-700/80 bg-gray-900 shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2.5 px-4 border-b border-gray-800">
