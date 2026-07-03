@@ -14,5 +14,13 @@ export default defineConfig({
     // served by Sentinel.Api in production (SPA fallback to index.html)
     outDir: '../src/Sentinel.Api/wwwroot',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // prefix hashes so ad-blockers never match (hash like "AD…" triggers them)
+        assetFileNames: 'assets/s-[hash][extname]',
+        chunkFileNames: 'assets/s-[hash].js',
+        entryFileNames: 'assets/s-[hash].js',
+      },
+    },
   },
 });
