@@ -196,9 +196,9 @@ public static class AdminApiEndpoints
             }
 
             await userStore.UpdateLastLoginAsync(user.Id);
-            var claims = BuildClaims(user);
-            await ctx.SignInAsync(AuthConstants.Scheme,
-                new ClaimsPrincipal(new ClaimsIdentity(claims, AuthConstants.Scheme)));
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(BuildClaims(user), AuthConstants.Scheme));
+            await ctx.SignInAsync(AuthConstants.Scheme, principal);
+            ctx.User = principal;
             await AuditAction(audit, ctx, "login", "auth", user.Id);
             return Results.Ok(new { user.Id, user.Username, user.Role, user.DisplayName });
         }).AllowAnonymous();
@@ -443,8 +443,9 @@ public static class AdminApiEndpoints
                 IsActive = true
             };
             await userStore.SaveAsync(user);
-            await ctx.SignInAsync(AuthConstants.Scheme,
-                new ClaimsPrincipal(new ClaimsIdentity(BuildClaims(user), AuthConstants.Scheme)));
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(BuildClaims(user), AuthConstants.Scheme));
+            await ctx.SignInAsync(AuthConstants.Scheme, principal);
+            ctx.User = principal;
             await AuditAction(audit, ctx, "signup", "auth", user.Id);
             return Results.Ok(new { user.Id, user.Username, user.Role, user.DisplayName });
         }).AllowAnonymous();
