@@ -281,7 +281,7 @@ function Shell({ me, children }: { me: Me; children: React.ReactNode }) {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.22, ease: 'easeOut' }}
-            className="h-full"
+            className="h-full max-w-[1600px] mx-auto"
           >
             {children}
           </motion.div>

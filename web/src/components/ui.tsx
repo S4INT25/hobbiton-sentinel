@@ -192,8 +192,8 @@ export const selectCls =
 // shared table recipe — keeps the 10+ tables in the app consistent
 export const tableWrap = 'panel overflow-hidden';
 export const thCls =
-  'text-left px-4 py-2.5 font-mono text-[10px] font-medium uppercase tracking-[0.12em] text-gray-500 whitespace-nowrap';
-export const tdCls = 'px-4 py-2.5 text-xs text-gray-300';
+  'text-left px-4 py-3 font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-gray-500 whitespace-nowrap';
+export const tdCls = 'px-4 py-3 text-sm text-gray-300';
 
 export function Spinner({ className = 'h-4 w-4' }: { className?: string }) {
   return (
