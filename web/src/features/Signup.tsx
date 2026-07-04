@@ -37,8 +37,7 @@ export default function Signup({ onLogin }: { onLogin: (me: Me) => void }) {
           <img src="https://hobbiton.tech/assets/logo2-7db998ca.png" alt="Hobbiton" className="h-10 w-10 rounded object-contain mb-3" />
           <div className="font-display font-semibold text-lg text-white leading-none tracking-[0.22em]">SENTINEL</div>
           <div className="flex items-center gap-1.5 mt-2">
-            <span className="glow-dot" style={{ height: 5, width: 5 }} />
-            <span className="font-mono text-[9px] text-gray-500 uppercase tracking-wider">Fraud intelligence by Hobbiton</span>
+           
           </div>
         </div>
         <form onSubmit={submit} className="panel p-5 space-y-4">
