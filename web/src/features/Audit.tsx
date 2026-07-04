@@ -3,17 +3,20 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../api';
 import { PageHeader, Spinner, fmtDateFull, tableWrap, thCls, tdCls } from '../components/ui';
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 10;
 
 export default function Audit() {
   const [page, setPage] = useState(1);
-  const { data: logs = [], isLoading } = useQuery({
+  const { data: raw = [], isLoading } = useQuery({
     queryKey: ['audit', page],
-    queryFn: () => api.listAudit(PAGE_SIZE, (page - 1) * PAGE_SIZE),
+    queryFn: () => api.listAudit(PAGE_SIZE + 1, (page - 1) * PAGE_SIZE),
   });
 
+  const hasMore = raw.length > PAGE_SIZE;
+  const logs = hasMore ? raw.slice(0, PAGE_SIZE) : raw;
+
   return (
-    <div className="space-y-4" data-stagger>
+    <div className="space-y-4 px-4 lg:px-16" data-stagger>
       <PageHeader title="Audit Log" subtitle="Every admin action, login, and change — newest first" />
 
       <div className={tableWrap}>
@@ -55,19 +58,21 @@ export default function Audit() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between text-xs">
-        <span className="font-mono text-[11px] text-gray-500 tnum">Page {page}</span>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}
-                  className="px-2.5 py-1 border border-gray-800 rounded-md text-gray-300 disabled:opacity-40 hover:border-gray-700 hover:bg-gray-900/60 transition-colors">
-            Previous
-          </button>
-          <button onClick={() => setPage((p) => p + 1)} disabled={logs.length < PAGE_SIZE}
-                  className="px-2.5 py-1 border border-gray-800 rounded-md text-gray-300 disabled:opacity-40 hover:border-gray-700 hover:bg-gray-900/60 transition-colors">
-            Next
-          </button>
+      {logs.length > 0 && (
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-mono text-[11px] text-gray-500 tnum">Page {page}{hasMore ? '+' : ''}</span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}
+                    className="px-2.5 py-1 border border-gray-800 rounded-md text-gray-300 disabled:opacity-40 hover:border-gray-700 hover:bg-gray-900/60 transition-colors">
+              Previous
+            </button>
+            <button onClick={() => setPage((p) => p + 1)} disabled={!hasMore}
+                    className="px-2.5 py-1 border border-gray-800 rounded-md text-gray-300 disabled:opacity-40 hover:border-gray-700 hover:bg-gray-900/60 transition-colors">
+              Next
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

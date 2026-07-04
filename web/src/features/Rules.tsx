@@ -42,7 +42,7 @@ export default function Rules() {
   });
 
   return (
-    <div className="space-y-4" data-stagger>
+    <div className="space-y-4 px-4 lg:px-16" data-stagger>
       <PageHeader title="Feedback Rules" subtitle="Suppression and downgrade rules the fraud agent applies before raising cases">
         <button onClick={() => setEditing({ ...EMPTY })} className={btnPrimary}>Add Rule</button>
       </PageHeader>
@@ -83,9 +83,17 @@ export default function Rules() {
                   <td className={`${tdCls} font-mono text-gray-500 tnum`}>{r.hitCount}</td>
                   <td className={`${tdCls} font-mono text-gray-500`}>{fmtDate(r.createdAt)} · {r.createdBy}</td>
                   <td className={tdCls}>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setEditing({ ...r })} className="text-xs text-gray-500 hover:text-white transition-colors">Edit</button>
-                      <button onClick={() => setDeleteTarget(r)} className="text-xs text-gray-600 hover:text-rose-400 transition-colors">Delete</button>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => setEditing({ ...r })} className="p-1.5 text-gray-500 hover:text-white rounded transition-colors" title="Edit">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+                      <button onClick={() => setDeleteTarget(r)} className="p-1.5 text-gray-500 hover:text-rose-400 rounded transition-colors" title="Delete">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
                     </div>
                   </td>
                 </tr>

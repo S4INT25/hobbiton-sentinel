@@ -3,6 +3,7 @@ using Hangfire;
 using Hangfire.Dashboard.BasicAuthorization;
 using Hangfire.Redis.StackExchange;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using OpenAI;
 using Sentinel.Admin;
@@ -228,6 +229,10 @@ try
         }
     });
 
+    app.UseForwardedHeaders(new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+    });
     app.UseDefaultFiles();
     app.UseStaticFiles();
     app.UseAuthentication();

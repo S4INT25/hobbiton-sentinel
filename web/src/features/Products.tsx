@@ -4,7 +4,7 @@ import { AnimatePresence } from 'motion/react';
 import { api, type DatabaseProduct } from '../api';
 import {
   PageHeader, Feedback, Dialog, Spinner,
-  btnPrimary, btnDanger, btnGhost, inputCls, btnOutline, tableWrap, thCls, tdCls,
+  btnPrimary, btnDanger, btnGhost, inputCls, selectCls, btnOutline, tableWrap, thCls, tdCls,
 } from '../components/ui';
 
 const EMPTY: Partial<DatabaseProduct> = { databaseName: '', displayName: '', description: '', enabled: true, sortOrder: 0 };
@@ -16,6 +16,7 @@ export default function Products() {
 
   const [feedback, setFeedback] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
   const [editing, setEditing] = useState<Partial<DatabaseProduct> | null>(null);
+  const { data: databases } = useQuery({ queryKey: ['databases'], queryFn: api.listDatabases });
   const [deleteTarget, setDeleteTarget] = useState<DatabaseProduct | null>(null);
 
   const invalidate = () => {
@@ -50,7 +51,7 @@ export default function Products() {
   });
 
   return (
-    <div className="space-y-4" data-stagger>
+    <div className="space-y-4 px-4 lg:px-16" data-stagger>
       <PageHeader title="Database Products" subtitle="ClickHouse databases the analytics agent can query, with friendly names">
         <button onClick={() => refreshMut.mutate()} disabled={refreshMut.isPending} className={btnOutline}>
           {refreshMut.isPending ? 'Refreshing…' : 'Refresh schema cache'}
@@ -86,9 +87,17 @@ export default function Products() {
                   </td>
                   <td className={`${tdCls} font-mono text-gray-500 tnum`}>{p.sortOrder}</td>
                   <td className={tdCls}>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setEditing({ ...p })} className="text-xs text-gray-500 hover:text-white transition-colors">Edit</button>
-                      <button onClick={() => setDeleteTarget(p)} className="text-xs text-gray-600 hover:text-rose-400 transition-colors">Delete</button>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => setEditing({ ...p })} className="p-1.5 text-gray-500 hover:text-white rounded transition-colors" title="Edit">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+                      <button onClick={() => setDeleteTarget(p)} className="p-1.5 text-gray-500 hover:text-rose-400 rounded transition-colors" title="Delete">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -110,7 +119,12 @@ export default function Products() {
             <div className="space-y-3">
               <div>
                 <label className={label}>ClickHouse database name</label>
-                <input value={editing.databaseName ?? ''} onChange={(e) => setEditing({ ...editing, databaseName: e.target.value })} className={`${inputCls} font-mono`} placeholder="e.g. lipila_blaze" />
+                <select value={editing.databaseName ?? ''} onChange={(e) => setEditing({ ...editing, databaseName: e.target.value })} className={selectCls}>
+                  <option value="">— select —</option>
+                  {databases?.map((db) => (
+                    <option key={db} value={db}>{db}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className={label}>Display name</label>

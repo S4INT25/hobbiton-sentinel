@@ -86,7 +86,7 @@ export default function Runs() {
   });
 
   return (
-    <div className="space-y-4" data-stagger>
+    <div className="space-y-4 px-4 lg:px-16" data-stagger>
       <PageHeader title="Run History">
         <button onClick={() => triggerMut.mutate()} disabled={triggerMut.isPending} className={btnPrimary}>
           {triggerMut.isPending ? 'Queueing…' : 'Run Now'}

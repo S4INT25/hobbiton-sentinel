@@ -75,7 +75,7 @@ export default function WorkflowDetail() {
   const emailRuns = runs.filter((r) => r.alertsSent > 0 && r.emailSubject);
 
   return (
-    <div className="space-y-4" data-stagger>
+    <div className="space-y-4 px-4 lg:px-16" data-stagger>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div className="flex items-center gap-3 min-w-0">
           <Link to="/workflows" className="text-gray-500 hover:text-gray-300 text-sm shrink-0">← Workflows</Link>

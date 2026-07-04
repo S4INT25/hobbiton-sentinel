@@ -743,6 +743,14 @@ public static class AdminApiEndpoints
     private static async Task AuditAction(IAuditLogStore audit, HttpContext ctx,
         string action, string resourceType, string? resourceId, string? details = null)
     {
+        var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "";
+        if (ip == "127.0.0.1" || ip == "::1" || ip == "0.0.0.1")
+        {
+            ip = ctx.Request.Headers["X-Forwarded-For"].FirstOrDefault()
+                 ?? ctx.Request.Headers["X-Real-IP"].FirstOrDefault()
+                 ?? ip;
+        }
+
         await audit.LogAsync(new AuditLog
         {
             UserId = ctx.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "",
@@ -751,7 +759,7 @@ public static class AdminApiEndpoints
             ResourceType = resourceType,
             ResourceId = resourceId ?? "",
             Details = details ?? "",
-            IpAddress = ctx.Connection.RemoteIpAddress?.ToString() ?? ""
+            IpAddress = ip
         });
     }
 }

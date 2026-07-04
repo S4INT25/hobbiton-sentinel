@@ -86,7 +86,7 @@ export default function Cases() {
   const allPageSelected = paged.length > 0 && paged.every((c) => selected.has(c.id));
 
   return (
-    <div className="space-y-4" data-stagger>
+    <div className="space-y-4 px-4 lg:px-16" data-stagger>
       <PageHeader title="Cases" subtitle={`${cases.length} open`}>
         {selected.size > 0 && (
           <button
@@ -151,21 +151,30 @@ export default function Cases() {
                   <td className={`${tdCls} text-gray-500`}>{c.status}</td>
                   <td className={`${tdCls} font-mono text-gray-500`}>{fmtDate(c.firstSeen)}</td>
                   <td className={tdCls}>
-                    <div className="flex items-center gap-2">
-                      <Link to={`/cases/${c.id}`} className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors">
-                        View
+                    <div className="flex items-center gap-1">
+                      <Link to={`/cases/${c.id}`} className="p-1.5 text-emerald-400 hover:text-emerald-300 rounded transition-colors" title="View">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
                       </Link>
                       <button
                         onClick={() => { setReason('Manually resolved by analyst'); setResolveTarget(c); }}
-                        className="text-xs text-gray-500 hover:text-emerald-400 transition-colors"
+                        className="p-1.5 text-gray-500 hover:text-emerald-400 rounded transition-colors"
+                        title="Resolve"
                       >
-                        Resolve
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                        </svg>
                       </button>
                       <button
                         onClick={() => setDeleteTarget(c)}
-                        className="text-xs text-gray-600 hover:text-rose-400 transition-colors"
+                        className="p-1.5 text-gray-500 hover:text-rose-400 rounded transition-colors"
+                        title="Delete"
                       >
-                        Delete
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
                       </button>
                     </div>
                   </td>

@@ -31,7 +31,7 @@ export default function Dashboard() {
   const statHint = 'font-mono text-[10px] text-gray-600 mt-1.5';
 
   return (
-    <div className="space-y-6" data-stagger>
+    <div className="space-y-6 px-4 lg:px-16" data-stagger>
       <PageHeader title="Dashboard" subtitle="Fraud monitoring at a glance">
         <button onClick={() => triggerMut.mutate()} disabled={triggerMut.isPending || isRunning} className={btnPrimary}>
           {isRunning ? 'Run in progress…' : triggerMut.isPending ? 'Starting…' : 'Trigger fraud sweep'}

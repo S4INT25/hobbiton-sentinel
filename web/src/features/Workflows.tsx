@@ -139,7 +139,7 @@ export default function Workflows() {
   const visible = workflows.filter((w) => !w.isDeleted);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 px-4 lg:px-16">
       <PageHeader title="Workflows" subtitle="Scheduled agent jobs — reports and fraud sweeps on a cron">
         <button onClick={() => setEditing({ ...EMPTY })} className={btnPrimary}>New Workflow</button>
       </PageHeader>
@@ -169,15 +169,28 @@ export default function Workflows() {
               {w.targetDatabase && <span className="text-sky-400/80">{w.targetDatabase}</span>}
               <span>updated {fmtDate(w.updatedAt)}</span>
             </div>
-            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-800/60">
-              <button onClick={() => triggerMut.mutate(w.id)} disabled={triggerMut.isPending} className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors disabled:opacity-50">
-                Run now
+            <div className="flex items-center gap-1 mt-3 pt-3 border-t border-gray-800/60">
+              <button onClick={() => triggerMut.mutate(w.id)} disabled={triggerMut.isPending} className="p-1.5 text-emerald-400 hover:text-emerald-300 rounded transition-colors disabled:opacity-50" title="Run now">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
               </button>
-              <button onClick={() => saveMut.mutate({ ...w, enabled: !w.enabled })} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
-                {w.enabled ? 'Disable' : 'Enable'}
+              <button onClick={() => saveMut.mutate({ ...w, enabled: !w.enabled })} className="p-1.5 text-gray-500 hover:text-gray-300 rounded transition-colors" title={w.enabled ? 'Disable' : 'Enable'}>
+                {w.enabled
+                  ? <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
               </button>
-              <button onClick={() => setEditing({ ...w })} className="text-xs text-gray-500 hover:text-white transition-colors">Edit</button>
-              <button onClick={() => setDeleteTarget(w)} className="text-xs text-gray-600 hover:text-rose-400 transition-colors ml-auto">Delete</button>
+              <button onClick={() => setEditing({ ...w })} className="p-1.5 text-gray-500 hover:text-white rounded transition-colors" title="Edit">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
+              <button onClick={() => setDeleteTarget(w)} className="p-1.5 text-gray-500 hover:text-rose-400 rounded transition-colors ml-auto" title="Delete">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
             </div>
           </div>
         ))}
