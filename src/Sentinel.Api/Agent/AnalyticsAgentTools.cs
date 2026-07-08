@@ -113,6 +113,33 @@ public static class AnalyticsAgentTools
         ),
 
         ChatTool.CreateFunctionTool(
+            functionName: "export_csv",
+            functionDescription: """
+                                 Run a query and give the user a downloadable CSV file. Use this — instead of emit_chart —
+                                 whenever the user explicitly asks to export, download, or "get a CSV" of data.
+                                 The query runs directly against the database, so it can cover far more rows than would
+                                 ever be reasonable to render in chat. Do not paste the row data in your reply — the
+                                 download button handles that; just confirm it's ready.
+                                 """,
+            functionParameters: BinaryData.FromString("""
+                                                      {
+                                                          "type": "object",
+                                                          "properties": {
+                                                              "sql": {
+                                                                  "type": "string",
+                                                                  "description": "The ClickHouse SQL query to export. Still include a sane LIMIT for a CSV export (e.g. up to 50000)."
+                                                              },
+                                                              "title": {
+                                                                  "type": "string",
+                                                                  "description": "Short title, used as the downloaded filename"
+                                                              }
+                                                          },
+                                                          "required": ["sql", "title"]
+                                                      }
+                                                      """)
+        ),
+
+        ChatTool.CreateFunctionTool(
             functionName: "send_report",
             functionDescription: """
                                  Send a professional email report with your analysis findings. This will be read by management

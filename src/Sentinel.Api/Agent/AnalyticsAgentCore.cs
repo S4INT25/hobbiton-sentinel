@@ -91,7 +91,9 @@ public class AnalyticsAgentCore(
         // Only provide emit_chart and ask_user in interactive (chat) mode
         var tools = isInteractive
             ? allTools
-            : allTools.Where(t => t.FunctionName != "emit_chart" && t.FunctionName != "ask_user").ToList();
+            : allTools.Where(t =>
+                    t.FunctionName != "emit_chart" && t.FunctionName != "ask_user" && t.FunctionName != "export_csv")
+                .ToList();
         var chatClient = ai.GetChatClient(modelName);
         int totalInput = 0, totalOutput = 0;
         var iteration = 0;
@@ -437,6 +439,7 @@ public class AnalyticsAgentCore(
                     "get_schema" => await HandleGetSchema(root),
                     "describe_table" => await HandleDescribeTable(root),
                     "emit_chart" => HandleEmitChart(root, chartResults, onEvent).Result,
+                    "export_csv" => await HandleExportCsv(root, database, onEvent, chartResults),
                     "send_report" => await HandleSendReport(root, isInteractive, allowInteractiveReportSending, onEvent,
                         response),
                     "save_memory" => await HandleSaveMemory(root, database, onEvent),
@@ -665,6 +668,44 @@ public class AnalyticsAgentCore(
 
         await Emit(onEvent, "chart", $"Chart ready: {title} ({chartType}, {rows.Count} points)", sql);
         return $"Chart emitted: {title} ({chartType}, {rows.Count} data points)";
+    }
+
+    private async Task<string> HandleExportCsv(
+        JsonElement root, string defaultDb, Func<AnalyticsStreamEvent, Task>? onEvent,
+        List<QueryResult> chartResults)
+    {
+        var sql = root.TryGetProperty("sql", out var sq) ? sq.GetString() ?? "" : "";
+        var title = root.TryGetProperty("title", out var tt) ? tt.GetString() ?? "" : "";
+        if (string.IsNullOrWhiteSpace(sql)) return "sql is required.";
+        if (string.IsNullOrWhiteSpace(title)) title = "export";
+
+        await Emit(onEvent, "executing_sql", $"Building CSV: {title}…");
+
+        var validation = await ValidateCategoricalFiltersAsync(sql, defaultDb);
+        if (validation != null) return $"Validation error:\n{validation}";
+
+        var raw = await ch.QueryAsync(sql);
+        if (IsClickHouseError(raw))
+        {
+            var feedback = await BuildErrorFeedbackAsync(raw, sql, defaultDb);
+            await Emit(onEvent, "error", "CSV query failed", sql);
+            return $"Query error:\n{feedback}";
+        }
+
+        var tableData = ParseQueryResult(raw);
+        chartResults.Add(new QueryResult
+        {
+            Label = title,
+            Sql = sql,
+            ChartType = "csv",
+            Columns = tableData.Columns,
+            Rows = tableData.Rows,
+            RowCount = tableData.Rows.Count
+        });
+
+        await Emit(onEvent, "chart", $"CSV ready: {title} ({tableData.Rows.Count} rows)", sql);
+        return
+            $"CSV ready: {title} ({tableData.Rows.Count} rows). Tell the user it's ready to download — do not restate the rows in your reply.";
     }
 
     private async Task<string> HandleSendReport(
@@ -900,6 +941,10 @@ public class AnalyticsAgentCore(
               ## Charts
               Use `emit_chart` when visualization would help the user understand patterns or trends.
               Decide the chart type based on data shape (time series → line, categories → bar, proportions → pie).
+
+              ## CSV Export
+              Use `export_csv` when the user asks to export, download, or "get a CSV" of data — it runs the
+              query directly and gives them a download button, without dumping rows into the chat or your reply.
               """
             : """
 
@@ -935,7 +980,7 @@ public class AnalyticsAgentCore(
                  You are an intelligent analytics agent with full access to ClickHouse databases.
                  You investigate questions by querying data, analysing results, and presenting findings clearly.
 
-                 You have tools: run_sql, get_schema, describe_table, emit_chart, send_report, ask_user.
+                 You have tools: run_sql, get_schema, describe_table, emit_chart, export_csv, send_report, ask_user.
                  You can also use save_memory to store durable business definitions for future analyses.
 
                  ## How to work

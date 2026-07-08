@@ -797,6 +797,27 @@ function ResultBlock({
   chartTypeOverrides: Record<string, string>;
   onChartTypeChange: (key: string, t: string) => void;
 }) {
+  if (qr.chartType === 'csv') {
+    const filename = `${(qr.label || 'export').replace(/[^\w-]+/g, '-')}.csv`;
+    return (
+      <div className="border border-gray-800/60 rounded-lg overflow-hidden bg-gray-950/40 px-3 py-2.5 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <svg className="w-4 h-4 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3M4 20h16" />
+          </svg>
+          <span className="font-display text-xs font-medium text-gray-300 truncate">{qr.label || 'Export'}</span>
+          <span className="font-mono text-[10px] text-gray-600 tnum shrink-0">{qr.rowCount} rows</span>
+        </div>
+        <button
+          onClick={() => downloadCsv(filename, qr.columns, qr.rows)}
+          className="font-mono text-[10px] px-2.5 py-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition-colors flex items-center gap-1 shrink-0 print:hidden"
+        >
+          Download CSV
+        </button>
+      </div>
+    );
+  }
+
   const types = applicableChartTypes(qr.columns, qr.rows);
   const stored = chartTypeOverrides[blockKey];
   const effective = stored ?? (qr.chartType !== 'none' && types.includes(qr.chartType) ? qr.chartType : types[0] ?? 'table');
