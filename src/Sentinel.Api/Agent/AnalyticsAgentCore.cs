@@ -74,14 +74,23 @@ public class AnalyticsAgentCore(
 
         if (history is { Count: > 0 })
         {
-            foreach (var entry in history.TakeLast(MaxHistoryExchanges * 2))
+            var recent = history.TakeLast(MaxHistoryExchanges * 2).ToList();
+            for (var i = 0; i < recent.Count; i++)
             {
+                var entry = recent[i];
                 if (entry.Role == "user")
+                {
                     messages.Add(new UserChatMessage(entry.Content));
-                else
-                    messages.Add(new AssistantChatMessage(entry.Response != null
-                        ? JsonSerializer.Serialize(entry.Response)
-                        : entry.Content));
+                    continue;
+                }
+
+                // Last 2 exchanges stay full so the LLM can reference recent results;
+                // older ones are compacted to strip data rows and keep only context.
+                var keepFull = i >= recent.Count - 4;
+                var content = entry.Response != null
+                    ? (keepFull ? JsonSerializer.Serialize(entry.Response) : CompactResponse(entry.Response))
+                    : entry.Content;
+                messages.Add(new AssistantChatMessage(content));
             }
         }
 
@@ -1040,6 +1049,25 @@ public class AnalyticsAgentCore(
         foreach (var m in list)
             sb.AppendLine($"**{m.Term}**: {m.Definition}");
         return sb.ToString();
+    }
+
+    // ponytail: strips data rows from older history entries to stay under API size limits
+    private static string CompactResponse(AnalyticsResponse r)
+    {
+        var compact = new
+        {
+            r.Explanation,
+            r.Summary,
+            r.RiskLevel,
+            r.Findings,
+            r.RecommendedActions,
+            r.ChartType,
+            r.Columns,
+            r.RowCount,
+            r.Error,
+            Results = r.Results.Select(q => new { q.Label, q.Columns, q.RowCount }).ToList()
+        };
+        return JsonSerializer.Serialize(compact);
     }
 
     private static bool HasExplicitEmailIntent(string prompt)
