@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Sentinel.Admin;
 using Sentinel.Admin.Models;
 
@@ -9,6 +10,7 @@ namespace Sentinel.Agent;
 /// </summary>
 public class ChatAnalyticsAgent(AnalyticsAgentCore core)
 {
+    [Experimental("OPENAI001")]
     public Task<AnalyticsResponse> AskAsync(
         string prompt,
         string database = "lipila_blaze",
