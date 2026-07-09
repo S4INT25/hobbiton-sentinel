@@ -9,6 +9,7 @@ using Sentinel.Agent;
 using Sentinel.Infrastructure;
 using Sentinel.Jobs;
 using Sentinel.Memory;
+using ZiggyCreatures.Caching.Fusion;
 
 namespace Sentinel.Admin;
 
@@ -183,7 +184,7 @@ public static class AdminApiEndpoints
 
         // ── Auth ──
         api.MapPost("/auth/login", async (LoginRequest req, IUserStore userStore,
-            IAuditLogStore audit, HttpContext ctx) =>
+            IAuditLogStore audit, IFusionCache cache, HttpContext ctx) =>
         {
             var user = req.Username.Contains('@')
                 ? await userStore.GetByEmailAsync(req.Username)
@@ -195,12 +196,88 @@ public static class AdminApiEndpoints
                 return Results.Unauthorized();
             }
 
-            await userStore.UpdateLastLoginAsync(user.Id);
-            var principal = new ClaimsPrincipal(new ClaimsIdentity(BuildClaims(user), AuthConstants.Scheme));
-            await ctx.SignInAsync(AuthConstants.Scheme, principal);
-            ctx.User = principal;
-            await AuditAction(audit, ctx, "login", "auth", user.Id);
-            return Results.Ok(new { user.Id, user.Username, user.Role, user.DisplayName });
+            if (!user.EmailVerified)
+                return Results.BadRequest(new
+                {
+                    error = "Please verify your email before signing in.",
+                    verificationRequired = true,
+                    email = user.Email
+                });
+
+            return await CompletePrimaryLoginAsync(user, userStore, cache, audit, ctx);
+        }).AllowAnonymous();
+
+        // Passwordless alternative to /auth/login — same downstream TOTP 2FA gate via CompletePrimaryLoginAsync.
+        api.MapPost("/auth/login/email-otp/request", async (RequestLoginOtpRequest req, IUserStore userStore,
+            EmailClient emailClient) =>
+        {
+            var email = req.Email.Trim().ToLowerInvariant();
+            var user = await userStore.GetByEmailAsync(email);
+            // Always 200 — don't reveal whether the email exists, is verified, or is active.
+            if (user is { IsActive: true, EmailVerified: true } && CanIssueNewOtp(user))
+            {
+                SetEmailOtp(user);
+                await userStore.SaveAsync(user);
+                await SendEmailOtp(emailClient, user, "Your Sentinel sign-in code",
+                    $"Your sign-in code is **{user.EmailOtpCode}**. It expires in 10 minutes.\n\n" +
+                    "If you did not request this, ignore this email.");
+            }
+
+            return Results.Ok(new { sent = true });
+        }).AllowAnonymous();
+
+        api.MapPost("/auth/login/email-otp/verify", async (VerifyLoginOtpRequest req, IUserStore userStore,
+            IAuditLogStore audit, IFusionCache cache, HttpContext ctx) =>
+        {
+            var email = req.Email.Trim().ToLowerInvariant();
+            var user = await userStore.GetByEmailAsync(email);
+
+            if (user is null || !user.IsActive || !user.EmailVerified || user.EmailOtpCode is null
+                || user.EmailOtpCodeExpiry is null || user.EmailOtpCodeExpiry < DateTime.UtcNow
+                || user.EmailOtpAttempts >= 5)
+            {
+                await AuditAction(audit, ctx, "login_failed", "auth", email);
+                return Results.BadRequest(new { error = "This code has expired. Request a new one." });
+            }
+
+            if (user.EmailOtpCode != req.Code.Trim())
+            {
+                user.EmailOtpAttempts++;
+                await userStore.SaveAsync(user);
+                await AuditAction(audit, ctx, "login_failed", "auth", email);
+                return Results.BadRequest(new { error = "Incorrect code." });
+            }
+
+            user.EmailOtpCode = null;
+            user.EmailOtpCodeExpiry = null;
+            await userStore.SaveAsync(user);
+
+            return await CompletePrimaryLoginAsync(user, userStore, cache, audit, ctx);
+        }).AllowAnonymous();
+
+        // Completes login after /auth/login returned twoFactorRequired.
+        api.MapPost("/auth/login/2fa", async (TwoFactorLoginRequest req, IUserStore userStore,
+            IAuditLogStore audit, IFusionCache cache, HttpContext ctx) =>
+        {
+            var key = TwoFactorChallengeKey(req.Challenge);
+            var pending = await cache.GetOrDefaultAsync<TwoFactorChallenge>(key);
+            var user = pending is null ? null : await userStore.GetByIdAsync(pending.UserId);
+
+            if (pending is null || user is null || string.IsNullOrEmpty(user.TwoFactorSecret))
+                return Results.BadRequest(new { error = "This code has expired. Please sign in again." });
+
+            if (!TwoFactorCodes.VerifyTotp(user.TwoFactorSecret, req.Code))
+            {
+                // ponytail: attempt cap resets the 5-min TTL rather than tracking absolute expiry — fine at this scale
+                if (pending.Attempts + 1 >= 5) await cache.RemoveAsync(key);
+                else
+                    await cache.SetAsync(key, pending with { Attempts = pending.Attempts + 1 },
+                        o => o.SetDuration(TimeSpan.FromMinutes(5)));
+                return Results.BadRequest(new { error = "Incorrect code." });
+            }
+
+            await cache.RemoveAsync(key);
+            return await FinishSignInAsync(user, userStore, audit, ctx);
         }).AllowAnonymous();
 
         api.MapPost("/auth/logout", async (HttpContext ctx, IAuditLogStore audit) =>
@@ -414,7 +491,7 @@ public static class AdminApiEndpoints
 
         // ── JSON auth (SPA) ──
         api.MapPost("/auth/signup", async (SignupRequest req, IUserStore userStore,
-            IAuditLogStore audit, HttpContext ctx) =>
+            EmailClient emailClient, IAuditLogStore audit, HttpContext ctx) =>
         {
             var email = req.Email.Trim().ToLowerInvariant();
             if (!email.EndsWith("@hobbiton.co.zm"))
@@ -440,14 +517,66 @@ public static class AdminApiEndpoints
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
                 DisplayName = string.IsNullOrWhiteSpace(req.DisplayName) ? finalUsername : req.DisplayName,
                 Role = AuthConstants.AnalystRole,
-                IsActive = true
+                IsActive = true,
+                EmailVerified = false
             };
+            SetEmailOtp(user);
             await userStore.SaveAsync(user);
+            await SendEmailOtp(emailClient, user, "Verify your Sentinel account",
+                $"Hi {user.DisplayName},\n\nYour verification code is **{user.EmailOtpCode}**. " +
+                "It expires in 10 minutes.\n\nIf you did not create a Sentinel account, ignore this email.");
+            await AuditAction(audit, ctx, "signup", "auth", user.Id);
+            return Results.Ok(new { verificationRequired = true, email = user.Email });
+        }).AllowAnonymous();
+
+        // Second factor for registration — proves the signup email is real before first login.
+        api.MapPost("/auth/verify-email", async (VerifyEmailRequest req, IUserStore userStore,
+            IAuditLogStore audit, HttpContext ctx) =>
+        {
+            var email = req.Email.Trim().ToLowerInvariant();
+            var user = await userStore.GetByEmailAsync(email);
+            if (user is null || user.EmailVerified)
+                return Results.BadRequest(new { error = "Invalid or expired code." });
+
+            if (user.EmailOtpCodeExpiry is null || user.EmailOtpCodeExpiry < DateTime.UtcNow
+                                                || user.EmailOtpAttempts >= 5)
+                return Results.BadRequest(new { error = "This code has expired. Request a new one." });
+
+            if (user.EmailOtpCode != req.Code.Trim())
+            {
+                user.EmailOtpAttempts++;
+                await userStore.SaveAsync(user);
+                return Results.BadRequest(new { error = "Incorrect code." });
+            }
+
+            user.EmailVerified = true;
+            user.EmailOtpCode = null;
+            user.EmailOtpCodeExpiry = null;
+            await userStore.SaveAsync(user);
+
             var principal = new ClaimsPrincipal(new ClaimsIdentity(BuildClaims(user), AuthConstants.Scheme));
             await ctx.SignInAsync(AuthConstants.Scheme, principal);
             ctx.User = principal;
-            await AuditAction(audit, ctx, "signup", "auth", user.Id);
+            await AuditAction(audit, ctx, "verify_email", "auth", user.Id);
             return Results.Ok(new { user.Id, user.Username, user.Role, user.DisplayName });
+        }).AllowAnonymous();
+
+        api.MapPost("/auth/resend-verification", async (ResendVerificationRequest req, IUserStore userStore,
+            EmailClient emailClient) =>
+        {
+            var email = req.Email.Trim().ToLowerInvariant();
+            var user = await userStore.GetByEmailAsync(email);
+            // Always 200 — don't reveal whether the email exists. Skip if a code was just sent (anti-spam).
+            if (user is { EmailVerified: false } && CanIssueNewOtp(user))
+            {
+                SetEmailOtp(user);
+                await userStore.SaveAsync(user);
+                await SendEmailOtp(emailClient, user, "Verify your Sentinel account",
+                    $"Hi {user.DisplayName},\n\nYour verification code is **{user.EmailOtpCode}**. " +
+                    "It expires in 10 minutes.\n\nIf you did not create a Sentinel account, ignore this email.");
+            }
+
+            return Results.Ok(new { sent = true });
         }).AllowAnonymous();
 
         api.MapPost("/auth/forgot-password", async (ForgotPasswordRequest req, IUserStore userStore,
@@ -500,6 +629,58 @@ public static class AdminApiEndpoints
             Role = ctx.User.FindFirst(ClaimTypes.Role)?.Value ?? "",
             DisplayName = ctx.User.FindFirst("display_name")?.Value ?? ""
         }));
+
+        // ── Two-factor authentication (self-service, acts on the caller's own account) ──
+        api.MapGet("/auth/2fa/status", async (IUserStore userStore, HttpContext ctx) =>
+        {
+            var user = await CurrentUser(userStore, ctx);
+            return user is null ? Results.NotFound() : Results.Ok(new { enabled = user.TwoFactorEnabled });
+        });
+
+        api.MapPost("/auth/2fa/setup", async (IUserStore userStore, HttpContext ctx) =>
+        {
+            var user = await CurrentUser(userStore, ctx);
+            if (user is null) return Results.NotFound();
+
+            var secret = TwoFactorCodes.GenerateSecret();
+            user.TwoFactorSecret = secret;
+            await userStore.SaveAsync(user);
+            return Results.Ok(new
+            {
+                secret,
+                otpauthUrl = TwoFactorCodes.BuildOtpauthUrl(secret, user.Email ?? user.Username)
+            });
+        });
+
+        api.MapPost("/auth/2fa/enable", async (TwoFactorCodeRequest req, IUserStore userStore,
+            IAuditLogStore audit, HttpContext ctx) =>
+        {
+            var user = await CurrentUser(userStore, ctx);
+            if (user is null) return Results.NotFound();
+            if (string.IsNullOrEmpty(user.TwoFactorSecret) ||
+                !TwoFactorCodes.VerifyTotp(user.TwoFactorSecret, req.Code))
+                return Results.BadRequest(new { error = "Incorrect code." });
+
+            user.TwoFactorEnabled = true;
+            await userStore.SaveAsync(user);
+            await AuditAction(audit, ctx, "enable_2fa", "auth", user.Id);
+            return Results.Ok(new { enabled = true });
+        });
+
+        api.MapPost("/auth/2fa/disable", async (DisableTwoFactorRequest req, IUserStore userStore,
+            IAuditLogStore audit, HttpContext ctx) =>
+        {
+            var user = await CurrentUser(userStore, ctx);
+            if (user is null) return Results.NotFound();
+            if (!BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
+                return Results.BadRequest(new { error = "Incorrect password." });
+
+            user.TwoFactorEnabled = false;
+            user.TwoFactorSecret = null;
+            await userStore.SaveAsync(user);
+            await AuditAction(audit, ctx, "disable_2fa", "auth", user.Id);
+            return Results.Ok(new { enabled = false });
+        });
 
         // ── Cases (detail / delete / bulk) ──
         api.MapGet("/cases/{id}", async (string id, ICaseStore store) =>
@@ -732,6 +913,55 @@ public static class AdminApiEndpoints
         new("display_name", user.DisplayName)
     ];
 
+    private static void SetEmailOtp(AdminUser user)
+    {
+        user.EmailOtpCode = TwoFactorCodes.GenerateEmailCode();
+        user.EmailOtpCodeExpiry = DateTime.UtcNow.AddMinutes(10);
+        user.EmailOtpAttempts = 0;
+    }
+
+    // A pending code less than a minute old is still in the recipient's inbox — don't re-send yet.
+    private static bool CanIssueNewOtp(AdminUser user) =>
+        user.EmailOtpCodeExpiry is null || user.EmailOtpCodeExpiry < DateTime.UtcNow.AddMinutes(9);
+
+    private static Task SendEmailOtp(EmailClient emailClient, AdminUser user, string subject, string body) =>
+        emailClient.SendAsync(subject: subject, body: body, severity: "info", recipients: [user.Email!]);
+
+    // Shared tail for both primary-login paths (password, email-OTP): either hand off to TOTP or sign in.
+    private static async Task<IResult> CompletePrimaryLoginAsync(AdminUser user, IUserStore userStore,
+        IFusionCache cache, IAuditLogStore audit, HttpContext ctx)
+    {
+        if (user.TwoFactorEnabled)
+        {
+            var challenge = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+                .Replace("+", "-").Replace("/", "_").Replace("=", "");
+            await cache.SetAsync(TwoFactorChallengeKey(challenge), new TwoFactorChallenge(user.Id, 0),
+                o => o.SetDuration(TimeSpan.FromMinutes(5)));
+            return Results.Ok(new { twoFactorRequired = true, challenge });
+        }
+
+        return await FinishSignInAsync(user, userStore, audit, ctx);
+    }
+
+    private static async Task<IResult> FinishSignInAsync(AdminUser user, IUserStore userStore,
+        IAuditLogStore audit, HttpContext ctx)
+    {
+        await userStore.UpdateLastLoginAsync(user.Id);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(BuildClaims(user), AuthConstants.Scheme));
+        await ctx.SignInAsync(AuthConstants.Scheme, principal);
+        ctx.User = principal;
+        await AuditAction(audit, ctx, "login", "auth", user.Id);
+        return Results.Ok(new { user.Id, user.Username, user.Role, user.DisplayName });
+    }
+
+    private static async Task<AdminUser?> CurrentUser(IUserStore userStore, HttpContext ctx)
+    {
+        var id = ctx.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        return id is null ? null : await userStore.GetByIdAsync(id);
+    }
+
+    private static string TwoFactorChallengeKey(string token) => $"sentinel:2fa-challenge:{token}";
+
     private static string GenerateTitle(string message)
     {
         var title = message.Trim();
@@ -785,3 +1015,19 @@ public record SignupRequest(string Email, string DisplayName, string Password, s
 public record ForgotPasswordRequest(string Email);
 
 public record ResetPasswordRequest(string Token, string Password, string ConfirmPassword);
+
+public record VerifyEmailRequest(string Email, string Code);
+
+public record ResendVerificationRequest(string Email);
+
+public record TwoFactorLoginRequest(string Challenge, string Code);
+
+public record RequestLoginOtpRequest(string Email);
+
+public record VerifyLoginOtpRequest(string Email, string Code);
+
+public record TwoFactorCodeRequest(string Code);
+
+public record DisableTwoFactorRequest(string Password);
+
+public record TwoFactorChallenge(string UserId, int Attempts);

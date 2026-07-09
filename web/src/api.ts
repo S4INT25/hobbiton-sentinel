@@ -35,6 +35,16 @@ export interface Me {
   displayName: string;
 }
 
+export interface SignupResult {
+  verificationRequired: true;
+  email: string;
+}
+
+export interface TwoFactorChallenge {
+  twoFactorRequired: true;
+  challenge: string;
+}
+
 export interface CaseEvidence {
   timestamp: string;
   runId: string;
@@ -316,14 +326,28 @@ export interface DashboardData {
 export const api = {
   // auth
   login: (username: string, password: string) =>
-    f<Me>('/api/auth/login', post({ username, password })),
+    f<Me | TwoFactorChallenge>('/api/auth/login', post({ username, password })),
+  verifyLogin2fa: (challenge: string, code: string) =>
+    f<Me>('/api/auth/login/2fa', post({ challenge, code })),
+  requestLoginEmailOtp: (email: string) =>
+    f<{ sent: boolean }>('/api/auth/login/email-otp/request', post({ email })),
+  verifyLoginEmailOtp: (email: string, code: string) =>
+    f<Me | TwoFactorChallenge>('/api/auth/login/email-otp/verify', post({ email, code })),
   logout: () => fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }),
   me: () => f<Me>('/api/auth/me'),
   signup: (req: { email: string; displayName: string; password: string; confirmPassword: string }) =>
-    f<Me>('/api/auth/signup', post(req)),
+    f<SignupResult>('/api/auth/signup', post(req)),
+  verifyEmail: (email: string, code: string) => f<Me>('/api/auth/verify-email', post({ email, code })),
+  resendVerification: (email: string) => f<{ sent: boolean }>('/api/auth/resend-verification', post({ email })),
   forgotPassword: (email: string) => f<{ sent: boolean }>('/api/auth/forgot-password', post({ email })),
   resetPassword: (token: string, password: string, confirmPassword: string) =>
     f<{ reset: boolean }>('/api/auth/reset-password', post({ token, password, confirmPassword })),
+
+  // two-factor authentication (self-service, own account only)
+  get2faStatus: () => f<{ enabled: boolean }>('/api/auth/2fa/status'),
+  setup2fa: () => f<{ secret: string; otpauthUrl: string }>('/api/auth/2fa/setup', { method: 'POST' }),
+  enable2fa: (code: string) => f<{ enabled: boolean }>('/api/auth/2fa/enable', post({ code })),
+  disable2fa: (password: string) => f<{ enabled: boolean }>('/api/auth/2fa/disable', post({ password })),
 
   // cases
   listCases: () => f<FraudCase[]>('/api/cases'),

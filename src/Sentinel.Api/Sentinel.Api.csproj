@@ -25,6 +25,7 @@
         <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.9"/>
         <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.2" />
         <PackageReference Include="OpenAI" Version="2.12.0"/>
+        <PackageReference Include="Otp.NET" Version="1.4.1"/>
         <PackageReference Include="QuickChart" Version="2.3.0"/>
         <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
         <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />

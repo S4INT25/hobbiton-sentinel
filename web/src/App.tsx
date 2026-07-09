@@ -21,6 +21,8 @@ import SharedReport from './features/SharedReport';
 import Signup from './features/Signup';
 import ForgotPassword from './features/ForgotPassword';
 import ResetPassword from './features/ResetPassword';
+import VerifyEmail from './features/VerifyEmail';
+import Security from './features/Security';
 
 const MeContext = createContext<Me | null>(null);
 export const useMe = () => useContext(MeContext);
@@ -56,6 +58,12 @@ const NAV: { section: string; items: NavItem[] }[] = [
     section: 'Admin',
     items: [
       { to: '/users', label: 'Users', roles: ['admin'], icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' },
+    ],
+  },
+  {
+    section: 'Account',
+    items: [
+      { to: '/security', label: 'Security', roles: null, icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 10-8 0v2' },
     ],
   },
 ];
@@ -326,7 +334,8 @@ export default function App() {
       <Routes>
         <Route path="/shared/:id" element={<SharedReport />} />
         <Route path="/login" element={<Login onLogin={setMe} />} />
-        <Route path="/signup" element={<Signup onLogin={setMe} />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/verify-email" element={<VerifyEmail onLogin={setMe} />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         {me === null ? (
@@ -346,6 +355,7 @@ export default function App() {
             <Route path="/audit" element={<Shell me={me}><Audit /></Shell>} />
             <Route path="/knowledge" element={<Shell me={me}><Knowledge /></Shell>} />
             <Route path="/products" element={<Shell me={me}><Products /></Shell>} />
+            <Route path="/security" element={<Shell me={me}><Security /></Shell>} />
             <Route path="*" element={<Navigate to="/chat" replace />} />
           </>
         )}

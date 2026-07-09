@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api, type Me } from '../api';
+import { api } from '../api';
 import { btnPrimary, inputCls, Spinner } from '../components/ui';
 
 const labelCls = 'block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1';
 
-export default function Signup({ onLogin }: { onLogin: (me: Me) => void }) {
+export default function Signup() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -19,9 +19,8 @@ export default function Signup({ onLogin }: { onLogin: (me: Me) => void }) {
     setError(null);
     setBusy(true);
     try {
-      const me = await api.signup({ email, displayName, password, confirmPassword: confirm });
-      onLogin(me);
-      navigate('/chat');
+      const result = await api.signup({ email, displayName, password, confirmPassword: confirm });
+      navigate(`/verify-email?email=${encodeURIComponent(result.email)}`);
     } catch (err) {
       setError((err as { error?: string }).error ?? 'Signup failed.');
     } finally {
