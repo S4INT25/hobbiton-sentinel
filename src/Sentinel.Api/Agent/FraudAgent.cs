@@ -297,6 +297,8 @@ public class FraudAgent(
         var alertSent = false;
         string? alertSubject = null;
         string? alertBody = null;
+        var casesCreated = 0;
+        var casesResolved = 0;
         var earlyWarningSent = false;
         var earlyWarningThreshold = (int)(maxIterations * 0.75);
         var totalInputTokens = 0;
@@ -381,9 +383,19 @@ public class FraudAgent(
                     logger.LogInformation("[Run:{RunId}] Tool call: {Tool} args={Args}",
                         currentRunId, toolCall.FunctionName, argsPreview);
 
+                    // Gate: suppress email on clean runs regardless of what the LLM decides
+                    var gatedCleanRun = toolCall.FunctionName == "send_alert"
+                                        && casesCreated == 0 && casesResolved == 0;
+
                     var toolStart = Stopwatch.GetTimestamp();
-                    var result = await ExecuteToolAsync(toolCall, currentRunId, request.WorkflowId);
+                    var result = gatedCleanRun
+                        ? "Alert skipped — clean run, no actionable findings."
+                        : await ExecuteToolAsync(toolCall, currentRunId, request.WorkflowId);
                     var durationMs = (int)Stopwatch.GetElapsedTime(toolStart).TotalMilliseconds;
+
+                    if (gatedCleanRun)
+                        logger.LogInformation("[Run:{RunId}] send_alert suppressed — 0 cases created/resolved",
+                            currentRunId);
 
                     // Log to ClickHouse (await to prevent scope disposal issues)
                     await runLogStore.LogToolCallAsync(new RunLog
@@ -401,15 +413,18 @@ public class FraudAgent(
                         toolCall.FunctionName,
                         durationMs);
 
+                    // Track case counters for the gate and RunSummary
+                    if (toolCall.FunctionName == "create_case") casesCreated++;
+                    else if (toolCall.FunctionName == "resolve_case") casesResolved++;
+
                     // Cap tool result size in the conversation to limit input tokens
                     var contextResult = result.Length > 8000
                         ? result[..8000] + $"\n\n[… result truncated from {result.Length:N0} chars for context]"
                         : result;
                     messages.Add(new ToolChatMessage(toolCall.Id, contextResult));
-                    if (toolCall.FunctionName == "send_alert")
+                    if (toolCall.FunctionName == "send_alert" && !gatedCleanRun)
                     {
                         alertSent = true;
-                        // Capture subject/body for the RunSummary so the detail page can show sent emails
                         try
                         {
                             using var alertDoc = JsonDocument.Parse(toolCall.FunctionArguments);
@@ -451,9 +466,13 @@ public class FraudAgent(
 
             foreach (var toolCall in summaryCompletion.ToolCalls)
             {
-                var result = await ExecuteToolAsync(toolCall, currentRunId, request.WorkflowId);
+                var gatedCleanRun = toolCall.FunctionName == "send_alert"
+                                    && casesCreated == 0 && casesResolved == 0;
+                var result = gatedCleanRun
+                    ? "Alert skipped — clean run, no actionable findings."
+                    : await ExecuteToolAsync(toolCall, currentRunId, request.WorkflowId);
                 logger.LogInformation("Max-iteration summary tool: {Tool} → {Result}", toolCall.FunctionName, result);
-                if (toolCall.FunctionName == "send_alert")
+                if (toolCall.FunctionName == "send_alert" && !gatedCleanRun)
                 {
                     alertSent = true;
                     try
@@ -503,8 +522,8 @@ public class FraudAgent(
             Iterations = (ushort)iteration,
             InputTokens = (uint)totalInputTokens,
             OutputTokens = (uint)totalOutputTokens,
-            CasesCreated = 0, // TODO: track in loop
-            CasesResolved = 0,
+            CasesCreated = (ushort)casesCreated,
+            CasesResolved = (ushort)casesResolved,
             AlertsSent = (ushort)(alertSent ? 1 : 0),
             Status = iteration >= maxIterations ? "max_iterations" : "completed",
             TriggeredBy = request.TriggeredBy,
