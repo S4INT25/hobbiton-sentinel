@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Hangfire;
 using Sentinel.Admin;
 using Sentinel.Admin.Models;
@@ -20,6 +21,7 @@ public class WorkflowExecutionJob(
     RunCancellationRegistry cancellationRegistry,
     ILogger<WorkflowExecutionJob> logger)
 {
+    [Experimental("OPENAI001")]
     public async Task ExecuteAsync(string workflowId)
     {
         var workflow = await workflowStore.GetByIdAsync(workflowId);
@@ -90,6 +92,7 @@ public class WorkflowExecutionJob(
         }
     }
 
+    [Experimental("OPENAI001")]
     private async Task ExecuteEmailReportAsync(WorkflowDefinition workflow)
     {
         var runId = Guid.NewGuid().ToString("N")[..16];

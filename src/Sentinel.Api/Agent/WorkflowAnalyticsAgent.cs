@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Sentinel.Admin.Models;
 
 namespace Sentinel.Agent;
@@ -9,6 +10,7 @@ namespace Sentinel.Agent;
 /// </summary>
 public class WorkflowAnalyticsAgent(AnalyticsAgentCore core, IConfiguration config)
 {
+    [Experimental("OPENAI001")]
     public Task<AnalyticsResponse> RunAsync(
         string prompt,
         string database,

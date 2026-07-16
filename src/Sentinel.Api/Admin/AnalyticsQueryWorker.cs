@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 using Sentinel.Admin.Models;
 using Sentinel.Admin.Stores;
@@ -26,6 +27,7 @@ public class AnalyticsQueryWorker(
         await _channel.Writer.WriteAsync(jobId);
     }
 
+    [Experimental("OPENAI001")]
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("AnalyticsQueryWorker started");
@@ -43,6 +45,7 @@ public class AnalyticsQueryWorker(
         }
     }
 
+    [Experimental("OPENAI001")]
     private async Task ProcessJobAsync(string jobId)
     {
         var job = await jobStore.GetAsync(jobId);

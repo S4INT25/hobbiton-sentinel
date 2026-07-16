@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Hangfire;
 using Sentinel.Admin.Models;
 using Sentinel.Admin.Stores;
@@ -11,6 +12,7 @@ public class WorkflowSchedulerService(
 {
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
 
+    [Experimental("OPENAI001")]
     public async Task RefreshSchedulesAsync(CancellationToken cancellationToken = default)
     {
         await _refreshGate.WaitAsync(cancellationToken);
