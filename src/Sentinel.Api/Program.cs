@@ -237,8 +237,9 @@ try
     app.UseStaticFiles();
     app.UseAuthentication();
     app.UseAuthorization();
-
+#pragma warning disable OPENAI001
     app.MapAdminApi();
+#pragma warning restore OPENAI001
 
     // React SPA — client-side routes fall back to index.html
     app.MapFallbackToFile("index.html");

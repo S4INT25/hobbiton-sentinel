@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using Hangfire;
@@ -15,6 +16,7 @@ namespace Sentinel.Admin;
 
 public static class AdminApiEndpoints
 {
+    [Experimental("OPENAI001")]
     public static void MapAdminApi(this WebApplication app)
     {
         var api = app.MapGroup("/api").RequireAuthorization(AuthConstants.Policy);
