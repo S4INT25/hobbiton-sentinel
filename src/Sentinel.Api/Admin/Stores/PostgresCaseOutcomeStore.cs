@@ -112,15 +112,18 @@ public class PostgresCaseOutcomeStore(IDbContextFactory<SentinelDbContext> dbFac
         sb.AppendLine("## Historical Case Learnings (last 90 days)");
         sb.AppendLine();
 
-        // Overall stats
+        // Overall stats. FP% is computed over human-reviewed cases only (confirmed + false_positive) —
+        // "inconclusive" is the agent's own non-committal auto-resolve default, not a real verdict, and
+        // including it in the denominator understated the true FP rate by ~9x against analyst review.
         var total = outcomes.Count;
         var confirmed = outcomes.Count(o => o.Outcome == "confirmed_fraud");
         var fp = outcomes.Count(o => o.Outcome == "false_positive");
         var inconclusive = outcomes.Count(o => o.Outcome == "inconclusive");
         var autoResolved = outcomes.Count(o => o.Outcome == "auto_resolved");
+        var reviewed = confirmed + fp;
 
         sb.AppendLine(
-            $"Overall: {total} cases resolved — {confirmed} confirmed fraud, {fp} false positives ({(total > 0 ? fp * 100 / total : 0)}% FP rate), {inconclusive} inconclusive, {autoResolved} auto-resolved.");
+            $"Overall: {total} cases resolved — {confirmed} confirmed fraud, {fp} false positives out of {reviewed} human-reviewed ({(reviewed > 0 ? fp * 100 / reviewed : 0)}% FP rate), {inconclusive} inconclusive (agent auto-resolve, no analyst review — not a verdict), {autoResolved} auto-resolved.");
         sb.AppendLine();
 
         // Per-category breakdown
@@ -131,8 +134,9 @@ public class PostgresCaseOutcomeStore(IDbContextFactory<SentinelDbContext> dbFac
             var catFp = g.Count(o => o.Outcome == "false_positive");
             var catConfirmed = g.Count(o => o.Outcome == "confirmed_fraud");
             var catTotal = g.Count();
+            var catReviewed = catConfirmed + catFp;
             sb.AppendLine(
-                $"- **{g.Key}**: {catTotal} cases — {catConfirmed} confirmed, {catFp} false positives ({(catTotal > 0 ? catFp * 100 / catTotal : 0)}% FP rate)");
+                $"- **{g.Key}**: {catTotal} cases — {catConfirmed} confirmed, {catFp} false positives out of {catReviewed} reviewed ({(catReviewed > 0 ? catFp * 100 / catReviewed : 0)}% FP rate)");
         }
 
         sb.AppendLine();

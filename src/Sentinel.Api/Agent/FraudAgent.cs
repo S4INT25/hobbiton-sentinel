@@ -671,8 +671,9 @@ public class FraudAgent(
                 anyResults = true;
                 var fp = byCategory.Count(o => o.Outcome == "false_positive");
                 var confirmed = byCategory.Count(o => o.Outcome == "confirmed_fraud");
+                var reviewed = confirmed + fp;
                 sb.AppendLine(
-                    $"\nCategory '{category}' history: {byCategory.Count} cases — {confirmed} confirmed fraud, {fp} false positives ({(byCategory.Count > 0 ? fp * 100 / byCategory.Count : 0)}% FP rate)");
+                    $"\nCategory '{category}' history: {byCategory.Count} cases — {confirmed} confirmed fraud, {fp} false positives out of {reviewed} human-reviewed ({(reviewed > 0 ? fp * 100 / reviewed : 0)}% FP rate)");
             }
         }
 
@@ -686,8 +687,9 @@ public class FraudAgent(
                 anyResults = true;
                 var fp = byPattern.Count(o => o.Outcome == "false_positive");
                 var confirmed = byPattern.Count(o => o.Outcome == "confirmed_fraud");
+                var reviewed = confirmed + fp;
                 sb.AppendLine(
-                    $"\nPattern #{patternId} history: {byPattern.Count} cases — {confirmed} confirmed fraud, {fp} false positives ({(byPattern.Count > 0 ? fp * 100 / byPattern.Count : 0)}% FP rate)");
+                    $"\nPattern #{patternId} history: {byPattern.Count} cases — {confirmed} confirmed fraud, {fp} false positives out of {reviewed} human-reviewed ({(reviewed > 0 ? fp * 100 / reviewed : 0)}% FP rate)");
             }
         }
 
@@ -718,6 +720,9 @@ public class FraudAgent(
 
         if (root.TryGetProperty("follow_up_queries", out var queries))
             fraudCase.FollowUpQueries = JsonHelpers.ToStringList(queries);
+
+        if (root.TryGetProperty("pattern_id", out var patternIdEl) && patternIdEl.ValueKind == JsonValueKind.Number)
+            fraudCase.PatternId = patternIdEl.GetInt32();
 
         fraudCase.Evidence.Add(new CaseEvidence
         {
@@ -783,6 +788,7 @@ public class FraudAgent(
                 CaseId = caseId,
                 Title = fraudCase.Title,
                 Category = fraudCase.Category,
+                PatternId = fraudCase.PatternId,
                 Outcome = "inconclusive", // agent resolves are inconclusive by default; analysts set confirmed/FP
                 OriginalSeverity = fraudCase.Severity,
                 Confidence = fraudCase.Confidence,

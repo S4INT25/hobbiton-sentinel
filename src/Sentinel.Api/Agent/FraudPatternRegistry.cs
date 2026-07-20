@@ -40,12 +40,15 @@ public static class FraudPatternRegistry
             REQUIRED: Before flagging, query the merchant's transaction history over the past 30 days
             to establish their normal hourly disbursement rate. Compare current rate against the baseline.
 
-            Context: Some merchants are betting companies (sports betting, online gaming). These
-            legitimately disburse winnings at high frequency — 50–200+ disbursements per hour is normal
-            for them. A betting merchant running at 80 disbursements/hour is not suspicious if their
-            30-day average is 70/hour. Only flag if current rate is significantly above their own baseline
-            (e.g. >3x their normal peak), or if the pattern is unusual in other ways (new recipients,
-            round amounts, sequential account numbers).
+            Context: "Normal" velocity depends on the merchant's business model, not just betting.
+            Betting/gaming merchants legitimately disburse 50–200+/hour. Toll and utility collectors
+            (e.g. tollgate operators) legitimately run high-frequency small collections from the same
+            recurring customers. Payment gateways and investment/savings platforms can also sustain high
+            steady-state volume as their normal operation. A merchant running at N/hour is not suspicious
+            if their own 30-day average is close to N — check their history and business type, not an
+            absolute number. Only flag if current rate is significantly above THAT merchant's own baseline
+            (e.g. >3x their normal peak), or if the pattern is unusual in other ways independent of volume
+            (new recipients, round amounts, sequential account numbers).
             """,
             PatternCategory.VelocityAbuse),
 
@@ -110,6 +113,12 @@ public static class FraudPatternRegistry
             """
             Large disbursements between midnight and 5am Zambia time (UTC+2) when no staff are
             monitoring. Flag by converting created_at to Africa/Harare timezone before comparing.
+
+            Context: Some merchants legitimately operate 24/7 — betting/gaming platforms, toll and
+            utility collectors, and payment gateways serving other always-on merchants. Off-hours volume
+            alone is not suspicious for these; check whether the merchant shows similar volume at this
+            hour on prior days before flagging. Weight this pattern more heavily when combined with other
+            signals (new recipients, round amounts, first-ever activity for this merchant at this hour).
             """,
             PatternCategory.TransactionAnomaly),
 
@@ -138,8 +147,14 @@ public static class FraudPatternRegistry
 
         new(15, "Refund and reversal abuse",
             """
-            High ratio of refunds or reversals to successful transactions for a merchant.
+            High ratio of refunds or reversals to SUCCESSFUL transactions for a merchant.
             Can indicate chargeback fraud or an actor testing for reversal exploits.
+
+            Context: A failed transaction whose funds are automatically credited back to the sender's
+            wallet is normal reversal handling, not refund abuse — only count refunds/reversals against
+            transactions that had already succeeded. Some merchants (e.g. investment/savings platforms)
+            routinely reverse failed withdrawals this way; check the original transaction's status before
+            counting it toward the ratio.
             """,
             PatternCategory.TransactionAnomaly),
 
@@ -148,6 +163,12 @@ public static class FraudPatternRegistry
             A series of transactions to the same recipient with slowly increasing amounts
             (e.g. 10, 50, 100, 500, 1000). Tests for transaction limits or detection thresholds
             before executing a larger fraudulent transfer.
+
+            Context: Before flagging, check whether a failed transaction preceded the sequence and
+            whether amounts align with known mobile money transfer limits (e.g. a K10,000 cap causing a
+            large payment to legitimately split into smaller ones). A retry-after-failure or limit-driven
+            split is not probing. Also normal for payment gateways/high-volume merchants where increasing
+            amounts simply track increasing order sizes rather than a deliberate ramp against one recipient.
             """,
             PatternCategory.VelocityAbuse),
 
@@ -227,10 +248,15 @@ public static class FraudPatternRegistry
         new(26, "Wallet top-up then immediate full drain",
             """
             A wallet receives a top-up (collection or manual credit) and then disburses 80%+ of
-            that amount within a short window (e.g. 10–30 minutes). No legitimate commerce
-            pattern drains a wallet immediately after funding. Flag the deposit→drain cycle as a
+            that amount within a short window (e.g. 10–30 minutes). Flag the deposit→drain cycle as a
             unit — compare total disbursements in the window against the incoming credit amount.
-            Classic indicator of money laundering or internal float theft.
+            Can indicate money laundering or internal float theft.
+
+            Context: Investment and savings platforms legitimately move funds out promptly on maturity
+            or withdrawal request — that is their product, not laundering. Before flagging, check whether
+            this deposit-then-withdraw cycle is a recurring, steady-state pattern for this merchant (i.e.
+            their normal business) versus a one-off sudden drain that breaks from their own history.
+            Weight merchant business type and recurrence, not just the single-instance ratio.
             """,
             PatternCategory.TransactionAnomaly),
 
@@ -250,6 +276,12 @@ public static class FraudPatternRegistry
             0961000012). Bulk mule accounts are often registered in numeric runs.
             Look for groups of 3+ sequential or near-sequential numbers receiving payments
             from the same merchant or wallet in one run.
+
+            Context: Merchants with large, naturally sequential customer bases (e.g. toll/utility
+            collectors billing subscriber blocks, bulk payroll/commission runs) can show near-sequential
+            numbers as a side effect of how customers signed up, not coordinated mule accounts. Check
+            whether these recipients have prior independent transaction history with this merchant before
+            flagging — mule accounts are typically new/first-seen, legitimate repeat customers are not.
             """,
             PatternCategory.TransactionAnomaly),
 

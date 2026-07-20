@@ -107,6 +107,7 @@ public static class AdminApiEndpoints
                     CaseId = id,
                     Title = existing.Title,
                     Category = existing.Category,
+                    PatternId = existing.PatternId,
                     Outcome = outcome,
                     OriginalSeverity = existing.Severity,
                     Confidence = existing.Confidence,

@@ -91,6 +91,10 @@ public static class FraudAgentTools
                                                                   "enum": ["ghost_tx", "unknown_ip", "bulk_disbursement", "unverified_merchant", "known_recipient", "admin_compromise", "api_key_abuse", "pattern"],
                                                                   "description": "Category of fraud pattern"
                                                               },
+                                                              "pattern_id": {
+                                                                  "type": "integer",
+                                                                  "description": "The numbered pattern from the Fraud Patterns list this case matches (e.g. 3 for velocity abuse). Omit if this finding came from free investigation (Step 2c) and doesn't match a registered pattern."
+                                                              },
                                                               "severity": {
                                                                   "type": "string",
                                                                   "enum": ["low", "medium", "high", "critical"]

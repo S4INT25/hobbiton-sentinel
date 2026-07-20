@@ -11,6 +11,9 @@ public class FraudCase
     public string Category { get; set; } =
         string.Empty; // ghost_tx | unknown_ip | bulk_disbursement | unverified_merchant | known_recipient | admin_compromise | pattern
 
+    /// <summary>Registry pattern number (FraudPatternRegistry) this case matches, if any.</summary>
+    public int? PatternId { get; set; }
+
     public string Severity { get; set; } = "medium"; // low | medium | high | critical
     public string Status { get; set; } = "open"; // open | escalated | watching | resolved
     public int Confidence { get; set; } = 50; // 0-100 confidence that this is real fraud

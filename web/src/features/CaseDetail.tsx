@@ -53,6 +53,21 @@ export default function CaseDetail() {
           : undefined,
     });
 
+  // The suppression rule is only created if fpMatchValue is non-empty — without a default,
+  // "create rule" silently no-ops when the analyst doesn't also hand-fill a separate field.
+  // Pre-fill from the case itself so the checkbox being checked actually does something.
+  const openFpForm = () => {
+    if (!showFpForm && !fpMatchValue) {
+      const merchantMatch = c.title.match(/^([^(]+?)\s*\(\d+\)/);
+      const guess = merchantMatch?.[1]?.trim() || c.affectedEntities[0] || '';
+      if (guess) {
+        setFpMatchValue(guess);
+        setFpRuleType(/^\d{1,3}(\.\d{1,3}){3}$/.test(guess) ? 'ip' : 'keyword');
+      }
+    }
+    setShowFpForm((v) => !v);
+  };
+
   return (
     <div className="space-y-4" data-stagger>
       <div className="flex items-center gap-3 min-w-0">
@@ -132,7 +147,7 @@ export default function CaseDetail() {
         <div className="kicker">Actions</div>
         <div className="flex gap-2 flex-wrap">
           <button
-            onClick={() => setShowFpForm((v) => !v)}
+            onClick={openFpForm}
             className="px-3 py-1.5 text-xs bg-gray-800/80 hover:bg-gray-700 text-gray-300 rounded-md border border-gray-700 transition-colors"
           >
             Mark False Positive
