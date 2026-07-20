@@ -195,6 +195,35 @@ export const thCls =
   'text-left px-4 py-3 font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-gray-500 whitespace-nowrap';
 export const tdCls = 'px-4 py-3 text-sm text-gray-300';
 
+export function Tabs<T extends string>({
+  tabs,
+  active,
+  onChange,
+}: {
+  tabs: { key: T; label: string; count?: number }[];
+  active: T;
+  onChange: (key: T) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1 border-b border-gray-800 mb-4 overflow-x-auto">
+      {tabs.map((t) => (
+        <button
+          key={t.key}
+          onClick={() => onChange(t.key)}
+          className={`px-3 py-2 text-xs font-medium whitespace-nowrap border-b-2 transition-colors -mb-px ${
+            active === t.key
+              ? 'border-emerald-400 text-white'
+              : 'border-transparent text-gray-500 hover:text-gray-300'
+          }`}
+        >
+          {t.label}
+          {t.count !== undefined && <span className="ml-1.5 font-mono text-[10px] text-gray-600">{t.count}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function Spinner({ className = 'h-4 w-4' }: { className?: string }) {
   return (
     <div
