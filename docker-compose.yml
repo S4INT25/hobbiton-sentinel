@@ -69,6 +69,8 @@ services:
     image: postgres:18-alpine
     container_name: sentinel-postgres
     restart: unless-stopped
+    ports:
+      - "5450:5432"
     environment:
       POSTGRES_DB: sentinel
       POSTGRES_USER: sentinel
