@@ -21,6 +21,14 @@ export default function SharedReport() {
     return () => { document.title = prev; };
   }, [conv]);
 
+  // charts size themselves off the screen layout on mount; force a resize so
+  // ApexCharts re-measures against the print layout instead of rendering blank
+  useEffect(() => {
+    const onBeforePrint = () => window.dispatchEvent(new Event('resize'));
+    window.addEventListener('beforeprint', onBeforePrint);
+    return () => window.removeEventListener('beforeprint', onBeforePrint);
+  }, []);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
@@ -104,9 +112,9 @@ function InsightBlock({ response: r, prompt, index }: { response: AnalyticsRespo
         : [];
 
   return (
-    <div className="panel p-5 space-y-4 break-inside-avoid border-l-2 border-l-emerald-500/40">
+    <div className="panel p-5 space-y-4 border-l-2 border-l-emerald-500/40">
       {prompt && (
-        <div className="text-xs text-gray-500 italic border-l-2 border-emerald-500/25 pl-3">
+        <div className="text-xs text-gray-500 italic border-l-2 border-emerald-500/25 pl-3 break-inside-avoid">
           “{prompt}”
         </div>
       )}
@@ -114,7 +122,7 @@ function InsightBlock({ response: r, prompt, index }: { response: AnalyticsRespo
       {r.explanation && <Markdown text={r.explanation} />}
 
       {(r.summary || r.riskLevel || r.findings?.length > 0 || r.recommendedActions?.length > 0) && (
-        <div className="border border-gray-800 rounded-lg p-3 bg-gray-950/50 space-y-2.5">
+        <div className="border border-gray-800 rounded-lg p-3 bg-gray-950/50 space-y-2.5 break-inside-avoid">
           {r.summary && <Markdown text={r.summary} className="text-gray-200" />}
           {r.findings?.length > 0 && (
             <div>
@@ -145,7 +153,7 @@ function InsightBlock({ response: r, prompt, index }: { response: AnalyticsRespo
         const types = applicableChartTypes(qr.columns, qr.rows);
         const chartType = qr.chartType !== 'none' && types.includes(qr.chartType) ? qr.chartType : types[0];
         return (
-          <div key={`${index}-${ri}`} className="border border-gray-800/60 rounded-lg overflow-hidden bg-gray-950/40">
+          <div key={`${index}-${ri}`} className="border border-gray-800/60 rounded-lg overflow-hidden bg-gray-950/40 break-inside-avoid">
             <div className="px-3 py-2 border-b border-gray-800/60 flex items-center justify-between">
               <span className="font-display text-xs font-medium text-gray-300">{qr.label || 'Result'}</span>
               <span className="font-mono text-[10px] text-gray-600 tnum">{qr.rowCount} rows</span>
