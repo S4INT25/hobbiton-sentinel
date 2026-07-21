@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence } from 'motion/react';
-import { api, type RunSummary, type WorkflowDefinition, type FraudPattern, type EvidenceSource } from '../api';
+import { api, type RunSummary, type WorkflowDefinition, type FraudPattern, type EvidenceSource, type AgentMemory } from '../api';
 import {
   Feedback, Dialog, Spinner, StatusBadge, Markdown, Tabs,
   btnPrimary, btnDanger, btnGhost, btnOutline, inputCls,
   fmtDate, fmtDateFull, tableWrap, thCls, tdCls,
 } from '../components/ui';
 import { WorkflowForm } from './Workflows';
+import { DATABASES } from './Knowledge';
 
 const label = 'block font-mono text-[10px] text-gray-500 uppercase tracking-wider mb-1';
 const RUNS_PAGE_SIZE = 20;
@@ -27,6 +28,8 @@ const EMPTY_SOURCE: Partial<EvidenceSource> = {
   joinMappings: '{}', tableDescriptions: '', evidenceChecks: '[]', notes: '', enabled: true,
 };
 
+const EMPTY_MEMORY: Partial<AgentMemory> = { term: '', definition: '', database: '', enabled: true };
+
 const editIcon = (
   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -38,7 +41,7 @@ const deleteIcon = (
   </svg>
 );
 
-type TabKey = 'overview' | 'runs' | 'patterns' | 'sources';
+type TabKey = 'overview' | 'runs' | 'patterns' | 'sources' | 'knowledge';
 
 export default function WorkflowDetail() {
   const { id = '' } = useParams();
@@ -64,6 +67,11 @@ export default function WorkflowDetail() {
     queryFn: () => api.workflowEvidenceSources(id),
     enabled: !!workflow,
   });
+  const { data: memories = [] } = useQuery({
+    queryKey: ['workflow-knowledge', id],
+    queryFn: () => api.workflowKnowledge(id),
+    enabled: !!workflow,
+  });
 
   const [tab, setTab] = useState<TabKey>('overview');
   const [feedback, setFeedback] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
@@ -75,6 +83,8 @@ export default function WorkflowDetail() {
   const [deletePatternTarget, setDeletePatternTarget] = useState<FraudPattern | null>(null);
   const [editingSource, setEditingSource] = useState<Partial<EvidenceSource> | null>(null);
   const [deleteSourceTarget, setDeleteSourceTarget] = useState<EvidenceSource | null>(null);
+  const [editingMemory, setEditingMemory] = useState<Partial<AgentMemory> | null>(null);
+  const [deleteMemoryTarget, setDeleteMemoryTarget] = useState<AgentMemory | null>(null);
 
   const saveMut = useMutation({
     mutationFn: (wf: Partial<WorkflowDefinition>) => api.saveWorkflow(wf),
@@ -136,6 +146,28 @@ export default function WorkflowDetail() {
       setFeedback({ message: 'Evidence source deleted.', kind: 'success' });
     },
     onError: (e: Error) => setFeedback({ message: `Failed to delete evidence source: ${e.message}`, kind: 'error' }),
+  });
+
+  const saveMemoryMut = useMutation({
+    mutationFn: (m: Partial<AgentMemory>) => api.saveKnowledge(m),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['workflow-knowledge', id] });
+      qc.invalidateQueries({ queryKey: ['knowledge'] });
+      setEditingMemory(null);
+      setFeedback({ message: 'Knowledge entry saved.', kind: 'success' });
+    },
+    onError: (e: Error) => setFeedback({ message: `Failed to save knowledge entry: ${e.message}`, kind: 'error' }),
+  });
+
+  const deleteMemoryMut = useMutation({
+    mutationFn: (memoryId: number) => api.deleteKnowledge(memoryId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['workflow-knowledge', id] });
+      qc.invalidateQueries({ queryKey: ['knowledge'] });
+      setDeleteMemoryTarget(null);
+      setFeedback({ message: 'Knowledge entry deleted.', kind: 'success' });
+    },
+    onError: (e: Error) => setFeedback({ message: `Failed to delete knowledge entry: ${e.message}`, kind: 'error' }),
   });
 
   if (isLoading) return <div className="flex justify-center py-12"><Spinner /></div>;
@@ -225,6 +257,7 @@ export default function WorkflowDetail() {
           { key: 'runs', label: 'Run History', count: runs.length },
           { key: 'patterns', label: 'Fraud Patterns', count: patterns.length },
           { key: 'sources', label: 'Evidence Sources', count: sources.length },
+          { key: 'knowledge', label: 'Knowledge', count: memories.length },
         ]}
         active={tab}
         onChange={setTab}
@@ -423,6 +456,66 @@ export default function WorkflowDetail() {
                   ))}
                   {sources.length === 0 && (
                     <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-600 text-xs">No evidence sources scoped to this workflow yet</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'knowledge' && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs text-gray-500">
+              Business and data-model context the agent uses to correctly interpret what it sees on this workflow's runs — e.g. why a table shows duplicate-looking rows, or what a status code means.
+            </p>
+            <button onClick={() => setEditingMemory({ ...EMPTY_MEMORY, workflowId: id })} className={`${btnPrimary} shrink-0 ml-3`}>
+              Add Definition
+            </button>
+          </div>
+          <div className={tableWrap}>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[560px]">
+                <thead className="bg-gray-900/60">
+                  <tr className="border-b border-gray-800">
+                    <th className={thCls}>Term</th>
+                    <th className={thCls}>Database</th>
+                    <th className={thCls}>Status</th>
+                    <th className={thCls}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800/50">
+                  {memories.map((m) => (
+                    <tr key={m.id} className="hover:bg-emerald-500/[0.03] transition-colors">
+                      <td className={`${tdCls} ${m.enabled ? 'text-gray-200' : 'text-gray-600 line-through'}`}>{m.term}</td>
+                      <td className={`${tdCls} font-mono text-gray-500`}>{m.database || 'All'}</td>
+                      <td className={tdCls}>
+                        <button
+                          onClick={() => saveMemoryMut.mutate({ ...m, enabled: !m.enabled })}
+                          className={`px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide rounded border transition-colors ${
+                            m.enabled
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/20'
+                              : 'bg-gray-800/80 text-gray-500 border-gray-700/50 hover:bg-gray-700/60'
+                          }`}
+                        >
+                          {m.enabled ? 'Enabled' : 'Disabled'}
+                        </button>
+                      </td>
+                      <td className={tdCls}>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => setEditingMemory({ ...m })} className="p-1.5 text-gray-500 hover:text-white rounded transition-colors" title="Edit">
+                            {editIcon}
+                          </button>
+                          <button onClick={() => setDeleteMemoryTarget(m)} className="p-1.5 text-gray-500 hover:text-rose-400 rounded transition-colors" title="Delete">
+                            {deleteIcon}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {memories.length === 0 && (
+                    <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-600 text-xs">No knowledge base entries scoped to this workflow yet</td></tr>
                   )}
                 </tbody>
               </table>
@@ -649,6 +742,75 @@ export default function WorkflowDetail() {
               <button onClick={() => setDeleteSourceTarget(null)} className={btnGhost}>Cancel</button>
               <button onClick={() => deleteSourceMut.mutate(deleteSourceTarget.id)} disabled={deleteSourceMut.isPending} className={btnDanger}>
                 {deleteSourceMut.isPending ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </Dialog>
+        )}
+
+        {editingMemory && (
+          <Dialog title={editingMemory.id ? 'Edit definition' : 'New definition'} onClose={() => setEditingMemory(null)}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className={label}>Term</label>
+                <input
+                  value={editingMemory.term ?? ''}
+                  onChange={(e) => setEditingMemory({ ...editingMemory, term: e.target.value })}
+                  className={inputCls}
+                  placeholder="e.g. Duplicate transaction rows"
+                />
+              </div>
+              <div>
+                <label className={label}>Database scope</label>
+                <select
+                  value={editingMemory.database ?? ''}
+                  onChange={(e) => setEditingMemory({ ...editingMemory, database: e.target.value })}
+                  className={inputCls}
+                >
+                  {DATABASES.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className={label}>Definition</label>
+              <textarea
+                value={editingMemory.definition ?? ''}
+                onChange={(e) => setEditingMemory({ ...editingMemory, definition: e.target.value })}
+                rows={5}
+                className={`${inputCls} leading-relaxed`}
+                placeholder="Explain the data shape or business rule exactly, so the agent stops misreading it as suspicious."
+              />
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={editingMemory.enabled ?? true}
+                onChange={(e) => setEditingMemory({ ...editingMemory, enabled: e.target.checked })}
+                className="accent-emerald-500"
+              />
+              <span className="text-xs text-gray-300">Enabled</span>
+            </label>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button onClick={() => setEditingMemory(null)} className={btnGhost}>Cancel</button>
+              <button
+                onClick={() => saveMemoryMut.mutate(editingMemory)}
+                disabled={saveMemoryMut.isPending || !editingMemory.term || !editingMemory.definition}
+                className={btnPrimary}
+              >
+                {saveMemoryMut.isPending ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </Dialog>
+        )}
+
+        {deleteMemoryTarget && (
+          <Dialog title="Delete definition" onClose={() => setDeleteMemoryTarget(null)}>
+            <p className="text-xs text-gray-400">
+              Delete <span className="text-gray-200">{deleteMemoryTarget.term}</span>? The agent will stop using this definition.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button onClick={() => setDeleteMemoryTarget(null)} className={btnGhost}>Cancel</button>
+              <button onClick={() => deleteMemoryMut.mutate(deleteMemoryTarget.id)} disabled={deleteMemoryMut.isPending} className={btnDanger}>
+                {deleteMemoryMut.isPending ? 'Deleting…' : 'Delete'}
               </button>
             </div>
           </Dialog>

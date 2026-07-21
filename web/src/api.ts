@@ -169,6 +169,7 @@ export interface AgentMemory {
   term: string;
   definition: string;
   database: string | null;
+  workflowId: string | null;
   enabled: boolean;
   createdBy: string | null;
   createdAt: string;
@@ -382,6 +383,7 @@ export const api = {
   workflowRuns: (id: string) => f<RunSummary[]>(`/api/workflows/${id}/runs`),
   workflowPatterns: (id: string) => f<FraudPattern[]>(`/api/workflows/${id}/patterns`),
   workflowEvidenceSources: (id: string) => f<EvidenceSource[]>(`/api/workflows/${id}/evidence-sources`),
+  workflowKnowledge: (id: string) => f<AgentMemory[]>(`/api/workflows/${id}/knowledge`),
 
   // knowledge
   listKnowledge: () => f<AgentMemory[]>('/api/knowledge'),

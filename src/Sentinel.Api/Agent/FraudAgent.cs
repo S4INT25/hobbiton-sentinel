@@ -23,12 +23,13 @@ public class FraudAgent(
     IEvidenceSourceStore evidenceSourceStore,
     IWorkflowStore workflowStore,
     ICaseOutcomeStore caseOutcomeStore,
+    IAgentMemoryStore memoryStore,
     IConfiguration config,
     ILogger<FraudAgent> logger)
 {
     private string BuildSystemPrompt(string openCasesSummary, int lookbackMinutes,
         string schemaBlock, string suppressionBlock, string database, string patternsBlock,
-        string crossDbBlock, string learningsBlock, string? workflowSystemPrompt = null)
+        string crossDbBlock, string learningsBlock, string knowledgeBlock, string? workflowSystemPrompt = null)
     {
         var casesContext = openCasesSummary == "No open cases."
             ? "no open cases."
@@ -48,7 +49,7 @@ public class FraudAgent(
                 If unsure a function exists — don't use it. Always qualify: `{database}.<table>`.
 
                 {schemaBlock}
-
+                {knowledgeBlock}
                 {crossDbBlock}
 
                 ## Betting Merchants
@@ -114,6 +115,19 @@ public class FraudAgent(
             sb.AppendLine();
         }
 
+        return sb.ToString();
+    }
+
+    private static string BuildKnowledgeBlock(List<AgentMemory> memories)
+    {
+        if (memories.Count == 0) return "";
+
+        var sb = new StringBuilder("\n## Knowledge Base\n");
+        sb.AppendLine(
+            "Business and data-model context defined by your organization. Use this to correctly interpret " +
+            "data shapes and terminology before treating something as suspicious:\n");
+        foreach (var m in memories)
+            sb.AppendLine($"**{m.Term}**: {m.Definition}");
         return sb.ToString();
     }
 
@@ -239,10 +253,11 @@ public class FraudAgent(
         var evidenceSources = !string.IsNullOrWhiteSpace(request.WorkflowId)
             ? await evidenceSourceStore.GetEnabledForWorkflowAsync(request.WorkflowId)
             : await evidenceSourceStore.GetEnabledAsync();
+        var memories = await memoryStore.GetEnabledAsync(effectiveDatabase, request.WorkflowId);
 
         logger.LogInformation(
-            "Loaded {Count} open cases, {RuleCount} suppression rules, {EvidenceCount} evidence sources",
-            openCases.Count, activeRules.Count, evidenceSources.Count);
+            "Loaded {Count} open cases, {RuleCount} suppression rules, {EvidenceCount} evidence sources, {MemoryCount} knowledge entries",
+            openCases.Count, activeRules.Count, evidenceSources.Count, memories.Count);
 
         // Build suppression block from active rules
         var suppressionBlock = activeRules.Count > 0
@@ -259,6 +274,9 @@ public class FraudAgent(
         // Build cross-database evidence block from store
         var crossDbBlock = BuildCrossDbBlock(evidenceSources);
 
+        // Build knowledge base block from store
+        var knowledgeBlock = BuildKnowledgeBlock(memories);
+
         // Load workflow-specific system prompt if available
         string? workflowSystemPrompt = null;
         if (!string.IsNullOrWhiteSpace(request.WorkflowId))
@@ -269,7 +287,7 @@ public class FraudAgent(
         }
 
         var systemPrompt = BuildSystemPrompt(openCasesSummary, lookback, schemaBlock, suppressionBlock,
-            effectiveDatabase, patternsBlock, crossDbBlock, learningsBlock, workflowSystemPrompt);
+            effectiveDatabase, patternsBlock, crossDbBlock, learningsBlock, knowledgeBlock, workflowSystemPrompt);
 
         // Inject follow-up queries from open cases into the first user message
         var followUpContext = openCases.Count > 0 && openCases.Any(c => c.FollowUpQueries.Count > 0)

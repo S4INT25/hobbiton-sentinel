@@ -14,6 +14,9 @@ public class AgentMemory
     /// <summary>Null = applies to all databases; otherwise scoped to a specific database.</summary>
     public string? Database { get; set; }
 
+    /// <summary>Null = applies to all workflows; otherwise scoped to a specific workflow.</summary>
+    public string? WorkflowId { get; set; }
+
     public bool Enabled { get; set; } = true;
     public string? CreatedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;

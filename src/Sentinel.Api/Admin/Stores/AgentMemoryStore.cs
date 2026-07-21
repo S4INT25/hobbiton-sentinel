@@ -12,11 +12,22 @@ public class AgentMemoryStore(IDbContextFactory<SentinelDbContext> dbFactory) : 
         return await db.AgentMemories.OrderBy(m => m.Term).ToListAsync();
     }
 
-    public async Task<List<AgentMemory>> GetEnabledAsync(string? database = null)
+    public async Task<List<AgentMemory>> GetEnabledAsync(string? database = null, string? workflowId = null)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         return await db.AgentMemories
-            .Where(m => m.Enabled && (m.Database == null || m.Database == database))
+            .Where(m => m.Enabled
+                        && (m.Database == null || m.Database == database)
+                        && (m.WorkflowId == null || m.WorkflowId == "" || m.WorkflowId == workflowId))
+            .OrderBy(m => m.Term)
+            .ToListAsync();
+    }
+
+    public async Task<List<AgentMemory>> GetByWorkflowAsync(string workflowId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.AgentMemories
+            .Where(m => (m.WorkflowId ?? "") == workflowId)
             .OrderBy(m => m.Term)
             .ToListAsync();
     }

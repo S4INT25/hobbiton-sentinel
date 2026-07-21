@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api, type AnalyticsResponse, type QueryResult } from '../api';
@@ -11,6 +12,14 @@ export default function SharedReport() {
     queryFn: () => api.getShared(id),
     retry: false,
   });
+
+  // give a saved PDF a sensible filename instead of the generic app title
+  useEffect(() => {
+    if (!conv) return;
+    const prev = document.title;
+    document.title = conv.title || 'Sentinel report';
+    return () => { document.title = prev; };
+  }, [conv]);
 
   if (isLoading) {
     return (
@@ -55,7 +64,7 @@ export default function SharedReport() {
             onClick={() => window.print()}
             className="px-3 py-1.5 text-xs border border-gray-700/80 rounded-md text-gray-400 hover:text-gray-200 hover:bg-gray-900 transition-colors print:hidden shrink-0"
           >
-            Print / Save PDF
+            Print
           </button>
         </div>
 

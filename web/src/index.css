@@ -288,4 +288,27 @@ kbd {
     background: white !important;
     color: black !important;
   }
+  /* Every surface is styled for a dark theme (text-white, text-gray-*, etc.) via Tailwind
+     utility classes, which are more specific than the `body` rule above and win the cascade.
+     Force print colors on every element instead of relying on inheritance. */
+  * {
+    color: black !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+  .panel,
+  .border,
+  [class*='border-'] {
+    border-color: #999 !important;
+  }
+  /* ApexCharts renders as SVG and uses `fill`/`stroke`, not `color` */
+  .apexcharts-text,
+  .apexcharts-legend-text {
+    fill: black !important;
+    color: black !important;
+  }
+  .apexcharts-gridline {
+    stroke: #ccc !important;
+  }
 }

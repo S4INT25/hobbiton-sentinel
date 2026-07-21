@@ -7,7 +7,7 @@ import {
   btnPrimary, btnDanger, btnGhost, inputCls, fmtDateFull,
 } from '../components/ui';
 
-const DATABASES = [
+export const DATABASES = [
   { value: '', label: 'All databases' },
   { value: 'inshuwa', label: 'Inshuwa (Insurance)' },
   { value: 'lipila_blaze', label: 'Lipila Blaze' },
@@ -21,6 +21,8 @@ const label = 'block font-mono text-[10px] uppercase tracking-wider text-gray-50
 export default function Knowledge() {
   const qc = useQueryClient();
   const { data: memories = [], isLoading } = useQuery({ queryKey: ['knowledge'], queryFn: api.listKnowledge });
+  const { data: workflows = [] } = useQuery({ queryKey: ['workflows'], queryFn: api.listWorkflows });
+  const workflowName = (id: string) => workflows.find((w) => w.id === id)?.name ?? id;
 
   const [editing, setEditing] = useState<Partial<AgentMemory> | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AgentMemory | null>(null);
@@ -98,6 +100,11 @@ export default function Knowledge() {
                         <span className="px-1.5 py-0.5 font-mono text-[10px] rounded bg-sky-500/10 border border-sky-500/25 text-sky-300">{m.database}</span>
                       ) : (
                         <span className="px-1.5 py-0.5 font-mono text-[10px] rounded bg-gray-800 text-gray-500">All databases</span>
+                      )}
+                      {m.workflowId && (
+                        <span className="px-1.5 py-0.5 font-mono text-[10px] rounded bg-emerald-500/10 border border-emerald-500/25 text-emerald-300">
+                          {workflowName(m.workflowId)}
+                        </span>
                       )}
                     </div>
                     <div className="relative mt-1.5">

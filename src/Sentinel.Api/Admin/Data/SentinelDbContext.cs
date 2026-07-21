@@ -138,6 +138,7 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
             e.Property(m => m.Term).HasColumnName("term").HasMaxLength(200);
             e.Property(m => m.Definition).HasColumnName("definition");
             e.Property(m => m.Database).HasColumnName("database").HasMaxLength(100);
+            e.Property(m => m.WorkflowId).HasColumnName("workflow_id");
             e.Property(m => m.Enabled).HasColumnName("enabled");
             e.Property(m => m.CreatedBy).HasColumnName("created_by").HasMaxLength(200);
             e.Property(m => m.CreatedAt).HasColumnName("created_at");

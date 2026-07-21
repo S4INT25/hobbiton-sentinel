@@ -786,6 +786,9 @@ public static class AdminApiEndpoints
         workflows.MapGet("/{id}/evidence-sources", async (string id, IEvidenceSourceStore store) =>
             Results.Ok(await store.GetByWorkflowAsync(id)));
 
+        workflows.MapGet("/{id}/knowledge", async (string id, IAgentMemoryStore store) =>
+            Results.Ok(await store.GetByWorkflowAsync(id)));
+
         // ── Active runs ──
         api.MapGet("/runs/active", async (IActiveRunTracker tracker) =>
             Results.Ok(await tracker.GetActiveRunsAsync()));

@@ -15,9 +15,19 @@ public class InMemoryAgentMemoryStore : IAgentMemoryStore
             .Select(Clone)
             .ToList());
 
-    public Task<List<AgentMemory>> GetEnabledAsync(string? database = null) =>
+    public Task<List<AgentMemory>> GetEnabledAsync(string? database = null, string? workflowId = null) =>
         Task.FromResult(_memories.Values
-            .Where(m => m.Enabled && (m.Database == null || m.Database == database))
+            .Where(m => m.Enabled
+                        && (m.Database == null || m.Database == database)
+                        && (string.IsNullOrEmpty(m.WorkflowId) || m.WorkflowId == workflowId))
+            .OrderBy(m => m.Term)
+            .ThenBy(m => m.Database)
+            .Select(Clone)
+            .ToList());
+
+    public Task<List<AgentMemory>> GetByWorkflowAsync(string workflowId) =>
+        Task.FromResult(_memories.Values
+            .Where(m => (m.WorkflowId ?? "") == workflowId)
             .OrderBy(m => m.Term)
             .ThenBy(m => m.Database)
             .Select(Clone)
@@ -67,6 +77,7 @@ public class InMemoryAgentMemoryStore : IAgentMemoryStore
             Term = source.Term,
             Definition = source.Definition,
             Database = source.Database,
+            WorkflowId = source.WorkflowId,
             Enabled = source.Enabled,
             CreatedBy = source.CreatedBy,
             CreatedAt = source.CreatedAt,
