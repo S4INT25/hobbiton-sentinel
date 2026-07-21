@@ -198,7 +198,7 @@ export default function Chat() {
   ];
 
   return (
-    <div className="flex h-[calc(100vh-6rem)] md:h-full -m-4 md:-m-6">
+    <div className="flex h-[calc(100vh-6rem)] md:h-full -m-4 md:-m-6 print:h-auto print:m-0">
       {/* Conversation history — docked panel */}
       <motion.div
         id="chat-history-panel"
@@ -339,19 +339,32 @@ export default function Chat() {
               </span>
             )}
           </div>
-          <button
-            onClick={newConversation}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-gray-800 rounded-lg text-gray-400 hover:text-gray-200 hover:border-gray-700 hover:bg-gray-900/60 transition-colors whitespace-nowrap shrink-0"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-            </svg>
-            New chat
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {!empty && (
+              <button
+                onClick={() => window.print()}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-gray-800 rounded-lg text-gray-400 hover:text-gray-200 hover:border-gray-700 hover:bg-gray-900/60 transition-colors whitespace-nowrap"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2m-12 0h12v6H6v-6z" />
+                </svg>
+                Print
+              </button>
+            )}
+            <button
+              onClick={newConversation}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-gray-800 rounded-lg text-gray-400 hover:text-gray-200 hover:border-gray-700 hover:bg-gray-900/60 transition-colors whitespace-nowrap"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+              </svg>
+              New chat
+            </button>
+          </div>
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto print:overflow-visible print:h-auto">
           <div className="max-w-4xl mx-auto w-full px-4 py-5 space-y-4">
             {empty && (
               <div className="flex flex-col items-center justify-center text-center pt-[10vh] rise">
@@ -726,7 +739,7 @@ function AssistantMessage({
       {r.explanation && <Markdown text={r.explanation} />}
 
       {(r.summary || r.riskLevel || r.findings?.length > 0 || r.recommendedActions?.length > 0) && (
-        <div className="border border-gray-800 rounded-lg p-3 bg-gray-950/50 space-y-2.5">
+        <div className="border border-gray-800 rounded-lg p-3 bg-gray-950/50 space-y-2.5 break-inside-avoid">
           {r.summary && <Markdown text={r.summary} className="text-gray-200" />}
           {r.riskLevel && (
             <div className="text-xs">
@@ -800,7 +813,7 @@ function ResultBlock({
   if (qr.chartType === 'csv') {
     const filename = `${(qr.label || 'export').replace(/[^\w-]+/g, '-')}.csv`;
     return (
-      <div className="border border-gray-800/60 rounded-lg overflow-hidden bg-gray-950/40 px-3 py-2.5 flex items-center justify-between gap-3">
+      <div className="border border-gray-800/60 rounded-lg overflow-hidden bg-gray-950/40 px-3 py-2.5 flex items-center justify-between gap-3 break-inside-avoid">
         <div className="flex items-center gap-2.5 min-w-0">
           <svg className="w-4 h-4 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3M4 20h16" />
@@ -823,7 +836,7 @@ function ResultBlock({
   const effective = stored ?? (qr.chartType !== 'none' && types.includes(qr.chartType) ? qr.chartType : types[0] ?? 'table');
 
   return (
-    <div className="border border-gray-800/60 rounded-lg overflow-hidden bg-gray-950/40">
+    <div className="border border-gray-800/60 rounded-lg overflow-hidden bg-gray-950/40 break-inside-avoid">
       <div className="px-3 py-2 border-b border-gray-800/60 flex items-center justify-between">
         <span className="font-display text-xs font-medium text-gray-300">{qr.label || 'Result'}</span>
         <div className="flex items-center gap-2.5">

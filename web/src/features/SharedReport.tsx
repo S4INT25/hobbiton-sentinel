@@ -21,14 +21,6 @@ export default function SharedReport() {
     return () => { document.title = prev; };
   }, [conv]);
 
-  // charts size themselves off the screen layout on mount; force a resize so
-  // ApexCharts re-measures against the print layout instead of rendering blank
-  useEffect(() => {
-    const onBeforePrint = () => window.dispatchEvent(new Event('resize'));
-    window.addEventListener('beforeprint', onBeforePrint);
-    return () => window.removeEventListener('beforeprint', onBeforePrint);
-  }, []);
-
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">

@@ -278,6 +278,7 @@ kbd {
   header,
   nav,
   .atmosphere,
+  #chat-history-panel,
   #chat-toolbar,
   #chat-input-area,
   .print\:hidden {
