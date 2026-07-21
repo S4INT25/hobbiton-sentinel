@@ -209,7 +209,7 @@ public static class FraudAgentTools
                                  |---|---|
                                  | Run ID       | <run_id>                                   |
                                  | Period       | Last <N> minutes ending <YYYY-MM-DD HH:MM> CAT |
-                                 | Severity     | 🟢 Clean / 🟡 Watching / 🟠 Warning / 🔴 Critical |
+                                 | Severity     | Clean / Watching / Warning / Critical |
                                  | Findings     | <N> fraud findings, <N> observations        |
                                  | Open Cases   | <N> active cases                           |
 
@@ -225,7 +225,7 @@ public static class FraudAgentTools
                                  | Field       | Detail |
                                  |---|---|
                                  | Pattern     | <which of the 11 patterns this matches> |
-                                 | Severity    | 🔴 Critical / 🟠 High / 🟡 Medium / 🟢 Low |
+                                 | Severity    | Critical / High / Medium / Low |
                                  | Merchant    | <name> (ID: <id>) |
                                  | Wallet      | <name> (ID: <id>, Balance: ZMW <amount>) |
                                  | Period      | <start datetime> → <end datetime> CAT |

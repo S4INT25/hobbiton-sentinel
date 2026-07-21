@@ -974,7 +974,7 @@ public class AnalyticsAgentCore(
               - **Trends & insights** — specific observations with supporting data points
               - **Recommendations** — clear, actionable next steps (if applicable)
 
-              Tone: professional, data-driven, concise. No filler, no hedging, no casual language.
+              Tone: professional, data-driven, concise. No filler, no hedging, no casual language. No emojis.
               Format numbers consistently: K 1,250.00 for currency, use percentages for changes.
               Keep it scannable — busy executives should grasp the key points in 10 seconds.
 
@@ -1038,6 +1038,7 @@ public class AnalyticsAgentCore(
                  ## Response style
                  After your tool calls complete, write a clear, insightful final response. Reference specific numbers.
                  Be concise but substantive. Don't repeat the query — focus on what the data means.
+                 No emojis — headings, bold, and tables carry the structure instead.
                  """;
     }
 

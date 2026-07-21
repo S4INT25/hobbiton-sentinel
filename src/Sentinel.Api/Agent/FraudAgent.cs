@@ -355,7 +355,7 @@ public class FraudAgent(
                 logger.LogWarning("[Run:{RunId}] Approaching iteration limit ({N}/{Max}) — injecting wrap-up warning",
                     currentRunId, iteration, maxIterations);
                 messages.Add(new UserChatMessage(
-                    $"⚠️ You have used {iteration - 1} of {maxIterations} allowed steps. " +
+                    $"You have used {iteration - 1} of {maxIterations} allowed steps. " +
                     $"You have approximately {maxIterations - iteration + 1} steps remaining. " +
                     "Prioritise completing your current investigation, then call send_alert (if warranted) and stop. " +
                     "Do not start new broad queries — focus only on what is needed to close open threads."));
