@@ -12,13 +12,7 @@ namespace Sentinel.Admin.Data.PgMigrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<int>(
-                name: "provider_id",
-                table: "llm_models",
-                type: "integer",
-                nullable: false,
-                defaultValue: 0);
-
+            // 1. Create providers table first
             migrationBuilder.CreateTable(
                 name: "providers",
                 columns: table => new
@@ -38,6 +32,19 @@ namespace Sentinel.Admin.Data.PgMigrations
                 {
                     table.PrimaryKey("PK_providers", x => x.id);
                 });
+
+            // 2. Seed the OpenRouter provider so the FK has a valid target
+            migrationBuilder.Sql(
+                "INSERT INTO providers (display_name, slug, api_key, endpoint, enabled, sort_order, created_at, updated_at) " +
+                "VALUES ('OpenRouter', 'openrouter', '', 'https://openrouter.ai/api/v1', true, 0, now(), now());");
+
+            // 3. Add provider_id on llm_models defaulting to the seeded provider (id = 1)
+            migrationBuilder.AddColumn<int>(
+                name: "provider_id",
+                table: "llm_models",
+                type: "integer",
+                nullable: false,
+                defaultValue: 1);
 
             migrationBuilder.CreateIndex(
                 name: "IX_llm_models_provider_id",
