@@ -3,9 +3,9 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace Sentinel.Admin.Models;
 
 /// <summary>
-/// An LLM available to Sentinel agents via OpenRouter. Admins can add, enable, disable,
+/// An LLM available to Sentinel agents. Admins can add, enable, disable,
 /// and pick a default model from the UI without code changes. Chat users and workflows
-/// select from the enabled models.
+/// select from the enabled models. Each model belongs to a <see cref="ProviderConfig"/>.
 /// </summary>
 [Table("llm_models")]
 public class LlmModel
@@ -16,13 +16,18 @@ public class LlmModel
     [Column("display_name")]
     public string DisplayName { get; set; } = "";
 
-    /// <summary>The OpenRouter model id (e.g. "anthropic/claude-sonnet-4.5").</summary>
+    /// <summary>The model id as the provider knows it (e.g. "anthropic/claude-sonnet-4.5").</summary>
     [Column("model_id")]
     public string ModelId { get; set; } = "";
 
     /// <summary>Short note on what this model is good for.</summary>
     [Column("description")]
     public string? Description { get; set; }
+
+    [Column("provider_id")] public int ProviderId { get; set; }
+
+    /// <summary>Navigation property used by EF only — not serialised.</summary>
+    public ProviderConfig? Provider { get; set; }
 
     /// <summary>Only enabled models appear in the chat and workflow selectors.</summary>
     [Column("enabled")]

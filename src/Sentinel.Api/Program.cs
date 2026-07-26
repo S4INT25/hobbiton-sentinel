@@ -5,7 +5,6 @@ using Hangfire.Redis.StackExchange;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
-using OpenAI;
 using Sentinel.Admin;
 using Sentinel.Admin.Auth;
 using Sentinel.Admin.Data;
@@ -63,16 +62,7 @@ try
     var usePostgresStores = !string.IsNullOrWhiteSpace(postgresConnectionString);
     var useRedisInfrastructure = !string.IsNullOrWhiteSpace(redisConnectionString);
 
-    builder.Services.AddSingleton(_ =>
-    {
-        var cfg = builder.Configuration.GetSection("OpenRouter");
-        return new OpenAIClient(
-            new ApiKeyCredential(cfg["ApiKey"]!),
-            new OpenAIClientOptions
-            {
-                Endpoint = new Uri(cfg["Endpoint"] ?? "https://openrouter.ai/api/v1")
-            });
-    });
+    builder.Services.AddSingleton<LlmClientFactory>();
 
     builder.Services.AddHttpClient<ClickHouseClient>();
     builder.Services.AddHttpClient<IpLookupClient>();
@@ -103,6 +93,7 @@ try
         builder.Services.AddScoped<IDatabaseProductStore, PostgresDatabaseProductStore>();
         builder.Services.AddScoped<ILlmModelStore, PostgresLlmModelStore>();
         builder.Services.AddScoped<ICaseOutcomeStore, PostgresCaseOutcomeStore>();
+        builder.Services.AddScoped<IProviderStore, PostgresProviderStore>();
     }
     else
     {
@@ -114,6 +105,7 @@ try
         builder.Services.AddSingleton<IAgentMemoryStore, InMemoryAgentMemoryStore>();
         builder.Services.AddSingleton<ILlmModelStore, InMemoryLlmModelStore>();
         builder.Services.AddSingleton<ICaseOutcomeStore, InMemoryCaseOutcomeStore>();
+        builder.Services.AddSingleton<IProviderStore, InMemoryProviderStore>();
     }
 
     if (useRedisInfrastructure)
@@ -219,6 +211,8 @@ try
     await workflowStore.SeedDefaultsAsync();
     var dbProductStore = scope.ServiceProvider.GetRequiredService<IDatabaseProductStore>();
     await dbProductStore.SeedDefaultsAsync();
+    var providerStore = scope.ServiceProvider.GetRequiredService<IProviderStore>();
+    await providerStore.SeedDefaultsAsync();
     var llmModelStore = scope.ServiceProvider.GetRequiredService<ILlmModelStore>();
     await llmModelStore.SeedDefaultsAsync();
     await SeedAdminUser(app);

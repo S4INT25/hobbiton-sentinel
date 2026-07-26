@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using OpenAI;
 using OpenAI.Chat;
 using Sentinel.Admin;
 using Sentinel.Admin.Models;
@@ -18,7 +17,6 @@ namespace Sentinel.Agent;
 /// <c>ChatAnalyticsAgent</c> or <c>WorkflowAnalyticsAgent</c> facades rather than this directly.
 /// </summary>
 public class AnalyticsAgentCore(
-    OpenAIClient ai,
     ClickHouseClient ch,
     SchemaLoader schemaLoader,
     EmailClient emailClient,
@@ -64,7 +62,7 @@ public class AnalyticsAgentCore(
         IEnumerable<AgentMemory>? memories = null,
         CancellationToken cancellationToken = default)
     {
-        var modelName = await modelResolver.ResolveAsync(profile.Model);
+        var resolved = await modelResolver.ResolveAsync(profile.Model);
         var schema = await schemaLoader.GetSchemaBlockAsync(database);
         var isInteractive = profile.Interactive;
 
@@ -103,7 +101,7 @@ public class AnalyticsAgentCore(
             : allTools.Where(t =>
                     t.FunctionName != "emit_chart" && t.FunctionName != "ask_user" && t.FunctionName != "export_csv")
                 .ToList();
-        var chatClient = ai.GetChatClient(modelName);
+        var chatClient = resolved.Client.GetChatClient(resolved.ModelId);
         int totalInput = 0, totalOutput = 0;
         var iteration = 0;
         var response = new AnalyticsResponse { Success = true };

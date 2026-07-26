@@ -7,12 +7,13 @@ import {
   btnPrimary, btnDanger, btnGhost, inputCls, tableWrap, thCls, tdCls,
 } from '../components/ui';
 
-const EMPTY: Partial<LlmModel> = { displayName: '', modelId: '', description: '', enabled: true, isDefault: false, sortOrder: 0 };
+const EMPTY: Partial<LlmModel> = { displayName: '', modelId: '', description: '', providerId: 0, enabled: true, isDefault: false, sortOrder: 0 };
 const label = 'block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1';
 
 export default function Models() {
   const qc = useQueryClient();
   const { data: models = [], isLoading } = useQuery({ queryKey: ['models'], queryFn: api.listModels });
+  const { data: providers = [] } = useQuery({ queryKey: ['providers-enabled'], queryFn: api.enabledProviders });
 
   const [feedback, setFeedback] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
   const [editing, setEditing] = useState<Partial<LlmModel> | null>(null);
@@ -57,6 +58,7 @@ export default function Models() {
             <thead className="bg-gray-900/60">
               <tr className="border-b border-gray-800">
                 <th className={thCls}>Model ID</th>
+                <th className={thCls}>Provider</th>
                 <th className={thCls}>Display Name</th>
                 <th className={thCls}>Description</th>
                 <th className={thCls}>Default</th>
@@ -69,6 +71,7 @@ export default function Models() {
               {models.map((m) => (
                 <tr key={m.id} className={`hover:bg-emerald-500/[0.03] transition-colors ${!m.enabled ? 'opacity-60' : ''}`}>
                   <td className={`${tdCls} font-mono text-gray-300`}>{m.modelId}</td>
+                  <td className={`${tdCls} text-gray-500`}>{providers.find(p => p.id === m.providerId)?.displayName ?? '—'}</td>
                   <td className={`${tdCls} text-gray-200`}>{m.displayName}</td>
                   <td className={`${tdCls} text-gray-500 max-w-sm truncate`}>{m.description}</td>
                   <td className={tdCls}>
@@ -99,10 +102,10 @@ export default function Models() {
                 </tr>
               ))}
               {!isLoading && models.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-600 text-xs">No models configured</td></tr>
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-600 text-xs">No models configured</td></tr>
               )}
               {isLoading && (
-                <tr><td colSpan={7} className="px-4 py-8"><div className="flex justify-center"><Spinner /></div></td></tr>
+                <tr><td colSpan={8} className="px-4 py-8"><div className="flex justify-center"><Spinner /></div></td></tr>
               )}
             </tbody>
           </table>
@@ -114,8 +117,15 @@ export default function Models() {
           <Dialog title={editing.id ? 'Edit model' : 'New model'} onClose={() => setEditing(null)}>
             <div className="space-y-3">
               <div>
-                <label className={label}>OpenRouter model ID</label>
-                <input value={editing.modelId ?? ''} onChange={(e) => setEditing({ ...editing, modelId: e.target.value })} className={`${inputCls} font-mono`} placeholder="e.g. anthropic/claude-sonnet-4.5" />
+                <label className={label}>Provider</label>
+                <select value={editing.providerId ?? 0} onChange={(e) => setEditing({ ...editing, providerId: parseInt(e.target.value) || 0 })} className={inputCls}>
+                  <option value={0}>— select —</option>
+                  {providers.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={label}>Model ID</label>
+                <input value={editing.modelId ?? ''} onChange={(e) => setEditing({ ...editing, modelId: e.target.value })} className={`${inputCls} font-mono`} placeholder="e.g. deepseek/deepseek-v4-flash" />
               </div>
               <div>
                 <label className={label}>Display name</label>

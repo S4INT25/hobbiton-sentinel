@@ -840,6 +840,32 @@ public static class AdminApiEndpoints
             return Results.NoContent();
         });
 
+        // ── LLM providers ──
+        api.MapGet("/providers/enabled", async (IProviderStore store) =>
+            Results.Ok(await store.GetEnabledAsync()));
+
+        var providers = api.MapGroup("/providers").RequireAuthorization(AuthConstants.AdminOnlyPolicy);
+
+        providers.MapGet("/", async (IProviderStore store) => Results.Ok(await store.GetAllAsync()));
+
+        providers.MapPost("/", async (ProviderConfig provider, IProviderStore store,
+            IAuditLogStore audit, HttpContext ctx) =>
+        {
+            if (string.IsNullOrWhiteSpace(provider.DisplayName) || string.IsNullOrWhiteSpace(provider.Slug))
+                return Results.BadRequest(new { error = "Display name and slug are required." });
+            await store.UpsertAsync(provider);
+            await AuditAction(audit, ctx, "upsert", "provider", provider.Id.ToString(), provider.DisplayName);
+            return Results.Ok(provider);
+        });
+
+        providers.MapDelete("/{id:int}", async (int id, IProviderStore store,
+            IAuditLogStore audit, HttpContext ctx) =>
+        {
+            await store.DeleteAsync(id);
+            await AuditAction(audit, ctx, "delete", "provider", id.ToString());
+            return Results.NoContent();
+        });
+
         // ── LLM models ──
         api.MapGet("/models/enabled", async (ILlmModelStore store) =>
             Results.Ok(await store.GetEnabledAsync()));
@@ -848,11 +874,16 @@ public static class AdminApiEndpoints
 
         models.MapGet("/", async (ILlmModelStore store) => Results.Ok(await store.GetAllAsync()));
 
-        models.MapPost("/", async (LlmModel model, ILlmModelStore store,
+        models.MapPost("/", async (LlmModel model, ILlmModelStore store, IProviderStore providers,
             IAuditLogStore audit, HttpContext ctx) =>
         {
             if (string.IsNullOrWhiteSpace(model.ModelId) || string.IsNullOrWhiteSpace(model.DisplayName))
                 return Results.BadRequest(new { error = "Model ID and display name are required." });
+            if (model.ProviderId <= 0)
+            {
+                var def = await providers.GetBySlugAsync("openrouter");
+                if (def is not null) model.ProviderId = def.Id;
+            }
             await store.UpsertAsync(model);
             await AuditAction(audit, ctx, "upsert", "model", model.Id.ToString(), model.DisplayName);
             return Results.Ok(model);

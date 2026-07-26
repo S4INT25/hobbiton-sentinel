@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
-using OpenAI;
 using OpenAI.Chat;
 using Sentinel.Admin.Models;
 using Sentinel.Admin.Stores;
@@ -11,7 +10,6 @@ using Sentinel.Memory;
 namespace Sentinel.Agent;
 
 public class FraudAgent(
-    OpenAIClient ai,
     ClickHouseClient ch,
     EmailClient email,
     IpLookupClient ipLookup,
@@ -225,7 +223,7 @@ public class FraudAgent(
         var effectiveDatabase = string.IsNullOrWhiteSpace(request.Database) ? "lipila_blaze" : request.Database.Trim();
         var runStartedAt = DateTime.UtcNow;
         var lookback = config.GetValue("Sentinel:LookbackMinutes", 70);
-        var modelName = await modelResolver.ResolveAsync(request.Model);
+        var resolved = await modelResolver.ResolveAsync(request.Model);
 
         logger.LogInformation(
             "Fraud agent run {RunId} started (triggered by: {TriggeredBy}, db: {Database}, customPrompt: {HasCustomPrompt})",
@@ -310,7 +308,7 @@ public class FraudAgent(
         };
 
         var tools = FraudAgentTools.GetToolDefinitions();
-        var chatClient = ai.GetChatClient(modelName);
+        var chatClient = resolved.Client.GetChatClient(resolved.ModelId);
         var iteration = 0;
         var maxIterations = config.GetValue("Sentinel:MaxIterations", 60);
         var alertSent = false;

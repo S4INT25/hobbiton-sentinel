@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
-using OpenAI;
 using OpenAI.Chat;
 using Sentinel.Admin.Models;
 using Sentinel.Admin.Stores;
@@ -12,8 +11,6 @@ public class AnalyticsQueryWorker(
     IServiceScopeFactory scopeFactory,
     IAnalyticsJobStore jobStore,
     IAnalyticsChatStore chatStore,
-    OpenAIClient ai,
-    IConfiguration config,
     ILogger<AnalyticsQueryWorker> logger) : BackgroundService
 {
     private readonly Channel<string> _channel = Channel.CreateUnbounded<string>(
@@ -173,8 +170,10 @@ public class AnalyticsQueryWorker(
     {
         try
         {
-            var model = config["OpenRouter:DefaultModel"] ?? "deepseek/deepseek-v4-flash";
-            var chatClient = ai.GetChatClient(model);
+            using var scope = scopeFactory.CreateScope();
+            var resolver = scope.ServiceProvider.GetRequiredService<ModelResolver>();
+            var resolved = await resolver.ResolveAsync(null);
+            var chatClient = resolved.Client.GetChatClient(resolved.ModelId);
             var completion = await chatClient.CompleteChatAsync(
                 [
                     new SystemChatMessage(

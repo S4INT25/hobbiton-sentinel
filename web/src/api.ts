@@ -194,8 +194,21 @@ export interface LlmModel {
   displayName: string;
   modelId: string;
   description: string | null;
+  providerId: number;
   enabled: boolean;
   isDefault: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProviderConfig {
+  id: number;
+  displayName: string;
+  slug: string;
+  apiKey: string;
+  endpoint: string;
+  enabled: boolean;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -415,6 +428,12 @@ export const api = {
   enabledModels: () => f<LlmModel[]>('/api/models/enabled'),
   saveModel: (m: Partial<LlmModel>) => f<LlmModel>('/api/models', post(m)),
   deleteModel: (id: number) => f<void>(`/api/models/${id}`, del),
+
+  // providers
+  listProviders: () => f<ProviderConfig[]>('/api/providers'),
+  enabledProviders: () => f<ProviderConfig[]>('/api/providers/enabled'),
+  saveProvider: (p: Partial<ProviderConfig>) => f<ProviderConfig>('/api/providers', post(p)),
+  deleteProvider: (id: number) => f<void>(`/api/providers/${id}`, del),
 
   // users
   listUsers: () => f<AdminUser[]>('/api/users/'),

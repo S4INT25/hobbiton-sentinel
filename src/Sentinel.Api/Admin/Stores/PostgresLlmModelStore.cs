@@ -4,7 +4,9 @@ using Sentinel.Admin.Models;
 
 namespace Sentinel.Admin.Stores;
 
-public class PostgresLlmModelStore(IDbContextFactory<SentinelDbContext> dbFactory) : ILlmModelStore
+public class PostgresLlmModelStore(
+    IDbContextFactory<SentinelDbContext> dbFactory,
+    IProviderStore providerStore) : ILlmModelStore
 {
     public async Task<List<LlmModel>> GetAllAsync()
     {
@@ -89,6 +91,9 @@ public class PostgresLlmModelStore(IDbContextFactory<SentinelDbContext> dbFactor
         var now = DateTime.UtcNow;
         var anyChanged = false;
 
+        var openRouter = await providerStore.GetBySlugAsync("openrouter");
+        var defaultProviderId = openRouter?.Id ?? 0;
+
         foreach (var def in defaults)
         {
             var match = existing.FirstOrDefault(e =>
@@ -100,6 +105,7 @@ public class PostgresLlmModelStore(IDbContextFactory<SentinelDbContext> dbFactor
                     DisplayName = def.DisplayName,
                     ModelId = def.ModelId,
                     Description = def.Description,
+                    ProviderId = defaultProviderId,
                     Enabled = def.Enabled,
                     IsDefault = def.IsDefault,
                     SortOrder = def.SortOrder,
@@ -112,13 +118,14 @@ public class PostgresLlmModelStore(IDbContextFactory<SentinelDbContext> dbFactor
             {
                 if (match.DisplayName != def.DisplayName || match.Description != def.Description ||
                     match.Enabled != def.Enabled || match.IsDefault != def.IsDefault ||
-                    match.SortOrder != def.SortOrder)
+                    match.SortOrder != def.SortOrder || match.ProviderId != defaultProviderId)
                 {
                     match.DisplayName = def.DisplayName;
                     match.Description = def.Description;
                     match.Enabled = def.Enabled;
                     match.IsDefault = def.IsDefault;
                     match.SortOrder = def.SortOrder;
+                    if (match.ProviderId == 0) match.ProviderId = defaultProviderId;
                     match.UpdatedAt = now;
                     anyChanged = true;
                 }

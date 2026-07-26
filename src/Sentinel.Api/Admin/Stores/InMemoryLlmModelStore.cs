@@ -3,7 +3,7 @@ using Sentinel.Admin.Models;
 
 namespace Sentinel.Admin.Stores;
 
-public class InMemoryLlmModelStore : ILlmModelStore
+public class InMemoryLlmModelStore(IProviderStore providerStore) : ILlmModelStore
 {
     private readonly ConcurrentDictionary<int, LlmModel> _models = new();
     private int _nextId;
@@ -54,6 +54,9 @@ public class InMemoryLlmModelStore : ILlmModelStore
         var now = DateTime.UtcNow;
         var existing = _models.Values.ToList();
 
+        var openRouter = await providerStore.GetBySlugAsync("openrouter");
+        var defaultProviderId = openRouter?.Id ?? 0;
+
         foreach (var def in defaults)
         {
             var match = existing.FirstOrDefault(m =>
@@ -65,6 +68,7 @@ public class InMemoryLlmModelStore : ILlmModelStore
                     DisplayName = def.DisplayName,
                     ModelId = def.ModelId,
                     Description = def.Description,
+                    ProviderId = defaultProviderId,
                     Enabled = def.Enabled,
                     IsDefault = def.IsDefault,
                     SortOrder = def.SortOrder
@@ -77,6 +81,7 @@ public class InMemoryLlmModelStore : ILlmModelStore
                 match.Enabled = def.Enabled;
                 match.IsDefault = def.IsDefault;
                 match.SortOrder = def.SortOrder;
+                if (match.ProviderId == 0) match.ProviderId = defaultProviderId;
                 match.UpdatedAt = now;
                 _models[match.Id] = match;
             }

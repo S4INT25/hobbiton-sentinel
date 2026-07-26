@@ -17,6 +17,7 @@ import Users from './features/Users';
 import Audit from './features/Audit';
 import Knowledge from './features/Knowledge';
 import Products from './features/Products';
+import Providers from './features/Providers';
 import Models from './features/Models';
 import SharedReport from './features/SharedReport';
 import Signup from './features/Signup';
@@ -53,6 +54,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
       { to: '/rules', label: 'Rules', roles: ['admin'], icon: 'M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4' },
       { to: '/knowledge', label: 'Knowledge Base', roles: ['admin'], icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253' },
       { to: '/products', label: 'Products', roles: ['admin'], icon: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4' },
+      { to: '/providers', label: 'Providers', roles: ['admin'], icon: 'M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01' },
       { to: '/models', label: 'Models', roles: ['admin'], icon: 'M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z' },
     ],
   },
@@ -366,6 +368,7 @@ export default function App() {
             <Route path="/audit" element={<Shell me={me}><Audit /></Shell>} />
             <Route path="/knowledge" element={<Shell me={me}><Knowledge /></Shell>} />
             <Route path="/products" element={<Shell me={me}><Products /></Shell>} />
+            <Route path="/providers" element={<Shell me={me}><Providers /></Shell>} />
             <Route path="/models" element={<Shell me={me}><Models /></Shell>} />
             <Route path="/security" element={<Shell me={me}><Security /></Shell>} />
             <Route path="*" element={<Navigate to="/chat" replace />} />

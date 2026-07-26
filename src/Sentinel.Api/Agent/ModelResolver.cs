@@ -1,30 +1,51 @@
+using OpenAI;
+using Sentinel.Admin.Models;
 using Sentinel.Admin.Stores;
 
 namespace Sentinel.Agent;
 
+public record ResolvedModel(OpenAIClient Client, string ModelId);
+
 /// <summary>
-/// Resolves which OpenRouter model an agent run should use. A requested model is only
-/// honoured when it is registered and enabled; otherwise the admin-marked default
-/// (or, failing that, the configured fallback) is used — so chat/workflow selections
-/// can never point at an arbitrary or disabled model.
+/// Resolves which provider client and model an agent run should use. A requested model
+/// is only honoured when it is registered and enabled; otherwise the admin-marked default
+/// (or, failing that, the configured fallback) is used.
 /// </summary>
-public class ModelResolver(ILlmModelStore store, IConfiguration config)
+public class ModelResolver(
+    ILlmModelStore modelStore,
+    IProviderStore providerStore,
+    LlmClientFactory clientFactory,
+    IConfiguration config)
 {
-    public async Task<string> ResolveAsync(string? requested)
+    public async Task<ResolvedModel> ResolveAsync(string? requested)
     {
-        var enabled = await store.GetEnabledAsync();
+        var enabled = await modelStore.GetEnabledAsync();
+        var enabledProviders = await providerStore.GetEnabledAsync();
+
+        LlmModel? resolvedModel = null;
 
         if (!string.IsNullOrWhiteSpace(requested))
         {
-            var match = enabled.FirstOrDefault(m =>
+            resolvedModel = enabled.FirstOrDefault(m =>
                 string.Equals(m.ModelId, requested.Trim(), StringComparison.OrdinalIgnoreCase));
-            if (match is not null)
-                return match.ModelId;
         }
 
-        var fallback = enabled.FirstOrDefault(m => m.IsDefault) ?? enabled.FirstOrDefault();
-        return fallback?.ModelId
-               ?? config["OpenRouter:DefaultModel"]
-               ?? "anthropic/claude-sonnet-4.5";
+        resolvedModel ??= enabled.FirstOrDefault(m => m.IsDefault) ?? enabled.FirstOrDefault();
+
+        var modelId = resolvedModel?.ModelId
+                      ?? config["OpenRouter:DefaultModel"]
+                      ?? "deepseek/deepseek-v4-flash";
+
+        var provider = resolvedModel is { ProviderId: > 0 }
+            ? enabledProviders.FirstOrDefault(p => p.Id == resolvedModel.ProviderId)
+            : enabledProviders.FirstOrDefault(p => p.Slug == "openrouter");
+
+        var client = provider is not null
+            ? clientFactory.GetOrCreate(provider.Endpoint, provider.ApiKey)
+            : clientFactory.GetOrCreate(
+                config["OpenRouter:Endpoint"] ?? "https://openrouter.ai/api/v1",
+                config["OpenRouter:ApiKey"] ?? "");
+
+        return new ResolvedModel(client, modelId);
     }
 }

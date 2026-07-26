@@ -14,6 +14,7 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
     public DbSet<AgentMemory> AgentMemories => Set<AgentMemory>();
     public DbSet<DatabaseProduct> DatabaseProducts => Set<DatabaseProduct>();
     public DbSet<LlmModel> LlmModels => Set<LlmModel>();
+    public DbSet<ProviderConfig> Providers => Set<ProviderConfig>();
     public DbSet<CaseOutcome> CaseOutcomes => Set<CaseOutcome>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -177,10 +178,32 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
             e.Property(m => m.Enabled).HasColumnName("enabled");
             e.Property(m => m.IsDefault).HasColumnName("is_default");
             e.Property(m => m.SortOrder).HasColumnName("sort_order");
+            e.Property(m => m.ProviderId).HasColumnName("provider_id");
             e.Property(m => m.CreatedAt).HasColumnName("created_at");
             e.Property(m => m.UpdatedAt).HasColumnName("updated_at");
             e.HasIndex(m => m.ModelId).IsUnique();
             e.HasIndex(m => m.Enabled);
+            e.HasOne(m => m.Provider)
+                .WithMany()
+                .HasForeignKey(m => m.ProviderId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ProviderConfig>(e =>
+        {
+            e.HasKey(p => p.Id);
+            e.ToTable("providers");
+            e.Property(p => p.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            e.Property(p => p.DisplayName).HasColumnName("display_name").HasMaxLength(200);
+            e.Property(p => p.Slug).HasColumnName("slug").HasMaxLength(50);
+            e.Property(p => p.ApiKey).HasColumnName("api_key");
+            e.Property(p => p.Endpoint).HasColumnName("endpoint");
+            e.Property(p => p.Enabled).HasColumnName("enabled");
+            e.Property(p => p.SortOrder).HasColumnName("sort_order");
+            e.Property(p => p.CreatedAt).HasColumnName("created_at");
+            e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(p => p.Slug).IsUnique();
+            e.HasIndex(p => p.Enabled);
         });
 
         modelBuilder.Entity<CaseOutcome>(e =>
