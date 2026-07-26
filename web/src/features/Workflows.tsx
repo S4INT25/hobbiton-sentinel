@@ -26,6 +26,7 @@ const EMPTY: Partial<WorkflowDefinition> = {
   timeZoneId: 'Africa/Lusaka',
   enabled: true,
   targetDatabase: '',
+  model: '',
   emailSubject: '',
   emailRecipients: '',
   customPrompt: '',
@@ -39,6 +40,7 @@ export function WorkflowForm({
   onChange: (v: Partial<WorkflowDefinition>) => void;
 }) {
   const { data: products = [] } = useQuery({ queryKey: ['products-enabled'], queryFn: api.enabledProducts });
+  const { data: models = [] } = useQuery({ queryKey: ['models-enabled'], queryFn: api.enabledModels });
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -69,12 +71,21 @@ export function WorkflowForm({
           </select>
         </div>
       </div>
-      <div>
-        <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1">Target database</label>
-        <select value={value.targetDatabase ?? ''} onChange={(e) => onChange({ ...value, targetDatabase: e.target.value })} className={inputCls}>
-          <option value="">— select —</option>
-          {products.map((p) => <option key={p.databaseName} value={p.databaseName}>{p.displayName}</option>)}
-        </select>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1">Target database</label>
+          <select value={value.targetDatabase ?? ''} onChange={(e) => onChange({ ...value, targetDatabase: e.target.value })} className={inputCls}>
+            <option value="">— select —</option>
+            {products.map((p) => <option key={p.databaseName} value={p.databaseName}>{p.displayName}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1">Model</label>
+          <select value={value.model ?? ''} onChange={(e) => onChange({ ...value, model: e.target.value })} className={inputCls}>
+            <option value="">— system default —</option>
+            {models.map((m) => <option key={m.modelId} value={m.modelId}>{m.displayName}{m.isDefault ? ' (default)' : ''}</option>)}
+          </select>
+        </div>
       </div>
       {value.actionType !== 'fraud_run' && (
         <>
@@ -167,6 +178,7 @@ export default function Workflows() {
               <span className="bg-gray-800/80 border border-gray-700/50 px-1.5 py-0.5 rounded">{w.cronExpression}</span>
               <span>{w.timeZoneId}</span>
               {w.targetDatabase && <span className="text-sky-400/80">{w.targetDatabase}</span>}
+              {w.model && <span className="text-violet-400/80">{w.model}</span>}
               <span>updated {fmtDate(w.updatedAt)}</span>
             </div>
             <div className="flex items-center gap-1 mt-3 pt-3 border-t border-gray-800/60">

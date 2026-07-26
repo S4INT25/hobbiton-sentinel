@@ -13,6 +13,7 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
     public DbSet<WorkflowDefinition> Workflows => Set<WorkflowDefinition>();
     public DbSet<AgentMemory> AgentMemories => Set<AgentMemory>();
     public DbSet<DatabaseProduct> DatabaseProducts => Set<DatabaseProduct>();
+    public DbSet<LlmModel> LlmModels => Set<LlmModel>();
     public DbSet<CaseOutcome> CaseOutcomes => Set<CaseOutcome>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -123,6 +124,7 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
             e.Property(w => w.EmailRecipients).HasColumnName("email_recipients");
             e.Property(w => w.CustomPrompt).HasColumnName("custom_prompt");
             e.Property(w => w.SystemPrompt).HasColumnName("system_prompt");
+            e.Property(w => w.Model).HasColumnName("model");
             e.Property(w => w.IsDeleted).HasColumnName("is_deleted");
             e.Property(w => w.CreatedAt).HasColumnName("created_at");
             e.Property(w => w.UpdatedAt).HasColumnName("updated_at");
@@ -161,6 +163,23 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
             e.Property(p => p.UpdatedAt).HasColumnName("updated_at");
             e.HasIndex(p => p.DatabaseName).IsUnique();
             e.HasIndex(p => p.Enabled);
+        });
+
+        modelBuilder.Entity<LlmModel>(e =>
+        {
+            e.HasKey(m => m.Id);
+            e.ToTable("llm_models");
+            e.Property(m => m.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            e.Property(m => m.DisplayName).HasColumnName("display_name").HasMaxLength(200);
+            e.Property(m => m.ModelId).HasColumnName("model_id").HasMaxLength(200);
+            e.Property(m => m.Description).HasColumnName("description");
+            e.Property(m => m.Enabled).HasColumnName("enabled");
+            e.Property(m => m.IsDefault).HasColumnName("is_default");
+            e.Property(m => m.SortOrder).HasColumnName("sort_order");
+            e.Property(m => m.CreatedAt).HasColumnName("created_at");
+            e.Property(m => m.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(m => m.ModelId).IsUnique();
+            e.HasIndex(m => m.Enabled);
         });
 
         modelBuilder.Entity<CaseOutcome>(e =>

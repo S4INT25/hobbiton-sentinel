@@ -17,11 +17,12 @@ public class ChatAnalyticsAgent(AnalyticsAgentCore core)
         List<ChatEntry>? history = null,
         Func<AnalyticsStreamEvent, Task>? onEvent = null,
         IEnumerable<AgentMemory>? memories = null,
+        string? model = null,
         CancellationToken cancellationToken = default)
         => core.AskAsync(
             prompt,
             database,
-            AgentProfile.Chat(),
+            AgentProfile.Chat(model: model),
             history,
             onEvent,
             onToolCall: null,

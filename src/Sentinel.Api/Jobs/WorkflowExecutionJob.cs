@@ -58,7 +58,8 @@ public class WorkflowExecutionJob(
                         RunId = runId,
                         Database = workflow.TargetDatabase,
                         CustomPrompt = workflow.CustomPrompt,
-                        WorkflowId = workflow.Id
+                        WorkflowId = workflow.Id,
+                        Model = string.IsNullOrWhiteSpace(workflow.Model) ? null : workflow.Model
                     }));
                 logger.LogInformation("Workflow {WorkflowId} enqueued fraud run {RunId}", workflow.Id, runId);
             }
@@ -132,6 +133,7 @@ public class WorkflowExecutionJob(
             var memories = await agentMemoryStore.GetEnabledAsync(database);
             ct.ThrowIfCancellationRequested();
             result = await analyticsAgent.RunAsync(prompt, database, memories: memories,
+                model: string.IsNullOrWhiteSpace(workflow.Model) ? null : workflow.Model,
                 onToolCall: async tc =>
                 {
                     if (tc.Iteration > maxIteration) maxIteration = tc.Iteration;

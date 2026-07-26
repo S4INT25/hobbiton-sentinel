@@ -371,7 +371,8 @@ public static class AdminApiEndpoints
                 UserId = userId,
                 Prompt = req.Prompt,
                 Database = req.Database ?? "lipila_blaze",
-                Mode = req.Mode ?? "general"
+                Mode = req.Mode ?? "general",
+                Model = req.Model
             };
 
             await jobStore.CreateAsync(job);
@@ -840,6 +841,32 @@ public static class AdminApiEndpoints
             return Results.NoContent();
         });
 
+        // ── LLM models ──
+        api.MapGet("/models/enabled", async (ILlmModelStore store) =>
+            Results.Ok(await store.GetEnabledAsync()));
+
+        var models = api.MapGroup("/models").RequireAuthorization(AuthConstants.AdminOnlyPolicy);
+
+        models.MapGet("/", async (ILlmModelStore store) => Results.Ok(await store.GetAllAsync()));
+
+        models.MapPost("/", async (LlmModel model, ILlmModelStore store,
+            IAuditLogStore audit, HttpContext ctx) =>
+        {
+            if (string.IsNullOrWhiteSpace(model.ModelId) || string.IsNullOrWhiteSpace(model.DisplayName))
+                return Results.BadRequest(new { error = "Model ID and display name are required." });
+            await store.UpsertAsync(model);
+            await AuditAction(audit, ctx, "upsert", "model", model.Id.ToString(), model.DisplayName);
+            return Results.Ok(model);
+        });
+
+        models.MapDelete("/{id:int}", async (int id, ILlmModelStore store,
+            IAuditLogStore audit, HttpContext ctx) =>
+        {
+            await store.DeleteAsync(id);
+            await AuditAction(audit, ctx, "delete", "model", id.ToString());
+            return Results.NoContent();
+        });
+
         // ── Users (update) ──
         adminApi.MapPut("/{id}", async (string id, UpdateUserRequest req, IUserStore store,
             IAuditLogStore audit, HttpContext ctx) =>
@@ -1006,7 +1033,7 @@ public record CreateUserRequest(string Username, string Password, string Role, s
 
 public record CaseFeedbackRequest(string Action, string? Reason, FeedbackRule? CreateRule);
 
-public record AnalyticsAskRequest(string Prompt, string? Database, string? ConversationId = null, string? Mode = null);
+public record AnalyticsAskRequest(string Prompt, string? Database, string? ConversationId = null, string? Mode = null, string? Model = null);
 
 public record CreateConversationRequest(string Database);
 

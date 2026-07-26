@@ -7,4 +7,7 @@ public record FraudAgentRunRequest
     public string? Database { get; init; }
     public string? CustomPrompt { get; init; }
     public string? WorkflowId { get; init; }
+
+    /// <summary>OpenRouter model id override. Null/empty = system default model.</summary>
+    public string? Model { get; init; }
 }

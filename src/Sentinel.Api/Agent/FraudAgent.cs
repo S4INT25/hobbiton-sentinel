@@ -24,6 +24,7 @@ public class FraudAgent(
     IWorkflowStore workflowStore,
     ICaseOutcomeStore caseOutcomeStore,
     IAgentMemoryStore memoryStore,
+    ModelResolver modelResolver,
     IConfiguration config,
     ILogger<FraudAgent> logger)
 {
@@ -224,7 +225,7 @@ public class FraudAgent(
         var effectiveDatabase = string.IsNullOrWhiteSpace(request.Database) ? "lipila_blaze" : request.Database.Trim();
         var runStartedAt = DateTime.UtcNow;
         var lookback = config.GetValue("Sentinel:LookbackMinutes", 70);
-        var modelName = config["DigitalOcean:ModelName"]!;
+        var modelName = await modelResolver.ResolveAsync(request.Model);
 
         logger.LogInformation(
             "Fraud agent run {RunId} started (triggered by: {TriggeredBy}, db: {Database}, customPrompt: {HasCustomPrompt})",

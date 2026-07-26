@@ -65,10 +65,13 @@ try
 
     builder.Services.AddSingleton(_ =>
     {
-        var cfg = builder.Configuration.GetSection("DigitalOcean");
+        var cfg = builder.Configuration.GetSection("OpenRouter");
         return new OpenAIClient(
-            new ApiKeyCredential(cfg["InferenceKey"]!),
-            new OpenAIClientOptions { Endpoint = new Uri(cfg["InferenceEndpoint"]!) });
+            new ApiKeyCredential(cfg["ApiKey"]!),
+            new OpenAIClientOptions
+            {
+                Endpoint = new Uri(cfg["Endpoint"] ?? "https://openrouter.ai/api/v1")
+            });
     });
 
     builder.Services.AddHttpClient<ClickHouseClient>();
@@ -98,6 +101,7 @@ try
         builder.Services.AddScoped<IWorkflowStore, PostgresWorkflowStore>();
         builder.Services.AddScoped<IAgentMemoryStore, AgentMemoryStore>();
         builder.Services.AddScoped<IDatabaseProductStore, PostgresDatabaseProductStore>();
+        builder.Services.AddScoped<ILlmModelStore, PostgresLlmModelStore>();
         builder.Services.AddScoped<ICaseOutcomeStore, PostgresCaseOutcomeStore>();
     }
     else
@@ -108,6 +112,7 @@ try
         builder.Services.AddSingleton<IEvidenceSourceStore, InMemoryEvidenceSourceStore>();
         builder.Services.AddSingleton<IWorkflowStore, InMemoryWorkflowStore>();
         builder.Services.AddSingleton<IAgentMemoryStore, InMemoryAgentMemoryStore>();
+        builder.Services.AddSingleton<ILlmModelStore, InMemoryLlmModelStore>();
         builder.Services.AddSingleton<ICaseOutcomeStore, InMemoryCaseOutcomeStore>();
     }
 
@@ -146,6 +151,7 @@ try
     builder.Services.AddScoped<WorkflowExecutionJob>();
     builder.Services.AddScoped<StaleResolutionJob>();
     builder.Services.AddScoped<AnalyticsAgentCore>();
+    builder.Services.AddScoped<ModelResolver>();
     builder.Services.AddScoped<ChatAnalyticsAgent>();
     builder.Services.AddScoped<WorkflowAnalyticsAgent>();
     builder.Services.AddSingleton<WorkflowSchedulerService>();
@@ -213,6 +219,8 @@ try
     await workflowStore.SeedDefaultsAsync();
     var dbProductStore = scope.ServiceProvider.GetRequiredService<IDatabaseProductStore>();
     await dbProductStore.SeedDefaultsAsync();
+    var llmModelStore = scope.ServiceProvider.GetRequiredService<ILlmModelStore>();
+    await llmModelStore.SeedDefaultsAsync();
     await SeedAdminUser(app);
 
     // Warm schema cache for all databases at startup (non-blocking)

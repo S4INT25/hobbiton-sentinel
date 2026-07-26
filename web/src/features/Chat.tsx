@@ -2,13 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
-import { api, type ChatEntry, type Conversation, type QueryResult, type StreamEvent } from '../api';
+import { api, type ChatEntry, type Conversation, type LlmModel, type QueryResult, type StreamEvent } from '../api';
 import { Markdown, downloadCsv, Dialog, btnGhost, btnDanger } from '../components/ui';
 import { DataChart, DataTable, applicableChartTypes } from '../components/charts';
 
 // user prefs survive reloads; server-side cache prefs from the Blazor app move to localStorage
 const DB_KEY = 'sentinel.chat.db';
 const MODE_KEY = 'sentinel.chat.mode';
+const MODEL_KEY = 'sentinel.chat.model';
 
 type MessageVM = {
   role: string;
@@ -26,6 +27,7 @@ export default function Chat() {
 
   const [database, setDatabase] = useState(() => localStorage.getItem(DB_KEY) ?? '');
   const [mode, setMode] = useState(() => localStorage.getItem(MODE_KEY) ?? 'general');
+  const [model, setModel] = useState(() => localStorage.getItem(MODEL_KEY) ?? '');
   const [input, setInput] = useState('');
   const [jobId, setJobId] = useState<string | null>(null);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
@@ -41,6 +43,7 @@ export default function Chat() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const { data: products = [] } = useQuery({ queryKey: ['products-enabled'], queryFn: api.enabledProducts });
+  const { data: models = [] } = useQuery({ queryKey: ['models-enabled'], queryFn: api.enabledModels });
   const { data: conversations = [] } = useQuery({ queryKey: ['conversations'], queryFn: api.listConversations });
   const { data: conversation } = useQuery({
     queryKey: ['conversation', activeId],
@@ -53,8 +56,14 @@ export default function Chat() {
     if (!database && products.length > 0) setDatabase(products[0].databaseName);
   }, [products, database]);
 
+  // default model once models load — prefer the admin-marked default
+  useEffect(() => {
+    if (!model && models.length > 0) setModel((models.find((m) => m.isDefault) ?? models[0]).modelId);
+  }, [models, model]);
+
   useEffect(() => localStorage.setItem(DB_KEY, database), [database]);
   useEffect(() => localStorage.setItem(MODE_KEY, mode), [mode]);
+  useEffect(() => localStorage.setItem(MODEL_KEY, model), [model]);
 
   // job polling — React Query refetchInterval stands in for streaming
   const { data: job } = useQuery({
@@ -111,7 +120,7 @@ export default function Chat() {
   }, [messages.length, job?.streamEvents?.length]);
 
   const askMut = useMutation({
-    mutationFn: (prompt: string) => api.ask(prompt, database, activeId ?? undefined, mode),
+    mutationFn: (prompt: string) => api.ask(prompt, database, activeId ?? undefined, mode, model || undefined),
     onSuccess: (res, prompt) => {
       setJobId(res.jobId);
       setPendingPrompt(prompt);
@@ -482,6 +491,7 @@ export default function Chat() {
             <div className="flex items-center justify-between gap-2 pt-2 mt-1.5 border-t border-gray-800/60">
               <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                 <ProductSelect products={products} value={database} onChange={setDatabase} disabled={loading} />
+                <ModelSelect models={models} value={model} onChange={setModel} disabled={loading} />
                 <ModeSwitch value={mode} onChange={setMode} disabled={loading} />
               </div>
               <button
@@ -517,6 +527,43 @@ export default function Chat() {
           </Dialog>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function ModelSelect({
+  models,
+  value,
+  onChange,
+  disabled,
+}: {
+  models: LlmModel[];
+  value: string;
+  onChange: (v: string) => void;
+  disabled: boolean;
+}) {
+  if (models.length === 0) return null;
+  return (
+    <div className="relative">
+      <svg className="w-3.5 h-3.5 text-emerald-500/80 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+      </svg>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        title="Model"
+        className="appearance-none pl-8 pr-7 py-1.5 rounded-lg border border-gray-800 bg-gray-950/60 text-xs text-gray-200 hover:border-gray-700 transition-colors disabled:opacity-50 focus:outline-none focus:border-emerald-400/50 max-w-[11rem] truncate cursor-pointer"
+      >
+        {models.map((m) => (
+          <option key={m.modelId} value={m.modelId}>
+            {m.displayName}{m.isDefault ? ' · default' : ''}
+          </option>
+        ))}
+      </select>
+      <svg className="w-3 h-3 text-gray-600 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+      </svg>
     </div>
   );
 }

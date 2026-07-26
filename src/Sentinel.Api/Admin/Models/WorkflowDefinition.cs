@@ -17,6 +17,9 @@ public class WorkflowDefinition
     /// <summary>Custom system prompt preamble for fraud_run workflows. Replaces default Lipila context when set.</summary>
     public string SystemPrompt { get; set; } = "";
 
+    /// <summary>OpenRouter model id override (e.g. "anthropic/claude-sonnet-4.5"). Empty = system default model.</summary>
+    public string Model { get; set; } = "";
+
     public bool IsDeleted { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;

@@ -25,7 +25,7 @@ public class AnalyticsAgentCore(
     EmailClient emailClient,
     ChartRenderer chartRenderer,
     IAgentMemoryStore memoryStore,
-    IConfiguration config,
+    ModelResolver modelResolver,
     ILogger<AnalyticsAgentCore> logger)
 {
     private const int MaxHistoryExchanges = 10;
@@ -66,7 +66,7 @@ public class AnalyticsAgentCore(
         IEnumerable<AgentMemory>? memories = null,
         CancellationToken cancellationToken = default)
     {
-        var modelName = config["DigitalOcean:ModelName"]!;
+        var modelName = await modelResolver.ResolveAsync(profile.Model);
         var schema = await schemaLoader.GetSchemaBlockAsync(database);
         var isInteractive = profile.Interactive;
 

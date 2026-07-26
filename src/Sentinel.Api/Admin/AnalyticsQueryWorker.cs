@@ -82,6 +82,7 @@ public class AnalyticsQueryWorker(
 
             var result = await agent.AskAsync(job.Prompt, job.Database, history,
                 memories: memories,
+                model: job.Model,
                 onEvent: async evt =>
                 {
                     if (evt.Type == "token")

@@ -16,6 +16,7 @@ public class WorkflowAnalyticsAgent(AnalyticsAgentCore core, IConfiguration conf
         string database,
         IEnumerable<AgentMemory>? memories = null,
         Func<AgentToolCall, Task>? onToolCall = null,
+        string? model = null,
         CancellationToken cancellationToken = default)
     {
         // Reports can be long; allow tuning the budget without a code change (default keeps
@@ -25,7 +26,7 @@ public class WorkflowAnalyticsAgent(AnalyticsAgentCore core, IConfiguration conf
         return core.AskAsync(
             prompt,
             database,
-            AgentProfile.Workflow(maxOutputTokens),
+            AgentProfile.Workflow(maxOutputTokens, model),
             history: null,
             onEvent: null,
             onToolCall: onToolCall,

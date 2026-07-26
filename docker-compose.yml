@@ -12,10 +12,10 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
 
-      # DigitalOcean Serverless Inference
-      DigitalOcean__InferenceKey: ${DO_INFERENCE_KEY}
-      DigitalOcean__InferenceEndpoint: ${DO_INFERENCE_ENDPOINT:-https://inference.do-ai.run/v1}
-      DigitalOcean__ModelName: ${DO_MODEL_NAME:-llama3-3-70b-instruct}
+      # OpenRouter
+      OpenRouter__ApiKey: ${OPENROUTER_API_KEY}
+      OpenRouter__Endpoint: ${OPENROUTER_ENDPOINT:-https://openrouter.ai/api/v1}
+      OpenRouter__DefaultModel: ${OPENROUTER_DEFAULT_MODEL:-anthropic/claude-sonnet-4.5}
 
       # PostgreSQL
       ConnectionStrings__Sentinel: Host=postgres;Database=sentinel;Username=sentinel;Password=${POSTGRES_PASSWORD}

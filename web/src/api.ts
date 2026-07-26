@@ -123,6 +123,7 @@ export interface WorkflowDefinition {
   emailRecipients: string;
   customPrompt: string;
   systemPrompt: string;
+  model: string;
   isDeleted: boolean;
   createdAt: string;
   updatedAt: string;
@@ -182,6 +183,18 @@ export interface DatabaseProduct {
   displayName: string;
   description: string | null;
   enabled: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LlmModel {
+  id: number;
+  displayName: string;
+  modelId: string;
+  description: string | null;
+  enabled: boolean;
+  isDefault: boolean;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -396,6 +409,12 @@ export const api = {
   saveProduct: (p: Partial<DatabaseProduct>) => f<DatabaseProduct>('/api/products', post(p)),
   deleteProduct: (id: number) => f<void>(`/api/products/${id}`, del),
 
+  // models
+  listModels: () => f<LlmModel[]>('/api/models'),
+  enabledModels: () => f<LlmModel[]>('/api/models/enabled'),
+  saveModel: (m: Partial<LlmModel>) => f<LlmModel>('/api/models', post(m)),
+  deleteModel: (id: number) => f<void>(`/api/models/${id}`, del),
+
   // users
   listUsers: () => f<AdminUser[]>('/api/users/'),
   createUser: (u: { username: string; password: string; role: string; displayName: string; email?: string }) =>
@@ -442,10 +461,10 @@ export const api = {
   shareConversation: (id: string) =>
     f<{ shareId: string }>(`/api/analytics/conversations/${id}/share`, { method: 'POST' }),
   unshareConversation: (id: string) => f<void>(`/api/analytics/conversations/${id}/share`, del),
-  ask: (prompt: string, database: string, conversationId?: string, mode?: string) =>
+  ask: (prompt: string, database: string, conversationId?: string, mode?: string, model?: string) =>
     f<{ jobId: string; conversationId: string; status: string }>(
       '/api/analytics/ask',
-      post({ prompt, database, conversationId, mode })
+      post({ prompt, database, conversationId, mode, model })
     ),
   getJob: (jobId: string) => f<AnalyticsJob>(`/api/analytics/jobs/${jobId}`),
 
