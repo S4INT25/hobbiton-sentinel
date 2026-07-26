@@ -77,14 +77,74 @@ public class PostgresLlmModelStore(IDbContextFactory<SentinelDbContext> dbFactor
     }
 
     /// <summary>
-    /// Seed the default OpenRouter models if the table is empty. Called once at startup.
+    /// Keep the llm_models table in sync with <see cref="LlmModelDefaults"/>. New models
+    /// are inserted, existing ones are updated when their properties change, and models
+    /// no longer in the defaults list are removed. Runs on every startup.
     /// </summary>
     public async Task SeedDefaultsAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        if (await db.LlmModels.AnyAsync()) return;
+        var defaults = LlmModelDefaults.All;
+        var existing = await db.LlmModels.ToListAsync();
+        var now = DateTime.UtcNow;
+        var anyChanged = false;
 
-        db.LlmModels.AddRange(LlmModelDefaults.All);
-        await db.SaveChangesAsync();
+        foreach (var def in defaults)
+        {
+            var match = existing.FirstOrDefault(e =>
+                string.Equals(e.ModelId, def.ModelId, StringComparison.OrdinalIgnoreCase));
+            if (match is null)
+            {
+                db.LlmModels.Add(new LlmModel
+                {
+                    DisplayName = def.DisplayName,
+                    ModelId = def.ModelId,
+                    Description = def.Description,
+                    Enabled = def.Enabled,
+                    IsDefault = def.IsDefault,
+                    SortOrder = def.SortOrder,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                });
+                anyChanged = true;
+            }
+            else
+            {
+                if (match.DisplayName != def.DisplayName || match.Description != def.Description ||
+                    match.Enabled != def.Enabled || match.IsDefault != def.IsDefault ||
+                    match.SortOrder != def.SortOrder)
+                {
+                    match.DisplayName = def.DisplayName;
+                    match.Description = def.Description;
+                    match.Enabled = def.Enabled;
+                    match.IsDefault = def.IsDefault;
+                    match.SortOrder = def.SortOrder;
+                    match.UpdatedAt = now;
+                    anyChanged = true;
+                }
+                // Ensure exactly one default across the table
+                if (def.IsDefault)
+                {
+                    foreach (var other in existing.Where(e =>
+                                 e.Id != match.Id && e.IsDefault &&
+                                 !string.Equals(e.ModelId, def.ModelId, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        other.IsDefault = false;
+                        other.UpdatedAt = now;
+                        anyChanged = true;
+                    }
+                }
+            }
+        }
+
+        var defaultIds = defaults.Select(d => d.ModelId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var model in existing.Where(e => !defaultIds.Contains(e.ModelId)))
+        {
+            db.LlmModels.Remove(model);
+            anyChanged = true;
+        }
+
+        if (anyChanged)
+            await db.SaveChangesAsync();
     }
 }

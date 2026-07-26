@@ -50,8 +50,43 @@ public class InMemoryLlmModelStore : ILlmModelStore
 
     public async Task SeedDefaultsAsync()
     {
-        if (!_models.IsEmpty) return;
-        foreach (var model in LlmModelDefaults.All)
-            await UpsertAsync(model);
+        var defaults = LlmModelDefaults.All;
+        var now = DateTime.UtcNow;
+        var existing = _models.Values.ToList();
+
+        foreach (var def in defaults)
+        {
+            var match = existing.FirstOrDefault(m =>
+                string.Equals(m.ModelId, def.ModelId, StringComparison.OrdinalIgnoreCase));
+            if (match is null)
+            {
+                await UpsertAsync(new LlmModel
+                {
+                    DisplayName = def.DisplayName,
+                    ModelId = def.ModelId,
+                    Description = def.Description,
+                    Enabled = def.Enabled,
+                    IsDefault = def.IsDefault,
+                    SortOrder = def.SortOrder
+                });
+            }
+            else
+            {
+                match.DisplayName = def.DisplayName;
+                match.Description = def.Description;
+                match.Enabled = def.Enabled;
+                match.IsDefault = def.IsDefault;
+                match.SortOrder = def.SortOrder;
+                match.UpdatedAt = now;
+                _models[match.Id] = match;
+            }
+        }
+
+        var defaultIds = defaults.Select(d => d.ModelId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var (id, model) in _models)
+        {
+            if (!defaultIds.Contains(model.ModelId))
+                _models.TryRemove(id, out _);
+        }
     }
 }
