@@ -38,7 +38,10 @@ public class ModelResolver(
 
         var provider = resolvedModel is { ProviderId: > 0 }
             ? enabledProviders.FirstOrDefault(p => p.Id == resolvedModel.ProviderId)
-            : enabledProviders.FirstOrDefault(p => p.Slug == "openrouter");
+            : null;
+        provider ??= enabledProviders.FirstOrDefault(p => p.IsDefault)
+                    ?? enabledProviders.FirstOrDefault(p => p.Slug == "openrouter")
+                    ?? enabledProviders.FirstOrDefault();
 
         var client = provider is not null
             ? clientFactory.GetOrCreate(provider.Endpoint, provider.ApiKey)

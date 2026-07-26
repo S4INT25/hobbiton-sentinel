@@ -7,7 +7,7 @@ import {
   btnPrimary, btnDanger, btnGhost, inputCls, tableWrap, thCls, tdCls,
 } from '../components/ui';
 
-const EMPTY: Partial<ProviderConfig> = { displayName: '', slug: '', apiKey: '', endpoint: '', enabled: true, sortOrder: 0 };
+const EMPTY: Partial<ProviderConfig> = { displayName: '', slug: '', apiKey: '', endpoint: '', enabled: true, isDefault: false, sortOrder: 0 };
 const label = 'block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1';
 
 export default function Providers() {
@@ -60,6 +60,7 @@ export default function Providers() {
                 <th className={thCls}>Slug</th>
                 <th className={thCls}>Endpoint</th>
                 <th className={thCls}>API Key</th>
+                <th className={thCls}>Default</th>
                 <th className={thCls}>Enabled</th>
                 <th className={thCls}>Order</th>
                 <th className={thCls}>Actions</th>
@@ -72,6 +73,11 @@ export default function Providers() {
                   <td className={`${tdCls} font-mono text-gray-400`}>{p.slug}</td>
                   <td className={`${tdCls} font-mono text-gray-500 max-w-xs truncate`}>{p.endpoint}</td>
                   <td className={tdCls}>••••••••</td>
+                  <td className={tdCls}>
+                    {p.isDefault
+                      ? <span className="px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">default</span>
+                      : <span className="text-gray-700">—</span>}
+                  </td>
                   <td className={tdCls}>
                     {p.enabled
                       ? <span className="flex items-center gap-1.5 text-emerald-400"><span className="glow-dot" style={{ height: 5, width: 5 }} />yes</span>
@@ -95,10 +101,10 @@ export default function Providers() {
                 </tr>
               ))}
               {!isLoading && providers.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-600 text-xs">No providers configured</td></tr>
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-600 text-xs">No providers configured</td></tr>
               )}
               {isLoading && (
-                <tr><td colSpan={7} className="px-4 py-8"><div className="flex justify-center"><Spinner /></div></td></tr>
+                <tr><td colSpan={8} className="px-4 py-8"><div className="flex justify-center"><Spinner /></div></td></tr>
               )}
             </tbody>
           </table>
@@ -132,6 +138,10 @@ export default function Providers() {
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={editing.enabled ?? true} onChange={(e) => setEditing({ ...editing, enabled: e.target.checked })} className="accent-emerald-500" />
                   <span className="text-xs text-gray-300">Enabled</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={editing.isDefault ?? false} onChange={(e) => setEditing({ ...editing, isDefault: e.target.checked })} className="accent-emerald-500" />
+                  <span className="text-xs text-gray-300">Default</span>
                 </label>
                 <div>
                   <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-0.5">Sort order</label>

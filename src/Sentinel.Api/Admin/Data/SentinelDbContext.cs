@@ -199,6 +199,7 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
             e.Property(p => p.ApiKey).HasColumnName("api_key");
             e.Property(p => p.Endpoint).HasColumnName("endpoint");
             e.Property(p => p.Enabled).HasColumnName("enabled");
+            e.Property(p => p.IsDefault).HasColumnName("is_default");
             e.Property(p => p.SortOrder).HasColumnName("sort_order");
             e.Property(p => p.CreatedAt).HasColumnName("created_at");
             e.Property(p => p.UpdatedAt).HasColumnName("updated_at");

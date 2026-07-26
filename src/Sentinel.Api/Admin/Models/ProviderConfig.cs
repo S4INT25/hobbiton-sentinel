@@ -29,6 +29,7 @@ public class ProviderConfig
     public string Endpoint { get; set; } = "";
 
     [Column("enabled")] public bool Enabled { get; set; } = true;
+    [Column("is_default")] public bool IsDefault { get; set; }
     [Column("sort_order")] public int SortOrder { get; set; }
 
     [Column("created_at")] public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -41,7 +42,7 @@ public static class ProviderDefaults
     {
         DisplayName = "OpenRouter", Slug = "openrouter",
         ApiKey = "", Endpoint = "https://openrouter.ai/api/v1",
-        Enabled = true, SortOrder = 0
+        Enabled = true, IsDefault = true, SortOrder = 0
     };
 
     public static IReadOnlyList<ProviderConfig> All => [OpenRouter];

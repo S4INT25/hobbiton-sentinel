@@ -36,6 +36,12 @@ public class InMemoryProviderStore : IProviderStore
             provider.CreatedAt = now;
         provider.UpdatedAt = now;
 
+        if (provider.IsDefault)
+        {
+            foreach (var other in _providers.Values.Where(p => p.Id != provider.Id && p.IsDefault))
+                other.IsDefault = false;
+        }
+
         _providers[provider.Id] = provider;
         return Task.CompletedTask;
     }
@@ -73,6 +79,7 @@ public class InMemoryProviderStore : IProviderStore
                 existing.DisplayName = def.DisplayName;
                 existing.Endpoint = def.Endpoint;
                 existing.Enabled = def.Enabled;
+                existing.IsDefault = def.IsDefault;
                 existing.SortOrder = def.SortOrder;
                 existing.UpdatedAt = now;
                 _providers[existing.Id] = existing;

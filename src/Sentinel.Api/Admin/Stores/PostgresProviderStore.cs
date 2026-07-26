@@ -57,8 +57,17 @@ public class PostgresProviderStore(IDbContextFactory<SentinelDbContext> dbFactor
             existing.ApiKey = provider.ApiKey;
             existing.Endpoint = provider.Endpoint;
             existing.Enabled = provider.Enabled;
+            existing.IsDefault = provider.IsDefault;
             existing.SortOrder = provider.SortOrder;
             existing.UpdatedAt = provider.UpdatedAt;
+        }
+
+        if (provider.IsDefault)
+        {
+            var others = await db.Providers
+                .Where(p => p.Id != provider.Id && p.IsDefault)
+                .ToListAsync();
+            foreach (var other in others) other.IsDefault = false;
         }
 
         await db.SaveChangesAsync();
@@ -105,11 +114,13 @@ public class PostgresProviderStore(IDbContextFactory<SentinelDbContext> dbFactor
             else
             {
                 if (match.DisplayName != def.DisplayName || match.Endpoint != def.Endpoint ||
-                    match.Enabled != def.Enabled || match.SortOrder != def.SortOrder)
+                    match.Enabled != def.Enabled || match.IsDefault != def.IsDefault ||
+                    match.SortOrder != def.SortOrder)
                 {
                     match.DisplayName = def.DisplayName;
                     match.Endpoint = def.Endpoint;
                     match.Enabled = def.Enabled;
+                    match.IsDefault = def.IsDefault;
                     match.SortOrder = def.SortOrder;
                     match.UpdatedAt = now;
                     anyChanged = true;
