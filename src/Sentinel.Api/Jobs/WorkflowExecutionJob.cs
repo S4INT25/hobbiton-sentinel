@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using Hangfire;
 using Sentinel.Admin;
 using Sentinel.Admin.Models;
@@ -21,7 +20,6 @@ public class WorkflowExecutionJob(
     RunCancellationRegistry cancellationRegistry,
     ILogger<WorkflowExecutionJob> logger)
 {
-    [Experimental("OPENAI001")]
     public async Task ExecuteAsync(string workflowId)
     {
         var workflow = await workflowStore.GetByIdAsync(workflowId);
@@ -59,7 +57,8 @@ public class WorkflowExecutionJob(
                         Database = workflow.TargetDatabase,
                         CustomPrompt = workflow.CustomPrompt,
                         WorkflowId = workflow.Id,
-                        Model = string.IsNullOrWhiteSpace(workflow.Model) ? null : workflow.Model
+                        Model = string.IsNullOrWhiteSpace(workflow.Model) ? null : workflow.Model,
+                        ReasoningEffort = string.IsNullOrWhiteSpace(workflow.ReasoningEffort) ? null : workflow.ReasoningEffort
                     }));
                 logger.LogInformation("Workflow {WorkflowId} enqueued fraud run {RunId}", workflow.Id, runId);
             }
@@ -93,7 +92,6 @@ public class WorkflowExecutionJob(
         }
     }
 
-    [Experimental("OPENAI001")]
     private async Task ExecuteEmailReportAsync(WorkflowDefinition workflow)
     {
         var runId = Guid.NewGuid().ToString("N")[..16];
@@ -134,6 +132,7 @@ public class WorkflowExecutionJob(
             ct.ThrowIfCancellationRequested();
             result = await analyticsAgent.RunAsync(prompt, database, memories: memories,
                 model: string.IsNullOrWhiteSpace(workflow.Model) ? null : workflow.Model,
+                reasoningEffort: string.IsNullOrWhiteSpace(workflow.ReasoningEffort) ? null : workflow.ReasoningEffort,
                 onToolCall: async tc =>
                 {
                     if (tc.Iteration > maxIteration) maxIteration = tc.Iteration;

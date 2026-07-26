@@ -10,4 +10,7 @@ public record FraudAgentRunRequest
 
     /// <summary>OpenRouter model id override. Null/empty = system default model.</summary>
     public string? Model { get; init; }
+
+    /// <summary>Reasoning effort override ("low"|"medium"|"high"). Null/empty = model default.</summary>
+    public string? ReasoningEffort { get; init; }
 }

@@ -10,6 +10,7 @@ import { DataChart, DataTable, applicableChartTypes } from '../components/charts
 const DB_KEY = 'sentinel.chat.db';
 const MODE_KEY = 'sentinel.chat.mode';
 const MODEL_KEY = 'sentinel.chat.model';
+const EFFORT_KEY = 'sentinel.chat.effort';
 
 type MessageVM = {
   role: string;
@@ -28,6 +29,7 @@ export default function Chat() {
   const [database, setDatabase] = useState(() => localStorage.getItem(DB_KEY) ?? '');
   const [mode, setMode] = useState(() => localStorage.getItem(MODE_KEY) ?? 'general');
   const [model, setModel] = useState(() => localStorage.getItem(MODEL_KEY) ?? '');
+  const [effort, setEffort] = useState(() => localStorage.getItem(EFFORT_KEY) ?? '');
   const [input, setInput] = useState('');
   const [jobId, setJobId] = useState<string | null>(null);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
@@ -64,6 +66,7 @@ export default function Chat() {
   useEffect(() => localStorage.setItem(DB_KEY, database), [database]);
   useEffect(() => localStorage.setItem(MODE_KEY, mode), [mode]);
   useEffect(() => localStorage.setItem(MODEL_KEY, model), [model]);
+  useEffect(() => localStorage.setItem(EFFORT_KEY, effort), [effort]);
 
   // job polling — React Query refetchInterval stands in for streaming
   const { data: job } = useQuery({
@@ -120,7 +123,7 @@ export default function Chat() {
   }, [messages.length, job?.streamEvents?.length]);
 
   const askMut = useMutation({
-    mutationFn: (prompt: string) => api.ask(prompt, database, activeId ?? undefined, mode, model || undefined),
+    mutationFn: (prompt: string) => api.ask(prompt, database, activeId ?? undefined, mode, model || undefined, effort || undefined),
     onSuccess: (res, prompt) => {
       setJobId(res.jobId);
       setPendingPrompt(prompt);
@@ -492,6 +495,7 @@ export default function Chat() {
               <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                 <ProductSelect products={products} value={database} onChange={setDatabase} disabled={loading} />
                 <ModelSelect models={models} value={model} onChange={setModel} disabled={loading} />
+                <EffortSelect value={effort} onChange={setEffort} disabled={loading} />
                 <ModeSwitch value={mode} onChange={setMode} disabled={loading} />
               </div>
               <button
@@ -527,6 +531,39 @@ export default function Chat() {
           </Dialog>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function EffortSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="relative">
+      <svg className="w-3.5 h-3.5 text-emerald-500/80 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        title="Reasoning effort (only applies to reasoning-capable models)"
+        className="appearance-none pl-8 pr-7 py-1.5 rounded-lg border border-gray-800 bg-gray-950/60 text-xs text-gray-200 hover:border-gray-700 transition-colors disabled:opacity-50 focus:outline-none focus:border-emerald-400/50 cursor-pointer"
+      >
+        <option value="">Default effort</option>
+        <option value="low">Low effort</option>
+        <option value="medium">Medium effort</option>
+        <option value="high">High effort</option>
+      </select>
+      <svg className="w-3 h-3 text-gray-600 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+      </svg>
     </div>
   );
 }

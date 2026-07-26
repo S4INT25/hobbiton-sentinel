@@ -13,6 +13,9 @@ public class AnalyticsQueryJob
 
     /// <summary>OpenRouter model id selected for this question. Null/empty = system default model.</summary>
     public string? Model { get; set; }
+
+    /// <summary>Reasoning effort selected for this question ("low"|"medium"|"high"). Null/empty = model default.</summary>
+    public string? ReasoningEffort { get; set; }
     public string Status { get; set; } = "pending"; // pending | running | completed | failed
     public DateTime SubmittedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }

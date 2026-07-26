@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using Sentinel.Admin;
 using Sentinel.Admin.Models;
 
@@ -10,7 +9,6 @@ namespace Sentinel.Agent;
 /// </summary>
 public class ChatAnalyticsAgent(AnalyticsAgentCore core)
 {
-    [Experimental("OPENAI001")]
     public Task<AnalyticsResponse> AskAsync(
         string prompt,
         string database = "lipila_blaze",
@@ -18,11 +16,12 @@ public class ChatAnalyticsAgent(AnalyticsAgentCore core)
         Func<AnalyticsStreamEvent, Task>? onEvent = null,
         IEnumerable<AgentMemory>? memories = null,
         string? model = null,
+        string? reasoningEffort = null,
         CancellationToken cancellationToken = default)
         => core.AskAsync(
             prompt,
             database,
-            AgentProfile.Chat(model: model),
+            AgentProfile.Chat(model: model, reasoningEffort: reasoningEffort),
             history,
             onEvent,
             onToolCall: null,

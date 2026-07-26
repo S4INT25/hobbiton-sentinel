@@ -27,6 +27,7 @@ const EMPTY: Partial<WorkflowDefinition> = {
   enabled: true,
   targetDatabase: '',
   model: '',
+  reasoningEffort: '',
   emailSubject: '',
   emailRecipients: '',
   customPrompt: '',
@@ -71,7 +72,7 @@ export function WorkflowForm({
           </select>
         </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
           <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1">Target database</label>
           <select value={value.targetDatabase ?? ''} onChange={(e) => onChange({ ...value, targetDatabase: e.target.value })} className={inputCls}>
@@ -84,6 +85,15 @@ export function WorkflowForm({
           <select value={value.model ?? ''} onChange={(e) => onChange({ ...value, model: e.target.value })} className={inputCls}>
             <option value="">— system default —</option>
             {models.map((m) => <option key={m.modelId} value={m.modelId}>{m.displayName}{m.isDefault ? ' (default)' : ''}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1">Reasoning effort</label>
+          <select value={value.reasoningEffort ?? ''} onChange={(e) => onChange({ ...value, reasoningEffort: e.target.value })} className={inputCls}>
+            <option value="">— model default —</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
           </select>
         </div>
       </div>

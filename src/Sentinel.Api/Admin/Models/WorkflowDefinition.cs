@@ -20,6 +20,9 @@ public class WorkflowDefinition
     /// <summary>OpenRouter model id override (e.g. "anthropic/claude-sonnet-4.5"). Empty = system default model.</summary>
     public string Model { get; set; } = "";
 
+    /// <summary>Reasoning effort override ("low"|"medium"|"high"). Empty = model default.</summary>
+    public string ReasoningEffort { get; set; } = "";
+
     public bool IsDeleted { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;

@@ -124,6 +124,7 @@ export interface WorkflowDefinition {
   customPrompt: string;
   systemPrompt: string;
   model: string;
+  reasoningEffort: string;
   isDeleted: boolean;
   createdAt: string;
   updatedAt: string;
@@ -461,10 +462,10 @@ export const api = {
   shareConversation: (id: string) =>
     f<{ shareId: string }>(`/api/analytics/conversations/${id}/share`, { method: 'POST' }),
   unshareConversation: (id: string) => f<void>(`/api/analytics/conversations/${id}/share`, del),
-  ask: (prompt: string, database: string, conversationId?: string, mode?: string, model?: string) =>
+  ask: (prompt: string, database: string, conversationId?: string, mode?: string, model?: string, reasoningEffort?: string) =>
     f<{ jobId: string; conversationId: string; status: string }>(
       '/api/analytics/ask',
-      post({ prompt, database, conversationId, mode, model })
+      post({ prompt, database, conversationId, mode, model, reasoningEffort })
     ),
   getJob: (jobId: string) => f<AnalyticsJob>(`/api/analytics/jobs/${jobId}`),
 

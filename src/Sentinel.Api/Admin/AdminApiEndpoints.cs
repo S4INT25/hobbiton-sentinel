@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using Hangfire;
@@ -16,7 +15,6 @@ namespace Sentinel.Admin;
 
 public static class AdminApiEndpoints
 {
-    [Experimental("OPENAI001")]
     public static void MapAdminApi(this WebApplication app)
     {
         var api = app.MapGroup("/api").RequireAuthorization(AuthConstants.Policy);
@@ -372,7 +370,8 @@ public static class AdminApiEndpoints
                 Prompt = req.Prompt,
                 Database = req.Database ?? "lipila_blaze",
                 Mode = req.Mode ?? "general",
-                Model = req.Model
+                Model = req.Model,
+                ReasoningEffort = req.ReasoningEffort
             };
 
             await jobStore.CreateAsync(job);
@@ -1033,7 +1032,7 @@ public record CreateUserRequest(string Username, string Password, string Role, s
 
 public record CaseFeedbackRequest(string Action, string? Reason, FeedbackRule? CreateRule);
 
-public record AnalyticsAskRequest(string Prompt, string? Database, string? ConversationId = null, string? Mode = null, string? Model = null);
+public record AnalyticsAskRequest(string Prompt, string? Database, string? ConversationId = null, string? Mode = null, string? Model = null, string? ReasoningEffort = null);
 
 public record CreateConversationRequest(string Database);
 

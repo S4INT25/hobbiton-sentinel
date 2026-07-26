@@ -125,6 +125,7 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
             e.Property(w => w.CustomPrompt).HasColumnName("custom_prompt");
             e.Property(w => w.SystemPrompt).HasColumnName("system_prompt");
             e.Property(w => w.Model).HasColumnName("model");
+            e.Property(w => w.ReasoningEffort).HasColumnName("reasoning_effort");
             e.Property(w => w.IsDeleted).HasColumnName("is_deleted");
             e.Property(w => w.CreatedAt).HasColumnName("created_at");
             e.Property(w => w.UpdatedAt).HasColumnName("updated_at");

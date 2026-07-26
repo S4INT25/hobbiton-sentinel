@@ -66,6 +66,7 @@ public class PostgresWorkflowStore(
             existing.CustomPrompt = workflow.CustomPrompt;
             existing.SystemPrompt = workflow.SystemPrompt;
             existing.Model = workflow.Model;
+            existing.ReasoningEffort = workflow.ReasoningEffort;
             existing.IsDeleted = workflow.IsDeleted;
             existing.UpdatedAt = now;
         }

@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -55,7 +54,6 @@ public class AnalyticsAgentCore(
         "FORMAT", "INTERVAL", "DAY", "HOUR", "WEEK", "MONTH", "YEAR"
     };
 
-    [Experimental("OPENAI001")]
     public async Task<AnalyticsResponse> AskAsync(
         string prompt,
         string database,
@@ -150,9 +148,9 @@ public class AnalyticsAgentCore(
             var options = new ChatCompletionOptions
             {
                 MaxOutputTokenCount = profile.MaxOutputTokens,
-                Temperature = 0.1f,
-                ReasoningEffortLevel = ChatReasoningEffortLevel.High
+                Temperature = 0.1f
             };
+            ReasoningEffort.Apply(options, profile.ReasoningEffort);
 
             foreach (var tool in tools) options.Tools.Add(tool);
 

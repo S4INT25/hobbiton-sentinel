@@ -343,9 +343,7 @@ public class FraudAgent(
                 MaxOutputTokenCount = 4096,
                 Temperature = 0.1f,
             };
-#pragma warning disable SCME0001
-            options.Patch.Set("$.thinking"u8, BinaryData.FromObjectAsJson(new { type = "disabled" }));
-#pragma warning restore SCME0001
+            ReasoningEffort.Apply(options, request.ReasoningEffort);
 
             foreach (var tool in tools) options.Tools.Add(tool);
 

@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using Sentinel.Admin.Models;
 
 namespace Sentinel.Agent;
@@ -10,13 +9,13 @@ namespace Sentinel.Agent;
 /// </summary>
 public class WorkflowAnalyticsAgent(AnalyticsAgentCore core, IConfiguration config)
 {
-    [Experimental("OPENAI001")]
     public Task<AnalyticsResponse> RunAsync(
         string prompt,
         string database,
         IEnumerable<AgentMemory>? memories = null,
         Func<AgentToolCall, Task>? onToolCall = null,
         string? model = null,
+        string? reasoningEffort = null,
         CancellationToken cancellationToken = default)
     {
         // Reports can be long; allow tuning the budget without a code change (default keeps
@@ -26,7 +25,7 @@ public class WorkflowAnalyticsAgent(AnalyticsAgentCore core, IConfiguration conf
         return core.AskAsync(
             prompt,
             database,
-            AgentProfile.Workflow(maxOutputTokens, model),
+            AgentProfile.Workflow(maxOutputTokens, model, reasoningEffort),
             history: null,
             onEvent: null,
             onToolCall: onToolCall,
