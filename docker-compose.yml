@@ -15,7 +15,7 @@ services:
       # OpenRouter
       OpenRouter__ApiKey: ${OPENROUTER_API_KEY}
       OpenRouter__Endpoint: ${OPENROUTER_ENDPOINT:-https://openrouter.ai/api/v1}
-      OpenRouter__DefaultModel: ${OPENROUTER_DEFAULT_MODEL:-anthropic/claude-sonnet-4.5}
+      OpenRouter__DefaultModel: ${OPENROUTER_DEFAULT_MODEL:-deepseek/deepseek-v4-flash}
 
       # PostgreSQL
       ConnectionStrings__Sentinel: Host=postgres;Database=sentinel;Username=sentinel;Password=${POSTGRES_PASSWORD}

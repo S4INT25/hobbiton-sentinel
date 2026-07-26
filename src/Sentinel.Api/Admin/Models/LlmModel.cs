@@ -46,28 +46,23 @@ public static class LlmModelDefaults
     [
         new LlmModel
         {
-            DisplayName = "Claude Sonnet 4.5", ModelId = "anthropic/claude-sonnet-4.5",
-            Description = "Best all-round reasoning and analysis", Enabled = true, IsDefault = true, SortOrder = 0
+            DisplayName = "DeepSeek V4 Flash", ModelId = "deepseek/deepseek-v4-flash",
+            Description = "Fast and cheap — great for most tasks", Enabled = true, IsDefault = true, SortOrder = 0
         },
         new LlmModel
         {
-            DisplayName = "GPT-5", ModelId = "openai/gpt-5",
-            Description = "OpenAI flagship — strong general reasoning", Enabled = true, SortOrder = 1
+            DisplayName = "DeepSeek V4 Pro", ModelId = "deepseek/deepseek-v4-pro",
+            Description = "Deeper reasoning for complex analysis", Enabled = true, SortOrder = 1
         },
         new LlmModel
         {
-            DisplayName = "Gemini 2.5 Pro", ModelId = "google/gemini-2.5-pro",
-            Description = "Google flagship — long context, fast", Enabled = true, SortOrder = 2
+            DisplayName = "Kimi K3", ModelId = "moonshotai/kimi-k3",
+            Description = "Moonshot AI — strong long-context reasoning", Enabled = true, SortOrder = 2
         },
         new LlmModel
         {
-            DisplayName = "DeepSeek V3.1", ModelId = "deepseek/deepseek-chat-v3.1",
-            Description = "Low-cost workhorse for scheduled runs", Enabled = true, SortOrder = 3
-        },
-        new LlmModel
-        {
-            DisplayName = "Llama 3.3 70B", ModelId = "meta-llama/llama-3.3-70b-instruct",
-            Description = "Open-weight, cheap and capable", Enabled = true, SortOrder = 4
+            DisplayName = "Claude Opus 5 Fast", ModelId = "anthropic/claude-opus-5-fast",
+            Description = "Anthropic top-tier reasoning", Enabled = true, SortOrder = 3
         },
     ];
 }

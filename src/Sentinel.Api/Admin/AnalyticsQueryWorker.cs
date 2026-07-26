@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using OpenAI;
+using OpenAI.Chat;
 using Sentinel.Admin.Models;
 using Sentinel.Admin.Stores;
 using Sentinel.Agent;
@@ -10,6 +12,8 @@ public class AnalyticsQueryWorker(
     IServiceScopeFactory scopeFactory,
     IAnalyticsJobStore jobStore,
     IAnalyticsChatStore chatStore,
+    OpenAIClient ai,
+    IConfiguration config,
     ILogger<AnalyticsQueryWorker> logger) : BackgroundService
 {
     private readonly Channel<string> _channel = Channel.CreateUnbounded<string>(
@@ -109,7 +113,7 @@ public class AnalyticsQueryWorker(
                     Database = job.Database,
                     Mode = job.Mode,
                     UserId = job.UserId,
-                    Title = GenerateTitle(job.Prompt)
+                    Title = "New Conversation"
                 };
             }
             else
@@ -122,8 +126,8 @@ public class AnalyticsQueryWorker(
                 conversation.Messages.Add(new ChatEntry { Role = "user", Content = job.Prompt });
             conversation.Messages.Add(new ChatEntry { Role = "assistant", Content = job.Prompt, Response = result });
 
-            if (conversation.Title == "New Conversation" && conversation.Messages.Count >= 2)
-                conversation.Title = GenerateTitle(job.Prompt);
+            if (conversation.Messages.Count == 2)
+                conversation.Title = await SummarizeTitleAsync(job.Prompt);
 
             await chatStore.SaveConversationAsync(conversation);
             logger.LogInformation("Job {JobId} completed", jobId);
@@ -163,6 +167,32 @@ public class AnalyticsQueryWorker(
 
             logger.LogError(ex, "Job {JobId} failed", jobId);
         }
+    }
+
+    private async Task<string> SummarizeTitleAsync(string prompt)
+    {
+        try
+        {
+            var model = config["OpenRouter:DefaultModel"] ?? "deepseek/deepseek-v4-flash";
+            var chatClient = ai.GetChatClient(model);
+            var completion = await chatClient.CompleteChatAsync(
+                [
+                    new SystemChatMessage(
+                        "Summarize this query into a very short title — 5 words or less. Output ONLY the title, no quotes, no punctuation, no explanation."),
+                    new UserChatMessage(prompt)
+                ],
+                new ChatCompletionOptions { MaxOutputTokenCount = 20, Temperature = 0.3f });
+            var title = completion.Value.Content[0].Text
+                .Trim().Trim('"', '\'', '`').TrimEnd('.', '!', '?', ':', ';', '。');
+            if (!string.IsNullOrWhiteSpace(title) && title.Length <= 60)
+                return title;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Title summarization failed — falling back to truncation");
+        }
+
+        return GenerateTitle(prompt);
     }
 
     private static string GenerateTitle(string message)
