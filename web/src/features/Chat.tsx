@@ -46,6 +46,10 @@ export default function Chat() {
 
   const { data: products = [] } = useQuery({ queryKey: ['products-enabled'], queryFn: api.enabledProducts });
   const { data: models = [] } = useQuery({ queryKey: ['models-enabled'], queryFn: api.enabledModels });
+  const { data: providers = [] } = useQuery({ queryKey: ['providers-enabled'], queryFn: api.enabledProviders });
+
+  const defaultProviderId = providers.find((p) => p.isDefault)?.id;
+  const providerModels = defaultProviderId ? models.filter((m) => m.providerId === defaultProviderId) : models;
   const { data: conversations = [] } = useQuery({ queryKey: ['conversations'], queryFn: api.listConversations });
   const { data: conversation } = useQuery({
     queryKey: ['conversation', activeId],
@@ -60,8 +64,8 @@ export default function Chat() {
 
   // default model once models load — prefer the admin-marked default
   useEffect(() => {
-    if (!model && models.length > 0) setModel((models.find((m) => m.isDefault) ?? models[0]).modelId);
-  }, [models, model]);
+    if (!model && providerModels.length > 0) setModel((providerModels.find((m) => m.isDefault) ?? providerModels[0]).modelId);
+  }, [providerModels, model]);
 
   useEffect(() => localStorage.setItem(DB_KEY, database), [database]);
   useEffect(() => localStorage.setItem(MODE_KEY, mode), [mode]);
@@ -494,7 +498,7 @@ export default function Chat() {
             <div className="flex items-center justify-between gap-2 pt-2 mt-1.5 border-t border-gray-800/60">
               <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                 <ProductSelect products={products} value={database} onChange={setDatabase} disabled={loading} />
-                <ModelSelect models={models} value={model} onChange={setModel} disabled={loading} />
+                <ModelSelect models={providerModels} value={model} onChange={setModel} disabled={loading} />
                 <EffortSelect value={effort} onChange={setEffort} disabled={loading} />
                 <ModeSwitch value={mode} onChange={setMode} disabled={loading} />
               </div>

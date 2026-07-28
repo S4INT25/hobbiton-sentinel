@@ -42,6 +42,10 @@ export function WorkflowForm({
 }) {
   const { data: products = [] } = useQuery({ queryKey: ['products-enabled'], queryFn: api.enabledProducts });
   const { data: models = [] } = useQuery({ queryKey: ['models-enabled'], queryFn: api.enabledModels });
+  const { data: providers = [] } = useQuery({ queryKey: ['providers-enabled'], queryFn: api.enabledProviders });
+
+  const defaultProviderId = providers.find((p) => p.isDefault)?.id;
+  const providerModels = defaultProviderId ? models.filter((m) => m.providerId === defaultProviderId) : models;
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -84,7 +88,7 @@ export function WorkflowForm({
           <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1">Model</label>
           <select value={value.model ?? ''} onChange={(e) => onChange({ ...value, model: e.target.value })} className={inputCls}>
             <option value="">— system default —</option>
-            {models.map((m) => <option key={m.modelId} value={m.modelId}>{m.displayName}{m.isDefault ? ' (default)' : ''}</option>)}
+            {providerModels.map((m) => <option key={m.modelId} value={m.modelId}>{m.displayName}{m.isDefault ? ' (default)' : ''}</option>)}
           </select>
         </div>
         <div>
