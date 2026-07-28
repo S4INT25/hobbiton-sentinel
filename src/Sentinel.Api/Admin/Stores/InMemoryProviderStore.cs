@@ -3,7 +3,7 @@ using Sentinel.Admin.Models;
 
 namespace Sentinel.Admin.Stores;
 
-public class InMemoryProviderStore : IProviderStore
+public class InMemoryProviderStore(ILlmModelStore llmModelStore) : IProviderStore
 {
     private readonly ConcurrentDictionary<int, ProviderConfig> _providers = new();
     private int _nextId;
@@ -46,10 +46,20 @@ public class InMemoryProviderStore : IProviderStore
         return Task.CompletedTask;
     }
 
-    public Task DeleteAsync(int id)
+    public async Task DeleteAsync(int id)
     {
+        var defaultProvider = _providers.Values.FirstOrDefault(p => p.IsDefault && p.Id != id);
+        if (defaultProvider is null)
+            throw new InvalidOperationException("Cannot delete the only/default provider. Mark another provider as default first.");
+
+        var allModels = await llmModelStore.GetAllAsync();
+        foreach (var model in allModels.Where(m => m.ProviderId == id))
+        {
+            model.ProviderId = defaultProvider.Id;
+            await llmModelStore.UpsertAsync(model);
+        }
+
         _providers.TryRemove(id, out _);
-        return Task.CompletedTask;
     }
 
     public async Task SeedDefaultsAsync()
@@ -87,10 +97,6 @@ public class InMemoryProviderStore : IProviderStore
         }
 
         var defaultSlugs = defaults.Select(d => d.Slug).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var (id, p) in _providers)
-        {
-            if (!defaultSlugs.Contains(p.Slug))
-                _providers.TryRemove(id, out _);
-        }
+        // Never delete non-default providers — admins may have added their own
     }
 }

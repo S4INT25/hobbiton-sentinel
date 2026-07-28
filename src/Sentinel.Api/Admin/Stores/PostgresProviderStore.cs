@@ -76,6 +76,18 @@ public class PostgresProviderStore(IDbContextFactory<SentinelDbContext> dbFactor
     public async Task DeleteAsync(int id)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
+
+        var defaultProvider = await db.Providers
+            .FirstOrDefaultAsync(p => p.IsDefault && p.Id != id);
+        if (defaultProvider is null)
+            throw new InvalidOperationException("Cannot delete the only/default provider. Mark another provider as default first.");
+
+        var orphaned = await db.LlmModels
+            .Where(m => m.ProviderId == id)
+            .ToListAsync();
+        foreach (var model in orphaned)
+            model.ProviderId = defaultProvider.Id;
+
         var entity = await db.Providers.FirstOrDefaultAsync(p => p.Id == id);
         if (entity is not null)
         {
@@ -129,12 +141,8 @@ public class PostgresProviderStore(IDbContextFactory<SentinelDbContext> dbFactor
         }
 
         var defaultSlugs = defaults.Select(d => d.Slug).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var p in existing.Where(e => !defaultSlugs.Contains(e.Slug)))
-        {
-            db.Providers.Remove(p);
-            anyChanged = true;
-        }
 
+        // Only ensure defaults exist — never delete non-default providers that the admin added
         if (anyChanged)
             await db.SaveChangesAsync();
     }
