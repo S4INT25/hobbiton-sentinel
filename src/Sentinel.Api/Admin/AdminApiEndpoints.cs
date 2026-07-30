@@ -884,6 +884,7 @@ public static class AdminApiEndpoints
                 var def = await providers.GetBySlugAsync("openrouter");
                 if (def is not null) model.ProviderId = def.Id;
             }
+
             await store.UpsertAsync(model);
             await AuditAction(audit, ctx, "upsert", "model", model.Id.ToString(), model.DisplayName);
             return Results.Ok(model);
@@ -1037,12 +1038,6 @@ public static class AdminApiEndpoints
         string action, string resourceType, string? resourceId, string? details = null)
     {
         var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "";
-        if (ip == "127.0.0.1" || ip == "::1" || ip == "0.0.0.1")
-        {
-            ip = ctx.Request.Headers["X-Forwarded-For"].FirstOrDefault()
-                 ?? ctx.Request.Headers["X-Real-IP"].FirstOrDefault()
-                 ?? ip;
-        }
 
         await audit.LogAsync(new AuditLog
         {
@@ -1063,7 +1058,13 @@ public record CreateUserRequest(string Username, string Password, string Role, s
 
 public record CaseFeedbackRequest(string Action, string? Reason, FeedbackRule? CreateRule);
 
-public record AnalyticsAskRequest(string Prompt, string? Database, string? ConversationId = null, string? Mode = null, string? Model = null, string? ReasoningEffort = null);
+public record AnalyticsAskRequest(
+    string Prompt,
+    string? Database,
+    string? ConversationId = null,
+    string? Mode = null,
+    string? Model = null,
+    string? ReasoningEffort = null);
 
 public record CreateConversationRequest(string Database);
 

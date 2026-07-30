@@ -334,9 +334,14 @@ public class AnalyticsAgentCore(
                     messages.Add(new ToolChatMessage(toolCall.Id, result));
                 }
 
-                // If ask_user was called in interactive mode, break to let UI handle it
+                // If ask_user was called in interactive mode, break to let UI handle it.
+                // Keep any text the model wrote alongside the question — this path never reaches
+                // the ChatFinishReason.Stop branch, so without this the turn is persisted with an
+                // empty Explanation and the UI renders a blank assistant bubble.
                 if (pendingQuestion != null)
                 {
+                    if (!string.IsNullOrWhiteSpace(textContent))
+                        allExplanationParts.Add(textContent.Trim());
                     await Emit(onEvent, "asking", pendingQuestion);
                     break;
                 }
@@ -349,6 +354,11 @@ public class AnalyticsAgentCore(
         response.Results = chartResults;
         response.PendingQuestion = pendingQuestion;
         response.PendingChoices = pendingChoices;
+
+        // Catch-all for every loop exit that isn't ChatFinishReason.Stop (ask_user, iteration
+        // budget exhausted). A turn must never be persisted with nothing to display.
+        if (string.IsNullOrWhiteSpace(response.Explanation))
+            response.Explanation = allExplanationParts.OrderByDescending(p => p.Length).FirstOrDefault();
 
         if (chartResults.Count > 0)
         {
@@ -569,6 +579,15 @@ public class AnalyticsAgentCore(
         for (int i = 0; i < queries.Count; i++)
         {
             var sql = queries[i];
+
+            // Validate soft-delete filters before categorical ones — a query that silently counts
+            // deleted rows returns plausible-looking numbers that are simply wrong.
+            var softDeleteValidation = await ValidateSoftDeleteFilterAsync(sql, defaultDb);
+            if (softDeleteValidation != null)
+            {
+                results.Add($"Query {i + 1} validation error:\n{softDeleteValidation}");
+                continue;
+            }
 
             // Validate categorical filters
             var validation = await ValidateCategoricalFiltersAsync(sql, defaultDb);
@@ -1021,6 +1040,15 @@ public class AnalyticsAgentCore(
                  - Use single quotes for string literals. Add LIMIT 50 unless user specifies otherwise.
                  - For time filtering: `created_at >= now() - INTERVAL 7 DAY`.
 
+                 ## Soft Deletes (read this before every query)
+                 Tables marked **CDC replica** in the schema are replicated from the source database and
+                 keep rows that were DELETED upstream, flagged with `_peerdb_is_deleted = 1`.
+                 - EVERY query touching them must filter `_peerdb_is_deleted = 0` — in the outer WHERE,
+                   inside CTEs and subqueries, and on both sides of every JOIN.
+                 - Forgetting it does not error. It returns a plausible number that is simply wrong.
+                 - Where the schema says the engine is ReplacingMergeTree, also add `FINAL` after the
+                   table name so updated rows are not counted once per version.
+
                  ## Filter Values
                  The schema lists allowed values for LowCardinality columns. Use ONLY these exact values (case-sensitive).
                  Never guess or invent filter values.
@@ -1084,6 +1112,36 @@ public class AnalyticsAgentCore(
         return mentionsEmailOrReport && hasDeliveryVerb;
     }
 
+
+    /// <summary>
+    /// Rejects queries against PeerDB CDC replica tables that never mention
+    /// <c>_peerdb_is_deleted</c>. Those tables keep deleted rows, so an unfiltered count/sum is
+    /// silently inflated — the model is told this in the schema block, but instructions get
+    /// dropped on long queries, and a wrong number is worse than a retry.
+    /// ponytail: a substring check, not SQL parsing. Mentioning the column anywhere counts as
+    /// handled — upgrade to per-table clause analysis only if agents start gaming it.
+    /// </summary>
+    private async Task<string?> ValidateSoftDeleteFilterAsync(string sql, string database)
+    {
+        if (sql.Contains("_peerdb_is_deleted", StringComparison.OrdinalIgnoreCase)) return null;
+
+        var tables = ExtractReferencedTables(sql, database);
+        if (tables.Count == 0) return null;
+
+        var cdcTables = new List<string>();
+        foreach (var table in tables)
+            if (await schemaLoader.HasSoftDeletesAsync(database, table))
+                cdcTables.Add(table);
+
+        if (cdcTables.Count == 0) return null;
+
+        return "MISSING SOFT-DELETE FILTER:\n" +
+               string.Join("\n", cdcTables.Select(t => $"- `{database}.{t}` is a PeerDB CDC replica")) +
+               "\n\nThese tables retain rows deleted in the source system, so this query would count " +
+               "them and report inflated numbers. Add `_peerdb_is_deleted = 0` to the WHERE clause " +
+               "of every reference to these tables — including inside CTEs, subqueries and both " +
+               "sides of any JOIN — then call run_sql again.";
+    }
 
     private async Task<string?> ValidateCategoricalFiltersAsync(string sql, string database)
     {
@@ -1218,7 +1276,7 @@ public class AnalyticsAgentCore(
         return sb.ToString();
     }
 
-    private static List<string> ExtractReferencedTables(string sql, string database)
+    internal static List<string> ExtractReferencedTables(string sql, string database)
     {
         var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (Match m in FromTableRegex.Matches(sql))

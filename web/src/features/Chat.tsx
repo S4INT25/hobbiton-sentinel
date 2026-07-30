@@ -421,6 +421,7 @@ export default function Chat() {
                     idx={idx}
                     chartTypeOverrides={chartTypeOverrides}
                     onChartTypeChange={(key, t) => setChartTypeOverrides((prev) => ({ ...prev, [key]: t }))}
+                    onAnswer={idx === messages.length - 1 && !loading ? quickAsk : undefined}
                   />
                 </div>
               )
@@ -796,11 +797,13 @@ function AssistantMessage({
   idx,
   chartTypeOverrides,
   onChartTypeChange,
+  onAnswer,
 }: {
   entry: ChatEntry;
   idx: number;
   chartTypeOverrides: Record<string, string>;
   onChartTypeChange: (key: string, t: string) => void;
+  onAnswer?: (prompt: string) => void;
 }) {
   const r = entry.response;
   if (!r) return <div className="text-xs text-gray-500 whitespace-pre-wrap">{entry.content}</div>;
@@ -808,6 +811,13 @@ function AssistantMessage({
   const multiResults = (r.results ?? []).filter((q) => q.rows.length > 0);
   const showMulti = multiResults.length > 1;
   const tokens = (r.inputTokens ?? 0) + (r.outputTokens ?? 0);
+
+  // Every branch above can be empty at once (agent stopped with no text, no question, no rows).
+  // Say so rather than committing an empty panel that reads as a lost response.
+  const hasContent = !!(
+    r.error || r.explanation || r.pendingQuestion || r.summary || r.riskLevel ||
+    r.findings?.length || r.recommendedActions?.length || r.rows?.length || multiResults.length
+  );
 
   return (
     <div className="panel space-y-3 max-w-full p-4 border-l-2 border-l-emerald-500/40">
@@ -824,7 +834,36 @@ function AssistantMessage({
         <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-xs text-rose-400 font-mono whitespace-pre-wrap">{r.error}</div>
       )}
 
+      {!hasContent && (
+        <div className="text-xs text-gray-500 italic">The agent finished without producing a reply. Try rephrasing your question.</div>
+      )}
+
       {r.explanation && <Markdown text={r.explanation} />}
+
+      {r.pendingQuestion && (
+        <div className="border border-sky-500/25 bg-sky-500/[0.06] rounded-lg p-3 space-y-2.5">
+          <div className="flex items-start gap-2">
+            <svg className="w-3.5 h-3.5 text-sky-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <Markdown text={r.pendingQuestion} className="text-gray-200" />
+          </div>
+          {r.pendingChoices && r.pendingChoices.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 print:hidden">
+              {r.pendingChoices.map((choice) => (
+                <button
+                  key={choice}
+                  onClick={() => onAnswer?.(choice)}
+                  disabled={!onAnswer}
+                  className="px-2.5 py-1 text-xs rounded-lg border border-sky-500/30 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20 hover:border-sky-500/50 disabled:opacity-40 disabled:hover:bg-sky-500/10 transition-colors"
+                >
+                  {choice}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {(r.summary || r.riskLevel || r.findings?.length > 0 || r.recommendedActions?.length > 0) && (
         <div className="border border-gray-800 rounded-lg p-3 bg-gray-950/50 space-y-2.5 break-inside-avoid">

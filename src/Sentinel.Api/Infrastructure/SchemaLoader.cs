@@ -82,6 +82,16 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
     }
 
 
+    /// <summary>
+    /// True when the table is a PeerDB CDC replica — deletes are soft (<c>_peerdb_is_deleted = 1</c>)
+    /// and must be filtered out of every query for aggregates to be correct.
+    /// </summary>
+    public async Task<bool> HasSoftDeletesAsync(string database, string table)
+    {
+        var columns = await GetDatabaseColumnsAsync(ResolveDatabaseName(database));
+        return columns.TryGetValue(table, out var cols) && HasSoftDeleteColumn(cols);
+    }
+
     public async Task<Dictionary<string, List<string>>> GetCategoricalValuesAsync(string database, string table)
     {
         var resolvedDatabase = ResolveDatabaseName(database);
@@ -120,6 +130,11 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
         foreach (var col in columns)
             sb.AppendLine($"  - {col.Name} ({col.Type})");
 
+        var isCdc = HasSoftDeleteColumn(columns);
+        if (isCdc)
+            sb.AppendLine("  **CDC replica** — deletes are soft. Every query on this table MUST include " +
+                          "`_peerdb_is_deleted = 0`, or it counts rows deleted in the source system.");
+
         var values = await FetchCategoricalValuesAsync(database, table);
         if (values.Count > 0)
         {
@@ -136,7 +151,8 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
         try
         {
             var countJson = await ch.QueryAsync(
-                $"SELECT count() as cnt FROM {database}.`{table}` WHERE _peerdb_is_deleted = 0");
+                $"SELECT count() as cnt FROM {database}.`{table}`" +
+                (isCdc ? " WHERE _peerdb_is_deleted = 0" : ""));
             var count = ParseStringColumn(countJson, "cnt").FirstOrDefault() ?? "?";
             sb.AppendLine($"  **Row count (active):** {count}");
         }
@@ -226,7 +242,8 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
         sb.AppendLine();
 
         var tablesJson = await ch.QueryAsync(
-            $"SELECT name FROM system.tables WHERE database = '{database}' ORDER BY name");
+            $"SELECT name, engine FROM system.tables WHERE database = '{database}' ORDER BY name");
+        var tableEngines = ParseTableEngines(tablesJson);
         var allTables = ParseStringColumn(tablesJson, "name");
         var tables = allTables
             .Where(t => !ExcludedTablePrefixes.Any(p => t.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
@@ -275,6 +292,22 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
                 sb.AppendLine();
             }
 
+            // These are PeerDB CDC replicas. The _peerdb_* columns are hidden from the column list
+            // above to keep the prompt lean, but the agent MUST filter on them or every aggregate
+            // silently includes rows that were deleted in the source system.
+            if (HasSoftDeleteColumn(columns))
+            {
+                var engine = tableEngines.GetValueOrDefault(table, "");
+                var isReplacing = engine.Contains("Replacing", StringComparison.OrdinalIgnoreCase);
+                sb.AppendLine(isReplacing
+                    ? "  **CDC replica (" + engine + ")** — you MUST write " +
+                      $"`FROM {database}.`{table}` FINAL WHERE _peerdb_is_deleted = 0`. " +
+                      "Without FINAL you get duplicate rows for every updated record; " +
+                      "without the filter you count rows deleted in the source system."
+                    : "  **CDC replica** — you MUST add `WHERE _peerdb_is_deleted = 0` to every query " +
+                      "on this table, or you count rows deleted in the source system.");
+            }
+
             var categoricalCols = userColumns
                 .Where(c => IsCategoricalType(c.Type))
                 .Select(c => c.Name)
@@ -310,6 +343,16 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
         }
 
         sb.AppendLine("---");
+        sb.AppendLine("RULES FOR CDC REPLICA TABLES:");
+        sb.AppendLine("- Every table marked **CDC replica** above is replicated from the source database by PeerDB.");
+        sb.AppendLine("- Deletes are SOFT: the row stays with `_peerdb_is_deleted = 1`. It is still counted by");
+        sb.AppendLine("  count(), sum() and every join unless you exclude it.");
+        sb.AppendLine("- ALWAYS add `_peerdb_is_deleted = 0` to the WHERE clause — including inside subqueries,");
+        sb.AppendLine("  CTEs and both sides of a JOIN. Omitting it silently inflates every number you report.");
+        sb.AppendLine("- On ReplacingMergeTree tables, add `FINAL` after the table name as well, otherwise an");
+        sb.AppendLine("  updated row appears once per version until ClickHouse merges it in the background.");
+        sb.AppendLine("- The `_peerdb_*` columns are not listed in the column lists above, but they do exist.");
+        sb.AppendLine();
         sb.AppendLine("RULES FOR FILTER VALUES:");
         sb.AppendLine("- LowCardinality columns above have allowed values listed (truncated if >20).");
         sb.AppendLine("- You MUST use these exact values (case-sensitive). Do NOT invent, guess, or transform them.");
@@ -393,6 +436,32 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
         catch
         {
             /* return what we have */
+        }
+
+        return result;
+    }
+
+    private static bool HasSoftDeleteColumn(IEnumerable<ColumnInfo> columns) =>
+        columns.Any(c => c.Name.Equals("_peerdb_is_deleted", StringComparison.OrdinalIgnoreCase));
+
+    private static Dictionary<string, string> ParseTableEngines(string json)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("data", out var data)) return result;
+
+            foreach (var row in data.EnumerateArray())
+            {
+                if (row.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String &&
+                    row.TryGetProperty("engine", out var e) && e.ValueKind == JsonValueKind.String)
+                    result[n.GetString()!] = e.GetString()!;
+            }
+        }
+        catch
+        {
+            /* engine hints are best-effort */
         }
 
         return result;

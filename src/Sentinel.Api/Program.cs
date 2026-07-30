@@ -1,4 +1,4 @@
-using System.ClientModel;
+using System.Net;
 using Hangfire;
 using Hangfire.Dashboard.BasicAuthorization;
 using Hangfire.Redis.StackExchange;
@@ -19,6 +19,7 @@ using Serilog.Events;
 using StackExchange.Redis;
 using ZiggyCreatures.Caching.Fusion;
 using ZiggyCreatures.Caching.Fusion.Serialization.SystemTextJson;
+using IPNetwork = System.Net.IPNetwork;
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Warning()
@@ -231,10 +232,17 @@ try
         }
     });
 
-    app.UseForwardedHeaders(new ForwardedHeadersOptions
+    var forwardedHeadersOptions = new ForwardedHeadersOptions
     {
         ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
-    });
+    };
+    // Docker's bridge network sits between the host nginx (which sets X-Forwarded-For) and
+    // Kestrel, so the default loopback-only trust list drops the header. Trust RFC1918 ranges
+    // instead of the default 127.0.0.1/::1 since the bridge gateway is the immediate peer.
+    forwardedHeadersOptions.KnownIPNetworks.Add(new IPNetwork(IPAddress.Parse("10.0.0.0"), 8));
+    forwardedHeadersOptions.KnownIPNetworks.Add(new IPNetwork(IPAddress.Parse("172.16.0.0"), 12));
+    forwardedHeadersOptions.KnownIPNetworks.Add(new IPNetwork(IPAddress.Parse("192.168.0.0"), 16));
+    app.UseForwardedHeaders(forwardedHeadersOptions);
     app.UseDefaultFiles();
     app.UseStaticFiles();
     app.UseAuthentication();

@@ -11,13 +11,21 @@ const label = 'block font-mono text-[10px] uppercase tracking-wider text-gray-50
 
 // ── Provider form ────────────────────────────────────────────────────────────
 
+// Draft state lives in the form, not the page. Lifting it up re-rendered the provider chips and
+// the whole models table on every keystroke.
 function ProviderForm({
-  value,
-  onChange,
+  initial,
+  saving,
+  onCancel,
+  onSave,
 }: {
-  value: Partial<ProviderConfig>;
-  onChange: (v: Partial<ProviderConfig>) => void;
+  initial: Partial<ProviderConfig>;
+  saving: boolean;
+  onCancel: () => void;
+  onSave: (v: Partial<ProviderConfig>) => void;
 }) {
+  const [value, setValue] = useState(initial);
+  const onChange = setValue;
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
@@ -52,6 +60,12 @@ function ProviderForm({
           <input type="number" value={value.sortOrder ?? 0} onChange={(e) => onChange({ ...value, sortOrder: parseInt(e.target.value) || 0 })} className={`${inputCls} w-16`} />
         </div>
       </div>
+      <div className="flex items-center justify-end gap-2 pt-1">
+        <button onClick={onCancel} className={btnGhost}>Cancel</button>
+        <button onClick={() => onSave(value)} disabled={saving || !value.displayName || !value.slug || !value.endpoint} className={btnPrimary}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
     </div>
   );
 }
@@ -59,12 +73,18 @@ function ProviderForm({
 // ── Model form ───────────────────────────────────────────────────────────────
 
 function ModelForm({
-  value,
-  onChange,
+  initial,
+  saving,
+  onCancel,
+  onSave,
 }: {
-  value: Partial<LlmModel>;
-  onChange: (v: Partial<LlmModel>) => void;
+  initial: Partial<LlmModel>;
+  saving: boolean;
+  onCancel: () => void;
+  onSave: (v: Partial<LlmModel>) => void;
 }) {
+  const [value, setValue] = useState(initial);
+  const onChange = setValue;
   return (
     <div className="space-y-3">
       <div>
@@ -95,6 +115,12 @@ function ModelForm({
           </label>
         </div>
       </div>
+      <div className="flex items-center justify-end gap-2 pt-1">
+        <button onClick={onCancel} className={btnGhost}>Cancel</button>
+        <button onClick={() => onSave(value)} disabled={saving || !value.modelId || !value.displayName} className={btnPrimary}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
     </div>
   );
 }
@@ -112,15 +138,15 @@ export default function ModelProviders() {
   const [editingModel, setEditingModel] = useState<Partial<LlmModel> | null>(null);
   const [deleteModel, setDeleteModel] = useState<LlmModel | null>(null);
 
-  const [selectedProviderId, setSelectedProviderId] = useState<number>(0);
+  // Derived, not stored — setting state during render to auto-select the default provider cost an
+  // extra render pass on mount and re-fired every time a delete reset the selection.
+  const [pickedProviderId, setPickedProviderId] = useState<number | null>(null);
+  const selectedProviderId =
+    (pickedProviderId != null && providers.some((p) => p.id === pickedProviderId) ? pickedProviderId : null) ??
+    (providers.find((p) => p.isDefault) ?? providers[0])?.id ??
+    0;
   const activeProv = providers.find((p) => p.id === selectedProviderId);
   const providerModels = selectedProviderId ? models.filter((m) => m.providerId === selectedProviderId) : models;
-
-  // Auto-select default or first provider on load
-  if (selectedProviderId === 0 && providers.length > 0) {
-    const def = providers.find((p) => p.isDefault) ?? providers[0];
-    setSelectedProviderId(def.id);
-  }
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['providers'] });
@@ -130,19 +156,19 @@ export default function ModelProviders() {
   };
 
   const saveProvMut = useMutation({
-    mutationFn: () => api.saveProvider(editingProv!),
+    mutationFn: (v: Partial<ProviderConfig>) => api.saveProvider(v),
     onSuccess: () => { invalidate(); setEditingProv(null); setFeedback({ message: 'Provider saved.', kind: 'success' }); },
     onError: (e: Error) => setFeedback({ message: `Provider failed: ${e.message}`, kind: 'error' }),
   });
 
   const deleteProvMut = useMutation({
     mutationFn: (id: number) => api.deleteProvider(id),
-    onSuccess: () => { invalidate(); setDeleteProv(null); if (selectedProviderId === deleteProv?.id) setSelectedProviderId(0); setFeedback({ message: 'Provider deleted.', kind: 'success' }); },
+    onSuccess: () => { invalidate(); setDeleteProv(null); setPickedProviderId(null); setFeedback({ message: 'Provider deleted.', kind: 'success' }); },
     onError: (e: Error) => setFeedback({ message: `Delete failed: ${e.message}`, kind: 'error' }),
   });
 
   const saveModelMut = useMutation({
-    mutationFn: () => api.saveModel({ ...editingModel!, providerId: selectedProviderId }),
+    mutationFn: (v: Partial<LlmModel>) => api.saveModel({ ...v, providerId: selectedProviderId }),
     onSuccess: () => { invalidate(); setEditingModel(null); setFeedback({ message: 'Model saved.', kind: 'success' }); },
     onError: (e: Error) => setFeedback({ message: `Model failed: ${e.message}`, kind: 'error' }),
   });
@@ -170,7 +196,7 @@ export default function ModelProviders() {
           {providers.map((p) => (
             <button
               key={p.id}
-              onClick={() => setSelectedProviderId(p.id)}
+              onClick={() => setPickedProviderId(p.id)}
               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-colors ${
                 p.id === selectedProviderId
                   ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
@@ -282,13 +308,13 @@ export default function ModelProviders() {
       <AnimatePresence>
         {editingProv && (
           <Dialog title={editingProv.id ? 'Edit provider' : 'New provider'} onClose={() => setEditingProv(null)}>
-            <ProviderForm value={editingProv} onChange={setEditingProv} />
-            <div className="flex items-center justify-end gap-2 pt-1">
-              <button onClick={() => setEditingProv(null)} className={btnGhost}>Cancel</button>
-              <button onClick={() => saveProvMut.mutate()} disabled={saveProvMut.isPending || !editingProv.displayName || !editingProv.slug || !editingProv.endpoint} className={btnPrimary}>
-                {saveProvMut.isPending ? 'Saving…' : 'Save'}
-              </button>
-            </div>
+            <ProviderForm
+              key={editingProv.id ?? 'new'}
+              initial={editingProv}
+              saving={saveProvMut.isPending}
+              onCancel={() => setEditingProv(null)}
+              onSave={saveProvMut.mutate}
+            />
           </Dialog>
         )}
 
@@ -308,13 +334,13 @@ export default function ModelProviders() {
 
         {editingModel && (
           <Dialog title={editingModel.id ? 'Edit model' : 'New model'} onClose={() => setEditingModel(null)}>
-            <ModelForm value={editingModel} onChange={setEditingModel} />
-            <div className="flex items-center justify-end gap-2 pt-1">
-              <button onClick={() => setEditingModel(null)} className={btnGhost}>Cancel</button>
-              <button onClick={() => saveModelMut.mutate()} disabled={saveModelMut.isPending || !editingModel.modelId || !editingModel.displayName} className={btnPrimary}>
-                {saveModelMut.isPending ? 'Saving…' : 'Save'}
-              </button>
-            </div>
+            <ModelForm
+              key={editingModel.id ?? 'new'}
+              initial={editingModel}
+              saving={saveModelMut.isPending}
+              onCancel={() => setEditingModel(null)}
+              onSave={saveModelMut.mutate}
+            />
           </Dialog>
         )}
 

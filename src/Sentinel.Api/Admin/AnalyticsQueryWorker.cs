@@ -96,12 +96,11 @@ public class AnalyticsQueryWorker(
                 });
 
             _liveText.TryRemove(jobId, out _);
-            job.Status = "completed";
-            job.CompletedAt = DateTime.UtcNow;
-            job.Result = result;
-            await jobStore.UpdateAsync(job);
 
-            // Append to conversation
+            // Append to conversation BEFORE flipping the job to "completed". The UI stops polling
+            // and refetches the conversation the moment it sees that status — if the save (and the
+            // title summarization LLM call below) is still in flight, it refetches the stale
+            // conversation and the answer never renders.
             if (conversation == null)
             {
                 conversation = new AnalyticsConversation
@@ -127,16 +126,19 @@ public class AnalyticsQueryWorker(
                 conversation.Title = await SummarizeTitleAsync(job.Prompt);
 
             await chatStore.SaveConversationAsync(conversation);
+
+            job.Status = "completed";
+            job.CompletedAt = DateTime.UtcNow;
+            job.Result = result;
+            await jobStore.UpdateAsync(job);
             logger.LogInformation("Job {JobId} completed", jobId);
         }
         catch (Exception ex)
         {
             _liveText.TryRemove(jobId, out _);
-            job.Status = "failed";
-            job.CompletedAt = DateTime.UtcNow;
-            job.Error = ex.Message;
-            await jobStore.UpdateAsync(job);
 
+            // Persist the error turn before flipping the status, for the same reason as the
+            // success path — the UI refetches the conversation as soon as the job stops running.
             if (!string.IsNullOrWhiteSpace(job.ConversationId))
             {
                 var conversation = await chatStore.GetConversationAsync(job.UserId, job.ConversationId)
@@ -161,6 +163,11 @@ public class AnalyticsQueryWorker(
                 });
                 await chatStore.SaveConversationAsync(conversation);
             }
+
+            job.Status = "failed";
+            job.CompletedAt = DateTime.UtcNow;
+            job.Error = ex.Message;
+            await jobStore.UpdateAsync(job);
 
             logger.LogError(ex, "Job {JobId} failed", jobId);
         }

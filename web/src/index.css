@@ -179,6 +179,14 @@ kbd {
 [data-stagger] > *:nth-child(10) { animation-delay: 0.39s; }
 [data-stagger] > *:nth-child(11) { animation-delay: 0.43s; }
 [data-stagger] > *:nth-child(12) { animation-delay: 0.47s; }
+/* Dialogs/overlays are rendered as direct children of the page root, so they'd otherwise pick up
+   the entrance stagger. CSS animations outrank inline styles, so `rise` overrides the element's
+   own motion animation — holding the modal invisible for its nth-child delay, sliding it 10px,
+   and suppressing its exit. Anything positioned out of flow opts out. */
+[data-stagger] > .fixed,
+[data-stagger] > [data-no-stagger] {
+  animation: none;
+}
 
 .glow-dot {
   @apply inline-block h-1.5 w-1.5 rounded-full bg-emerald-400;

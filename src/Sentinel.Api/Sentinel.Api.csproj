@@ -42,4 +42,8 @@
         <Content Include="Templates/**" CopyToOutputDirectory="Always" />
     </ItemGroup>
 
+    <ItemGroup>
+        <InternalsVisibleTo Include="Sentinel.Tests"/>
+    </ItemGroup>
+
 </Project>
