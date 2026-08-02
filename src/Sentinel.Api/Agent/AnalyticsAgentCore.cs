@@ -64,9 +64,10 @@ public class AnalyticsAgentCore(
         var resolved = await modelResolver.ResolveAsync(profile.Model);
         var isInteractive = profile.Interactive;
 
-        // Cross-database workflows get every schema in the prompt. Queries are fully qualified as
-        // db.table anyway, so the only thing stopping the agent reaching a second database was not
-        // knowing what is in it.
+        // Cross-database workflows need to know what is in the other databases, but not in full:
+        // the system prompt is re-sent on every iteration, so five complete schema blocks are paid
+        // for up to MaxIterations times. Secondary databases get a table index only — the agent
+        // pulls the columns it actually needs with describe_table, once.
         var extras = (additionalDatabases ?? [])
             .Where(d => !string.IsNullOrWhiteSpace(d) && !d.Equals(database, StringComparison.OrdinalIgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -74,7 +75,7 @@ public class AnalyticsAgentCore(
 
         var schema = await schemaLoader.GetSchemaBlockAsync(database);
         foreach (var extra in extras)
-            schema += $"\n\n### Database: `{extra}`\n" + await schemaLoader.GetSchemaBlockAsync(extra);
+            schema += "\n\n" + await schemaLoader.GetTableIndexAsync(extra);
 
         var allowInteractiveReportSending = !isInteractive || HasExplicitEmailIntent(prompt);
         var systemPrompt = BuildSystemPrompt(database, schema, isInteractive, allowInteractiveReportSending,
@@ -193,7 +194,7 @@ public class AnalyticsAgentCore(
             var streamTextSb = new StringBuilder();
             var tcBuilders = new Dictionary<int, ToolCallBuilder>();
             ChatFinishReason? finishReason = null;
-            int iterInput = 0, iterOutput = 0;
+            int iterInput = 0, iterOutput = 0, iterCached = 0;
 
             try
             {
@@ -228,6 +229,7 @@ public class AnalyticsAgentCore(
                     {
                         iterInput = update.Usage.InputTokenCount;
                         iterOutput = update.Usage.OutputTokenCount;
+                        iterCached = update.Usage.InputTokenDetails?.CachedTokenCount ?? 0;
                     }
                 }
             }
@@ -271,8 +273,14 @@ public class AnalyticsAgentCore(
             else
                 messages.Add(new AssistantChatMessage(textContent));
 
-            logger.LogInformation("[Analytics] Iteration {N}: finish={Reason} tools={Tools} tokens in={In} out={Out}",
-                iteration, finishReason, streamedToolCalls.Count, totalInput, totalOutput);
+            // Per-iteration, not cumulative: the whole message list is resent every turn, so this
+            // is what shows the prompt actually growing and whether the provider's prefix cache is
+            // absorbing the fixed part. cached=0 on every iteration means it is not.
+            logger.LogInformation(
+                "[Analytics] Iteration {N}: finish={Reason} tools={Tools} " +
+                "in={In} (cached {Cached}) out={Out} | run total in={TotalIn} out={TotalOut}",
+                iteration, finishReason, streamedToolCalls.Count,
+                iterInput, iterCached, iterOutput, totalInput, totalOutput);
 
             // Log assistant response to conversation history
             if (!string.IsNullOrWhiteSpace(textContent))
@@ -658,6 +666,11 @@ public class AnalyticsAgentCore(
 
         if (queries.Count == 0) return "No queries provided.";
 
+        // Every tool result stays in the message list for the rest of the run, so one forgotten
+        // LIMIT is paid for on every subsequent iteration. Divide the budget across the batch so a
+        // ten-query call cannot cost ten times a one-query call.
+        var maxResultChars = Math.Max(1000, ch.MaxResultLength / queries.Count);
+
         await Emit(onEvent, "executing_sql",
             queries.Count == 1 ? "Running query…" : $"Running {queries.Count} queries…");
 
@@ -697,19 +710,39 @@ public class AnalyticsAgentCore(
             await Emit(onEvent, "result",
                 $"Query {i + 1}: {tableData.Rows.Count} rows", sql);
 
-            var sb = new StringBuilder();
-            sb.AppendLine($"Query {i + 1} ({tableData.Rows.Count} rows):");
-            if (tableData.Columns.Count > 0)
-            {
-                sb.AppendLine(string.Join(" | ", tableData.Columns));
-                foreach (var row in tableData.Rows)
-                    sb.AppendLine(string.Join(" | ", tableData.Columns.Select(c => row.GetValueOrDefault(c, ""))));
-            }
-
-            results.Add(sb.ToString());
+            results.Add(FormatQueryResult(i + 1, tableData, maxResultChars));
         }
 
         return string.Join("\n\n", results);
+    }
+
+    /// <summary>
+    /// Renders a result as a pipe-delimited table, dropping trailing rows once the character
+    /// budget is spent. Truncation is stated in the output — a silently shortened result set
+    /// would have the agent report a total it can no longer see.
+    /// </summary>
+    internal static string FormatQueryResult(int index, TableData data, int maxChars)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"Query {index} ({data.Rows.Count} rows):");
+        if (data.Columns.Count == 0) return sb.ToString();
+
+        sb.AppendLine(string.Join(" | ", data.Columns));
+
+        var shown = 0;
+        foreach (var row in data.Rows)
+        {
+            var line = string.Join(" | ", data.Columns.Select(c => row.GetValueOrDefault(c, "")));
+            if (shown > 0 && sb.Length + line.Length > maxChars) break;
+            sb.AppendLine(line);
+            shown++;
+        }
+
+        if (shown < data.Rows.Count)
+            sb.AppendLine($"… showing {shown} of {data.Rows.Count} rows — result truncated at the size limit. " +
+                          "Re-run with a tighter LIMIT, an aggregate, or a narrower column list if you need the rest.");
+
+        return sb.ToString();
     }
 
     private async Task<string> HandleGetSchema(JsonElement root)
@@ -966,9 +999,11 @@ public class AnalyticsAgentCore(
 
                ## Cross-database access
                This run may also query: {string.Join(", ", additionalDatabases.Select(d => $"`{d}`"))}.
-               Their schemas are included above. Qualify every table with its own database — `{database}.<table>`
-               for the primary, `<other_db>.<table>` for the rest. Do not assume a table exists in more than one.
-               Status values, casing and column naming differ per database; check the schema before filtering.
+               Only their table *names* are listed above — call `describe_table` to get columns and
+               allowed values for the ones you need, batching those calls where you can.
+               Qualify every table with its own database — `{database}.<table>` for the primary,
+               `<other_db>.<table>` for the rest. Do not assume a table exists in more than one.
+               Status values, casing and column naming differ per database; check before filtering.
                """
             : "";
 
@@ -1089,7 +1124,9 @@ public class AnalyticsAgentCore(
 
                  ## Filter Values
                  The schema lists allowed values for LowCardinality columns. Use ONLY these exact values (case-sensitive).
-                 Never guess or invent filter values.
+                 Never guess or invent filter values — if one is not listed, run `SELECT DISTINCT col … LIMIT 50`.
+                 Table and column names are case-sensitive too. For any table shown by name only, call
+                 `describe_table` before querying it rather than guessing its columns.
 
                  ## Currency
                  All amounts are Zambian Kwacha (ZMW). Use "K" prefix in explanations (e.g. K 1,250.00). Never use $.

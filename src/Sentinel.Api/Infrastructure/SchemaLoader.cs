@@ -7,11 +7,14 @@ namespace Sentinel.Infrastructure;
 public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<SchemaLoader> logger)
 {
     private const string DefaultDatabase = "lipila_blaze";
-    private const string SchemaCacheKeyPrefix = "sentinel:schema:block:";
+    // v2: bumped when the block format changed — otherwise deployed instances keep serving the
+    // old, much larger blocks from cache for up to 12 hours.
+    private const string SchemaCacheKeyPrefix = "sentinel:schema:block:v2:";
     private const string DatabaseListCacheKey = "sentinel:schema:databases";
     private const string ValuesCacheKeyPrefix = "sentinel:schema:values:";
     private const string ColumnsCacheKeyPrefix = "sentinel:schema:columns:";
     private const string TableDescCacheKeyPrefix = "sentinel:schema:table:";
+    private const string TableIndexCacheKeyPrefix = "sentinel:schema:index:";
 
     private const int MaxCategoricalValues = 20;
     private const int SkipCategoricalIfOver = 50;
@@ -46,6 +49,12 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
         {
             "public_wallet_transactions", "public_wallets",
             "public_lipila_wallet_transfers"
+        },
+        ["gari"] = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "public_Quotations", "public_Policies", "public_Transactions", "public_Claims",
+            "public_GariAgents", "public_GariAgentCommissions",
+            "public_Client", "public_GariUser", "public_Vehicles"
         }
     };
 
@@ -100,6 +109,48 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
                    _ => FetchCategoricalValuesAsync(resolvedDatabase, table),
                    options => options.SetDuration(TimeSpan.FromHours(6)))
                ?? new Dictionary<string, List<string>>();
+    }
+
+    /// <summary>
+    /// A compact table listing — names only, no columns or categorical values. Used for secondary
+    /// databases in a cross-database run: the full block for five databases is re-sent on every
+    /// one of up to 40 iterations, and the agent can pull the columns it actually needs with
+    /// describe_table for a fraction of that.
+    /// </summary>
+    public async Task<string> GetTableIndexAsync(string database)
+    {
+        var resolved = ResolveDatabaseName(database);
+        return await cache.GetOrSetAsync($"{TableIndexCacheKeyPrefix}{resolved}",
+            _ => BuildTableIndexAsync(resolved),
+            options => options.SetDuration(TimeSpan.FromHours(12)));
+    }
+
+    private async Task<string> BuildTableIndexAsync(string database)
+    {
+        var tables = await GetVisibleTablesAsync(database);
+        var sb = new StringBuilder();
+        sb.AppendLine($"## Database: {database}");
+        if (DatabaseDescriptions.TryGetValue(database, out var desc))
+            sb.AppendLine($"*{desc}*");
+
+        if (tables.Count == 0)
+        {
+            sb.AppendLine("(no tables found)");
+            return sb.ToString();
+        }
+
+        sb.AppendLine($"Tables ({tables.Count}) — columns not listed. Call `describe_table` for the ones you need:");
+        sb.AppendLine(string.Join(", ", tables.Select(t => $"`{t}`")));
+        return sb.ToString();
+    }
+
+    private async Task<List<string>> GetVisibleTablesAsync(string database)
+    {
+        var tablesJson = await ch.QueryAsync(
+            $"SELECT name FROM system.tables WHERE database = '{database}' ORDER BY name");
+        return ParseStringColumn(tablesJson, "name")
+            .Where(t => !ExcludedTablePrefixes.Any(p => t.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
     }
 
     /// <summary>
@@ -206,6 +257,7 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
     {
         var resolvedDatabase = ResolveDatabaseName(database);
         await cache.RemoveAsync($"{SchemaCacheKeyPrefix}{resolvedDatabase}");
+        await cache.RemoveAsync($"{TableIndexCacheKeyPrefix}{resolvedDatabase}");
     }
 
     public async Task InvalidateAllAsync()
@@ -215,6 +267,7 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
         foreach (var db in databases)
         {
             await cache.RemoveAsync($"{SchemaCacheKeyPrefix}{db}");
+            await cache.RemoveAsync($"{TableIndexCacheKeyPrefix}{db}");
         }
     }
 
@@ -235,6 +288,13 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
 
     private async Task<string> BuildSchemaBlockAsync(string database)
     {
+        // No curated table list for this database — fall back to names only. The old fallback was
+        // "include every table with every column and every categorical value", which is backwards:
+        // an unknown database should get less detail, not unbounded detail, since the whole block
+        // is re-sent on every agent iteration.
+        if (!CoreTables.TryGetValue(database, out var coreSet))
+            return await BuildTableIndexAsync(database);
+
         var sb = new StringBuilder();
         sb.AppendLine($"## Database: {database}");
         if (DatabaseDescriptions.TryGetValue(database, out var desc))
@@ -249,11 +309,7 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
             .Where(t => !ExcludedTablePrefixes.Any(p => t.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
             .ToList();
 
-        // If we have a core tables list for this database, only include those
-        var hasCoreList = CoreTables.TryGetValue(database, out var coreSet);
-        var includedTables = hasCoreList
-            ? tables.Where(t => coreSet!.Contains(t)).ToList()
-            : tables;
+        var includedTables = tables.Where(t => coreSet.Contains(t)).ToList();
 
         if (includedTables.Count == 0)
         {
@@ -261,13 +317,11 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
             return sb.ToString();
         }
 
-        // List excluded tables so agent knows they exist
-        if (hasCoreList)
+        var excluded = tables.Where(t => !coreSet.Contains(t)).ToList();
+        if (excluded.Count > 0)
         {
-            var excludedCount = tables.Count - includedTables.Count;
-            if (excludedCount > 0)
-                sb.AppendLine(
-                    $"*({excludedCount} additional tables available — use `describe_table` tool to explore)*");
+            sb.AppendLine($"*Also available ({excluded.Count}) — call `describe_table` for columns:* " +
+                          string.Join(", ", excluded.Select(t => $"`{t}`")));
             sb.AppendLine();
         }
 
@@ -299,13 +353,10 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
             {
                 var engine = tableEngines.GetValueOrDefault(table, "");
                 var isReplacing = engine.Contains("Replacing", StringComparison.OrdinalIgnoreCase);
+                // Terse marker only — the rules behind it are stated once in the system prompt.
                 sb.AppendLine(isReplacing
-                    ? "  **CDC replica (" + engine + ")** — you MUST write " +
-                      $"`FROM {database}.`{table}` FINAL WHERE _peerdb_is_deleted = 0`. " +
-                      "Without FINAL you get duplicate rows for every updated record; " +
-                      "without the filter you count rows deleted in the source system."
-                    : "  **CDC replica** — you MUST add `WHERE _peerdb_is_deleted = 0` to every query " +
-                      "on this table, or you count rows deleted in the source system.");
+                    ? $"  **CDC replica ({engine})** — requires FINAL and `_peerdb_is_deleted = 0`."
+                    : "  **CDC replica** — requires `_peerdb_is_deleted = 0`.");
             }
 
             var categoricalCols = userColumns
@@ -342,25 +393,9 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
             sb.AppendLine();
         }
 
-        sb.AppendLine("---");
-        sb.AppendLine("RULES FOR CDC REPLICA TABLES:");
-        sb.AppendLine("- Every table marked **CDC replica** above is replicated from the source database by PeerDB.");
-        sb.AppendLine("- Deletes are SOFT: the row stays with `_peerdb_is_deleted = 1`. It is still counted by");
-        sb.AppendLine("  count(), sum() and every join unless you exclude it.");
-        sb.AppendLine("- ALWAYS add `_peerdb_is_deleted = 0` to the WHERE clause — including inside subqueries,");
-        sb.AppendLine("  CTEs and both sides of a JOIN. Omitting it silently inflates every number you report.");
-        sb.AppendLine("- On ReplacingMergeTree tables, add `FINAL` after the table name as well, otherwise an");
-        sb.AppendLine("  updated row appears once per version until ClickHouse merges it in the background.");
-        sb.AppendLine("- The `_peerdb_*` columns are not listed in the column lists above, but they do exist.");
-        sb.AppendLine();
-        sb.AppendLine("RULES FOR FILTER VALUES:");
-        sb.AppendLine("- LowCardinality columns above have allowed values listed (truncated if >20).");
-        sb.AppendLine("- You MUST use these exact values (case-sensitive). Do NOT invent, guess, or transform them.");
-        sb.AppendLine(
-            "- If a value is not listed above, query `SELECT DISTINCT col FROM table LIMIT 50` to discover it.");
-        sb.AppendLine("- Column names and table names are case-sensitive — use them exactly as shown.");
-        sb.AppendLine("- For tables not listed here, use the `describe_table` tool to get their schema on demand.");
-
+        // ponytail: no rules trailer here. The CDC and filter-value rules live once in the agent
+        // system prompt; repeating them per database meant a cross-database run carried six copies
+        // of the same twenty lines on every iteration.
         return sb.ToString();
     }
 
