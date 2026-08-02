@@ -32,7 +32,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 px-4 lg:px-16" data-stagger>
-      <PageHeader title="Dashboard" subtitle="Fraud monitoring at a glance">
+      <PageHeader title="Fraud Monitoring" subtitle="Cases, rules and detection runs at a glance">
         <button onClick={() => triggerMut.mutate()} disabled={triggerMut.isPending || isRunning} className={btnPrimary}>
           {isRunning ? 'Run in progress…' : triggerMut.isPending ? 'Starting…' : 'Trigger fraud sweep'}
         </button>

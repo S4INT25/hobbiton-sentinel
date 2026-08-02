@@ -57,6 +57,9 @@ function baseOptions(categories: string[]): ApexOptions {
     xaxis: {
       categories,
       labels: { style: { fontSize: '10px', fontFamily: MONO }, rotate: -35, trim: true },
+      // A 30- or 180-day series renders every label on top of the next; cap the count so the
+      // axis stays readable and let Apex pick evenly spaced ticks.
+      ...(categories.length > 14 ? { tickAmount: 8 } : {}),
       axisBorder: { color: '#343a43' },
       axisTicks: { color: '#343a43' },
     },

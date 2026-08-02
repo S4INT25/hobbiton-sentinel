@@ -11,6 +11,7 @@ using Sentinel.Admin.Data;
 using Sentinel.Admin.Models;
 using Sentinel.Admin.Stores;
 using Sentinel.Agent;
+using Sentinel.Analytics;
 using Sentinel.Infrastructure;
 using Sentinel.Jobs;
 using Sentinel.Memory;
@@ -68,7 +69,7 @@ try
     builder.Services.AddHttpClient<ClickHouseClient>();
     builder.Services.AddHttpClient<IpLookupClient>();
     builder.Services.AddSingleton<EmailClient>();
-    builder.Services.AddSingleton<ChartRenderer>();
+    builder.Services.AddSingleton<AnalyticsDashboardService>();
 
     // Stores backed by FusionCache — single implementation for dev and prod
     builder.Services.AddSingleton<ICaseStore, CaseStore>();

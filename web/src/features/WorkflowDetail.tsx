@@ -8,7 +8,8 @@ import {
   btnPrimary, btnDanger, btnGhost, btnOutline, inputCls,
   fmtDate, fmtDateFull, tableWrap, thCls, tdCls,
 } from '../components/ui';
-import { WorkflowForm } from './Workflows';
+import { MarkdownEditor, MarkdownReader } from '../components/MarkdownEditor';
+import { WorkflowForm, parseDatabases } from './Workflows';
 import { DATABASES } from './Knowledge';
 
 const label = 'block font-mono text-[10px] text-gray-500 uppercase tracking-wider mb-1';
@@ -77,6 +78,7 @@ export default function WorkflowDetail() {
   const [feedback, setFeedback] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
   const [editing, setEditing] = useState<Partial<WorkflowDefinition> | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [promptExpanded, setPromptExpanded] = useState(false);
   const [selectedEmailRun, setSelectedEmailRun] = useState<RunSummary | null>(null);
   const [runsPage, setRunsPage] = useState(1);
   const [editingPattern, setEditingPattern] = useState<Partial<FraudPattern> | null>(null);
@@ -227,8 +229,17 @@ export default function WorkflowDetail() {
             <dd className="text-gray-200 font-mono mt-1">{workflow.actionType}</dd>
           </div>
           <div>
-            <dt className="kicker">Database</dt>
-            <dd className="text-gray-200 font-mono mt-1">{workflow.targetDatabase || '—'}</dd>
+            <dt className="kicker">{parseDatabases(workflow.targetDatabase).length > 1 ? 'Databases' : 'Database'}</dt>
+            <dd className="text-gray-200 font-mono mt-1 flex flex-wrap gap-1.5">
+              {parseDatabases(workflow.targetDatabase).map((db, i) => (
+                <span key={db} className={i === 0 ? '' : 'text-gray-500'}>
+                  {db}{i === 0 && parseDatabases(workflow.targetDatabase).length > 1 && (
+                    <span className="ml-1 text-[10px] text-emerald-500/70">primary</span>
+                  )}
+                </span>
+              ))}
+              {!workflow.targetDatabase && '—'}
+            </dd>
           </div>
           {workflow.emailSubject && (
             <div className="col-span-2">
@@ -245,8 +256,20 @@ export default function WorkflowDetail() {
         </dl>
         {workflow.customPrompt && (
           <div className="mt-3 pt-3 border-t border-gray-800/60">
-            <div className="kicker mb-1.5">Agent instructions</div>
-            <p className="text-xs text-gray-400 whitespace-pre-wrap">{workflow.customPrompt}</p>
+            <div className="flex items-center justify-between gap-3 mb-1.5">
+              <div className="kicker">Agent instructions</div>
+              <button
+                onClick={() => setPromptExpanded((v) => !v)}
+                className="text-[10px] text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                {promptExpanded ? 'Collapse' : 'Read'}
+              </button>
+            </div>
+            {promptExpanded ? (
+              <MarkdownReader text={workflow.customPrompt} />
+            ) : (
+              <p className="text-xs text-gray-400 whitespace-pre-wrap line-clamp-4">{workflow.customPrompt}</p>
+            )}
           </div>
         )}
       </div>
@@ -526,7 +549,7 @@ export default function WorkflowDetail() {
 
       <AnimatePresence>
         {editing && (
-          <Dialog title="Edit workflow" onClose={() => setEditing(null)}>
+          <Dialog title="Edit workflow" onClose={() => setEditing(null)} size="lg">
             <WorkflowForm value={editing} onChange={setEditing} />
             <div className="flex items-center justify-end gap-2 pt-1">
               <button onClick={() => setEditing(null)} className={btnGhost}>Cancel</button>
@@ -552,7 +575,7 @@ export default function WorkflowDetail() {
         )}
 
         {selectedEmailRun && (
-          <Dialog title={selectedEmailRun.emailSubject ?? 'Report'} onClose={() => setSelectedEmailRun(null)}>
+          <Dialog title={selectedEmailRun.emailSubject ?? 'Report'} onClose={() => setSelectedEmailRun(null)} size="lg">
             <div className="font-mono text-[10px] text-gray-600">{fmtDateFull(selectedEmailRun.startedAt)}</div>
             <div className="max-h-[60vh] overflow-y-auto">
               <Markdown text={selectedEmailRun.emailBody ?? '_No body captured._'} />
@@ -564,7 +587,7 @@ export default function WorkflowDetail() {
         )}
 
         {editingPattern && (
-          <Dialog title={editingPattern.id ? 'Edit pattern' : 'New pattern'} onClose={() => setEditingPattern(null)}>
+          <Dialog title={editingPattern.id ? 'Edit pattern' : 'New pattern'} onClose={() => setEditingPattern(null)} size="lg">
             <div>
               <label className={label}>Name</label>
               <input
@@ -586,11 +609,10 @@ export default function WorkflowDetail() {
             </div>
             <div>
               <label className={label}>Description</label>
-              <textarea
+              <MarkdownEditor
                 value={editingPattern.description ?? ''}
-                onChange={(e) => setEditingPattern({ ...editingPattern, description: e.target.value })}
-                rows={5}
-                className={`${inputCls} leading-relaxed`}
+                onChange={(v) => setEditingPattern({ ...editingPattern, description: v })}
+                rows={12}
                 placeholder="What should the agent look for, and what context or exemptions apply?"
               />
             </div>
@@ -748,7 +770,7 @@ export default function WorkflowDetail() {
         )}
 
         {editingMemory && (
-          <Dialog title={editingMemory.id ? 'Edit definition' : 'New definition'} onClose={() => setEditingMemory(null)}>
+          <Dialog title={editingMemory.id ? 'Edit definition' : 'New definition'} onClose={() => setEditingMemory(null)} size="lg">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className={label}>Term</label>
@@ -772,11 +794,10 @@ export default function WorkflowDetail() {
             </div>
             <div>
               <label className={label}>Definition</label>
-              <textarea
+              <MarkdownEditor
                 value={editingMemory.definition ?? ''}
-                onChange={(e) => setEditingMemory({ ...editingMemory, definition: e.target.value })}
-                rows={5}
-                className={`${inputCls} leading-relaxed`}
+                onChange={(v) => setEditingMemory({ ...editingMemory, definition: v })}
+                rows={12}
                 placeholder="Explain the data shape or business rule exactly, so the agent stops misreading it as suspicious."
               />
             </div>

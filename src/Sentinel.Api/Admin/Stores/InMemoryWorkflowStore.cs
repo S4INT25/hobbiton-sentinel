@@ -96,6 +96,7 @@ public class InMemoryWorkflowStore : IWorkflowStore
     {
         workflow.ActionType = WorkflowActionTypes.Normalize(workflow.ActionType);
         workflow.TimeZoneId = WorkflowTimeZones.NormalizeOrDefaultId(workflow.TimeZoneId);
+        workflow.TargetDatabase = WorkflowDatabases.Normalize(workflow.TargetDatabase);
 
         if (!WorkflowActionTypes.All.Contains(workflow.ActionType, StringComparer.OrdinalIgnoreCase))
             throw new InvalidOperationException($"Unsupported workflow action type: {workflow.ActionType}");

@@ -3,6 +3,21 @@ namespace Sentinel.Admin.Models;
 public static class WorkflowDefaults
 {
     public const string FraudRunWorkflowId = "seed-fraud-detection-run";
+    public const string PlatformActivityWorkflowId = "seed-platform-activity-digest";
+
+    private static readonly string PlatformActivityPromptPath = Path.Combine(
+        AppContext.BaseDirectory, "Templates", "platform-activity-prompt.md");
+
+    /// <summary>
+    /// The digest prompt lives in Templates/ so it can be tuned without a rebuild. If the file
+    /// is missing the workflow is still seeded — disabled, with a prompt that says why — rather
+    /// than silently emailing a half-configured digest every four hours.
+    /// </summary>
+    private static string PlatformActivityPrompt =>
+        File.Exists(PlatformActivityPromptPath)
+            ? File.ReadAllText(PlatformActivityPromptPath)
+            : "Platform activity digest prompt not found at Templates/platform-activity-prompt.md. "
+              + "Restore the file or paste the prompt here before enabling this workflow.";
 
     public static IReadOnlyList<WorkflowDefinition> All =>
     [
@@ -17,6 +32,25 @@ public static class WorkflowDefaults
             TimeZoneId = WorkflowTimeZones.DefaultId,
             Enabled = true,
             TargetDatabase = "lipila_blaze",
+            CreatedBy = "system"
+        },
+        new WorkflowDefinition
+        {
+            Id = PlatformActivityWorkflowId,
+            Name = "Platform Activity Digest",
+            Description =
+                "Every 4 hours, summarises notable activity across Inshuwa, Lipila, BNPL and Patumba — "
+                + "new records, money movement, unusual spikes, failed operations and security events. "
+                + "An activity digest, not a metrics report.",
+            ActionType = WorkflowActionTypes.EmailReport,
+            CronExpression = "0 */4 * * *",
+            TimeZoneId = WorkflowTimeZones.DefaultId,
+            // Off until recipients are agreed — with none set it would fall back to Email:To
+            // (the security mailbox) and put six digests a day in front of the wrong team.
+            Enabled = false,
+            TargetDatabase = "inshuwa",
+            EmailSubject = "Platform Activity — last 4 hours",
+            CustomPrompt = PlatformActivityPrompt,
             CreatedBy = "system"
         }
     ];

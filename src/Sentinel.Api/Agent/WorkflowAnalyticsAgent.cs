@@ -16,6 +16,7 @@ public class WorkflowAnalyticsAgent(AnalyticsAgentCore core, IConfiguration conf
         Func<AgentToolCall, Task>? onToolCall = null,
         string? model = null,
         string? reasoningEffort = null,
+        IReadOnlyList<string>? additionalDatabases = null,
         CancellationToken cancellationToken = default)
     {
         // Reports can be long; allow tuning the budget without a code change (default keeps
@@ -30,6 +31,7 @@ public class WorkflowAnalyticsAgent(AnalyticsAgentCore core, IConfiguration conf
             onEvent: null,
             onToolCall: onToolCall,
             memories: memories,
+            additionalDatabases: additionalDatabases,
             cancellationToken: cancellationToken);
     }
 }

@@ -7,11 +7,61 @@ import {
   PageHeader, Feedback, Dialog, Spinner, EmptyState,
   btnPrimary, btnDanger, btnGhost, inputCls, fmtDate,
 } from '../components/ui';
+import { MarkdownEditor } from '../components/MarkdownEditor';
 
 export const TIMEZONES = [
   { id: 'Africa/Lusaka', label: 'Central Africa Time (CAT)' },
   { id: 'UTC', label: 'UTC' },
 ];
+
+/** Target databases are stored as one comma-separated string, mirroring emailRecipients. */
+export const parseDatabases = (v: string | undefined | null): string[] =>
+  (v ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+
+function DatabasePicker({
+  products,
+  selected,
+  onChange,
+  multiple,
+}: {
+  products: { databaseName: string; displayName: string }[];
+  selected: string[];
+  onChange: (dbs: string[]) => void;
+  multiple: boolean;
+}) {
+  const toggle = (db: string) => {
+    if (!multiple) return onChange(selected[0] === db ? [] : [db]);
+    // Order matters — the first selected database is the agent's primary.
+    onChange(selected.includes(db) ? selected.filter((d) => d !== db) : [...selected, db]);
+  };
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {products.map((p) => {
+        const idx = selected.indexOf(p.databaseName);
+        const on = idx >= 0;
+        return (
+          <button
+            key={p.databaseName}
+            type="button"
+            onClick={() => toggle(p.databaseName)}
+            className={`px-2.5 py-1 rounded-md border text-xs transition-all ${
+              on
+                ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300'
+                : 'border-gray-700/80 text-gray-400 hover:border-gray-600 hover:text-gray-200'
+            }`}
+          >
+            {on && multiple && (
+              <span className="mr-1.5 font-mono text-[10px] text-emerald-500/80">{idx === 0 ? 'primary' : idx + 1}</span>
+            )}
+            {p.displayName}
+          </button>
+        );
+      })}
+      {products.length === 0 && <span className="text-xs text-gray-600">No databases configured.</span>}
+    </div>
+  );
+}
 
 export const ACTION_TYPES = [
   { value: 'email_report', label: 'Email report (analytics agent)' },
@@ -76,14 +126,19 @@ export function WorkflowForm({
           </select>
         </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div>
-          <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1">Target database</label>
-          <select value={value.targetDatabase ?? ''} onChange={(e) => onChange({ ...value, targetDatabase: e.target.value })} className={inputCls}>
-            <option value="">— select —</option>
-            {products.map((p) => <option key={p.databaseName} value={p.databaseName}>{p.displayName}</option>)}
-          </select>
-        </div>
+      <div>
+        <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1">
+          Target databases
+          {value.actionType === 'fraud_run' && <span className="ml-2 normal-case tracking-normal text-gray-600">fraud runs use the first one only</span>}
+        </label>
+        <DatabasePicker
+          products={products}
+          selected={parseDatabases(value.targetDatabase)}
+          onChange={(dbs) => onChange({ ...value, targetDatabase: dbs.join(',') })}
+          multiple={value.actionType !== 'fraud_run'}
+        />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
           <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1">Model</label>
           <select value={value.model ?? ''} onChange={(e) => onChange({ ...value, model: e.target.value })} className={inputCls}>
@@ -115,7 +170,12 @@ export function WorkflowForm({
       )}
       <div>
         <label className="block font-mono text-[10px] uppercase tracking-wider text-gray-500 mb-1">Prompt / instructions for the agent</label>
-        <textarea value={value.customPrompt ?? ''} onChange={(e) => onChange({ ...value, customPrompt: e.target.value })} rows={4} className={`${inputCls} leading-relaxed`} placeholder="What should this workflow analyse and report?" />
+        <MarkdownEditor
+          value={value.customPrompt ?? ''}
+          onChange={(v) => onChange({ ...value, customPrompt: v })}
+          rows={16}
+          placeholder="What should this workflow analyse and report? Markdown supported — use headings for report sections and tables for the metric layout."
+        />
       </div>
       <label className="flex items-center gap-2 cursor-pointer">
         <input type="checkbox" checked={value.enabled ?? true} onChange={(e) => onChange({ ...value, enabled: e.target.checked })} className="accent-emerald-500" />
@@ -191,7 +251,9 @@ export default function Workflows() {
             <div className="flex items-center gap-3 mt-3 font-mono text-[10px] text-gray-600">
               <span className="bg-gray-800/80 border border-gray-700/50 px-1.5 py-0.5 rounded">{w.cronExpression}</span>
               <span>{w.timeZoneId}</span>
-              {w.targetDatabase && <span className="text-sky-400/80">{w.targetDatabase}</span>}
+              {parseDatabases(w.targetDatabase).map((db, i) => (
+                <span key={db} className={i === 0 ? 'text-sky-400/80' : 'text-sky-400/50'}>{db}</span>
+              ))}
               {w.model && <span className="text-violet-400/80">{w.model}</span>}
               <span>updated {fmtDate(w.updatedAt)}</span>
             </div>
@@ -228,7 +290,7 @@ export default function Workflows() {
 
       <AnimatePresence>
       {editing && (
-        <Dialog title={editing.id ? 'Edit workflow' : 'New workflow'} onClose={() => setEditing(null)}>
+        <Dialog title={editing.id ? 'Edit workflow' : 'New workflow'} onClose={() => setEditing(null)} size="lg">
           <WorkflowForm value={editing} onChange={setEditing} />
           <div className="flex items-center justify-end gap-2 pt-1">
             <button onClick={() => setEditing(null)} className={btnGhost}>Cancel</button>

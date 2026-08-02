@@ -146,14 +146,18 @@ export function Feedback({
   );
 }
 
+const dialogWidths = { sm: 'max-w-md', lg: 'max-w-3xl', xl: 'max-w-5xl' };
+
 export function Dialog({
   title,
   children,
   onClose,
+  size = 'sm',
 }: {
   title: string;
   children: React.ReactNode;
   onClose?: () => void;
+  size?: keyof typeof dialogWidths;
 }) {
   return (
     <motion.div
@@ -167,7 +171,7 @@ export function Dialog({
         initial={{ opacity: 0, scale: 0.96, y: 8 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-        className="panel w-full max-w-md p-4 space-y-3 shadow-2xl max-h-[85vh] overflow-y-auto"
+        className={`panel w-full ${dialogWidths[size]} p-4 space-y-3 shadow-2xl max-h-[85vh] overflow-y-auto`}
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="font-display text-sm font-semibold text-white">{title}</h3>

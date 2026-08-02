@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -12,12 +13,15 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
 {
     private const string FallbackTemplate = """
                                             <html><body style="font-family:sans-serif;max-width:{{WIDTH}};margin:0 auto;padding:24px;color:#111">
-                                            <div style="border-bottom:2px solid {{COLOR}};padding-bottom:10px;margin-bottom:20px">
-                                              <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#666">Sentinel Analytics</div>
+                                            <div style="border-bottom:1px solid #e7e5e4;padding-bottom:10px;margin-bottom:20px">
+                                              <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#666">{{KICKER}}</div>
                                               <h1 style="font-size:18px;margin:6px 0 4px">{{SUBJECT}}</h1>
+                                              {{HEADLINE}}
                                               <p style="font-size:12px;color:#999">{{TIMESTAMP}} &nbsp;·&nbsp; {{SEVERITY}}</p>
                                             </div>
+                                            {{METRICS}}
                                             {{BODY}}
+                                            {{DASHBOARD_CTA}}
                                             <p style="font-size:11px;color:#bbb;margin-top:24px;border-top:1px solid #eee;padding-top:10px">Sentinel · Automated report · Do not reply</p>
                                             </body></html>
                                             """;
@@ -35,9 +39,11 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
         string severity = "watching",
         IReadOnlyList<string>? recipients = null,
         bool wide = false,
-        IReadOnlyList<EmbeddedChartImage>? chartImages = null,
         string? senderName = null,
-        string? subjectPrefix = null)
+        string? subjectPrefix = null,
+        string? template = null,
+        string? headline = null,
+        IReadOnlyList<ReportMetric>? metrics = null)
     {
         try
         {
@@ -50,59 +56,32 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
             var user = config["Email:Smtp:User"]!;
             var pass = config["Email:Smtp:Password"]!;
 
-            var htmlBody = BuildHtml(subject, body, severity, wide);
-
-            // Append chart images section to the HTML if present
-            if (chartImages is { Count: > 0 })
-            {
-                var chartHtml = BuildChartSection(chartImages);
-                // Insert before the footer
-                var footerMarker = "<table class=\"footer-rule\"";
-                var footerIdx = htmlBody.IndexOf(footerMarker, StringComparison.Ordinal);
-                if (footerIdx > 0)
-                    htmlBody = htmlBody.Insert(footerIdx, chartHtml);
-                else
-                    htmlBody = htmlBody.Replace("</body>", chartHtml + "</body>");
-            }
-
+            var htmlBody = BuildHtml(subject, body, severity, wide, template, headline, metrics);
             var fullSubject = string.IsNullOrEmpty(prefix) ? subject : $"{prefix} {subject}";
 
-            var builder = new BodyBuilder { TextBody = body };
+            var builder = new BodyBuilder { TextBody = body, HtmlBody = htmlBody };
 
-            // Embed chart images as CID-linked resources so email clients render them inline
-            // Skip images that use inline HTML (bar charts rendered without QuickChart)
-            if (chartImages is { Count: > 0 })
-            {
-                foreach (var ci in chartImages.Where(c => c.InlineHtml == null))
-                {
-                    var resource = builder.LinkedResources.Add(ci.ContentId + ".png", ci.PngBytes,
-                        new ContentType("image", "png"));
-                    resource.ContentId = ci.ContentId;
-                    resource.ContentDisposition = new ContentDisposition(ContentDisposition.Inline);
-                }
-            }
-
-            builder.HtmlBody = htmlBody;
-
+            var spec = ReportTemplate.Resolve(template, severity);
             var message = new MimeMessage
             {
                 Subject = fullSubject,
                 Body = builder.ToMessageBody(),
                 Sender = new MailboxAddress(fromName, from),
-                From = { new MailboxAddress(fromName, from) },
-                Importance = MessageImportance.High,
-                Priority = MessagePriority.Urgent
+                From = { new MailboxAddress(fromName, from) }
             };
-            message.Headers.Add("X-Priority", "1");
 
-            var toRecipients = recipients is { Count: > 0 }
-                ? recipients
-                : [defaultRecipient];
-
-            foreach (var recipient in toRecipients)
+            // Only genuine incidents should shove their way to the top of an inbox — a scheduled
+            // digest marked "urgent" trains people to ignore the flag when it actually matters.
+            if (spec.HighPriority || severity is "critical")
             {
-                message.To.Add(MailboxAddress.Parse(recipient));
+                message.Importance = MessageImportance.High;
+                message.Priority = MessagePriority.Urgent;
+                message.Headers.Add("X-Priority", "1");
             }
+
+            var toRecipients = recipients is { Count: > 0 } ? recipients : [defaultRecipient];
+            foreach (var recipient in toRecipients)
+                message.To.Add(MailboxAddress.Parse(recipient));
 
             using var smtp = new SmtpClient();
             await smtp.ConnectAsync(host, port, SecureSocketOptions.StartTls);
@@ -110,68 +89,35 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
             await smtp.SendAsync(message);
             await smtp.DisconnectAsync(true);
 
-            logger.LogInformation("Alert sent [{Severity}]: {Subject} (charts: {ChartCount})",
-                severity, fullSubject, chartImages?.Count ?? 0);
-            return $"Alert sent to {string.Join(", ", message.To)}" +
-                   (chartImages is { Count: > 0 } ? $" with {chartImages.Count} chart(s)" : "");
+            logger.LogInformation("Report sent [{Template}/{Severity}]: {Subject}",
+                spec.Key, severity, fullSubject);
+            return $"Report sent to {string.Join(", ", message.To)}";
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to send alert email");
+            logger.LogError(ex, "Failed to send report email");
             return $"Email failed: {ex.Message}";
         }
     }
 
-    private static string BuildChartSection(IReadOnlyList<EmbeddedChartImage> charts)
+    private string BuildHtml(
+        string subject,
+        string markdownBody,
+        string severity,
+        bool wide,
+        string? templateKey,
+        string? headline,
+        IReadOnlyList<ReportMetric>? metrics)
     {
-        var sb = new StringBuilder();
-        for (int i = 0; i < charts.Count; i += 2)
-        {
-            var left = charts[i];
-            var right = i + 1 < charts.Count ? charts[i + 1] : null;
+        var spec = ReportTemplate.Resolve(templateKey, severity);
 
-            sb.AppendLine(
-                "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin-bottom:16px\">");
-            sb.AppendLine("  <tr>");
-            var width = right != null ? "50%" : "100%";
-            var padRight = right != null ? "12px" : "0";
-            sb.AppendLine($"    <td width=\"{width}\" valign=\"top\" style=\"padding-right:{padRight}\">");
-            sb.AppendLine(ChartCell(left));
-            sb.AppendLine("    </td>");
-            if (right != null)
-            {
-                sb.AppendLine("    <td width=\"50%\" valign=\"top\" style=\"padding-left:12px\">");
-                sb.AppendLine(ChartCell(right));
-                sb.AppendLine("    </td>");
-            }
-
-            sb.AppendLine("  </tr>");
-            sb.AppendLine("</table>");
-        }
-
-        return sb.ToString();
-    }
-
-    private static string ChartCell(EmbeddedChartImage ci)
-    {
-        if (ci.InlineHtml != null) return ci.InlineHtml;
-        var sb = new StringBuilder();
-        if (!string.IsNullOrWhiteSpace(ci.Title))
-            sb.AppendLine(
-                $"<p style=\"font-size:12px;font-weight:600;color:#52525b;margin:0 0 4px\">{Encode(ci.Title)}</p>");
-        sb.AppendLine($"<img src=\"cid:{ci.ContentId}\" alt=\"{Encode(ci.Title ?? "Chart")}\" " +
-                      "style=\"max-width:100%;height:auto;border:1px solid #e4e4e7;border-radius:6px\" />");
-        return sb.ToString();
-    }
-
-    private static string BuildHtml(string subject, string markdownBody, string severity, bool wide = false)
-    {
+        // Severity drives the accent for anything alarming; otherwise the template's own identity
+        // colour wins, so an executive digest never looks like a red alert.
         var color = severity switch
         {
             "critical" => "#b91c1c",
             "warning" => "#d97706",
-            "watching" => "#2563eb",
-            _ => "#16a34a"
+            _ => spec.Accent
         };
 
         var zambiaTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, ZambiaZone);
@@ -181,16 +127,75 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
             ? File.ReadAllText(TemplatePath)
             : FallbackTemplate;
 
-        var pillClass = $"badge badge-{severity.ToLower()}";
+        var dashboardUrl = config["Email:DashboardUrl"];
 
         return template
             .Replace("{{COLOR}}", color)
-            .Replace("{{WIDTH}}", wide ? "860px" : "620px")
-            .Replace("{{SUBJECT}}", WebUtility.HtmlEncode(subject))
-            .Replace("{{PILL_CLASS}}", pillClass)
-            .Replace("{{SEVERITY}}", severity)
+            .Replace("{{WIDTH}}", wide ? "860px" : "640px")
+            .Replace("{{SUBJECT}}", Encode(subject))
+            .Replace("{{KICKER}}", Encode(spec.Kicker))
+            .Replace("{{PILL_CLASS}}", $"badge badge-{severity.ToLowerInvariant()}")
+            .Replace("{{SEVERITY}}", Encode(severity))
             .Replace("{{TIMESTAMP}}", timestamp)
-            .Replace("{{BODY}}", MarkdownToHtml(markdownBody));
+            .Replace("{{HEADLINE}}", BuildHeadline(headline))
+            .Replace("{{METRICS}}", BuildMetricStrip(metrics))
+            .Replace("{{BODY}}", MarkdownToHtml(markdownBody))
+            .Replace("{{DASHBOARD_CTA}}", BuildDashboardCta(dashboardUrl, spec));
+    }
+
+    private static string BuildHeadline(string? headline) =>
+        string.IsNullOrWhiteSpace(headline)
+            ? ""
+            : $"<p class=\"headline\">{InlineFormat(Encode(headline.Trim()))}</p>";
+
+    /// <summary>
+    /// Renders 2-4 headline figures as a table-based strip. Tables, not flexbox — Outlook
+    /// ignores modern layout entirely and would otherwise stack these into a ragged column.
+    /// </summary>
+    private static string BuildMetricStrip(IReadOnlyList<ReportMetric>? metrics)
+    {
+        if (metrics is not { Count: > 0 }) return "";
+
+        var shown = metrics.Take(4).ToList();
+        var width = (100 / shown.Count).ToString(CultureInfo.InvariantCulture);
+
+        var sb = new StringBuilder();
+        sb.AppendLine("<table class=\"metrics\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" role=\"presentation\">");
+        sb.AppendLine("  <tr>");
+        foreach (var m in shown)
+        {
+            var deltaClass = m.Direction switch
+            {
+                "up" => "delta delta-up",
+                "down" => "delta delta-down",
+                _ => "delta"
+            };
+            var arrow = m.Direction switch { "up" => "&#8593; ", "down" => "&#8595; ", _ => "" };
+
+            sb.AppendLine($"    <td class=\"metric\" width=\"{width}%\" valign=\"top\">");
+            sb.AppendLine($"      <p class=\"metric-label\">{Encode(m.Label)}</p>");
+            sb.AppendLine($"      <p class=\"metric-value\">{Encode(m.Value)}</p>");
+            if (!string.IsNullOrWhiteSpace(m.Change))
+                sb.AppendLine($"      <p class=\"{deltaClass}\">{arrow}{Encode(m.Change)}</p>");
+            sb.AppendLine("    </td>");
+        }
+        sb.AppendLine("  </tr>");
+        sb.AppendLine("</table>");
+        return sb.ToString();
+    }
+
+    private static string BuildDashboardCta(string? dashboardUrl, ReportTemplate spec)
+    {
+        if (string.IsNullOrWhiteSpace(dashboardUrl)) return "";
+        var url = Encode(dashboardUrl.TrimEnd('/'));
+        return $"""
+                <table class="cta" width="100%" cellpadding="0" cellspacing="0" role="presentation">
+                  <tr><td>
+                    <a class="cta-link" href="{url}">{Encode(spec.CtaLabel)} &rarr;</a>
+                    <p class="cta-hint">Charts, filters and full history live on the dashboard.</p>
+                  </td></tr>
+                </table>
+                """;
     }
 
     /// <summary>
@@ -411,13 +416,47 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
     }
 }
 
+/// <summary>A single headline figure rendered in the metric strip at the top of a report.</summary>
+public record ReportMetric(string Label, string Value, string? Change = null, string? Direction = null);
+
 /// <summary>
-/// A rendered chart image ready for CID embedding in an email.
+/// Per-report-type presentation: identity colour, header kicker, dashboard CTA wording and
+/// whether the mail deserves inbox priority. One shared HTML shell renders all of them, so a
+/// styling fix lands everywhere at once instead of drifting across near-identical template files.
 /// </summary>
-public class EmbeddedChartImage
+public sealed record ReportTemplate(
+    string Key,
+    string Kicker,
+    string Accent,
+    string CtaLabel,
+    bool HighPriority)
 {
-    public required string ContentId { get; init; }
-    public required byte[] PngBytes { get; init; }
-    public string? Title { get; init; }
-    public string? InlineHtml { get; init; }
+    public static readonly ReportTemplate Executive =
+        new("executive", "Executive Summary", "#0f766e", "Open the dashboard", false);
+
+    public static readonly ReportTemplate Operational =
+        new("operational", "Operational Report", "#2563eb", "View operational metrics", false);
+
+    public static readonly ReportTemplate Incident =
+        new("incident", "Incident Report", "#b91c1c", "Investigate in Sentinel", true);
+
+    public static readonly ReportTemplate Activity =
+        new("activity", "Platform Activity", "#7c3aed", "See full activity", false);
+
+    public static readonly ReportTemplate Custom =
+        new("custom", "Sentinel Analytics", "#16a34a", "Open the dashboard", false);
+
+    public static ReportTemplate Resolve(string? key, string severity) =>
+        (key ?? "").Trim().ToLowerInvariant() switch
+        {
+            "executive" => Executive,
+            "operational" => Operational,
+            "incident" => Incident,
+            "activity" => Activity,
+            // Legacy keys from before templates were split out by report purpose.
+            "fraud_alert" => Incident,
+            "insights" => Executive,
+            // An unlabelled critical report is an incident whether or not it said so.
+            _ => severity == "critical" ? Incident : Custom
+        };
 }
