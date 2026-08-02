@@ -127,21 +127,22 @@ finding and should take one sentence, not a page.
 
 New records created in the window, with the typical count for this time of day.
 
-Attribute every row to its platform — Inshuwa and Gari both issue policies and must not be
-merged into one number.
+**Decide for yourself what belongs here.** Look at what each platform actually created in
+this window and report the categories that carry signal. Signups, clients, quotations,
+policies, vehicles, merchants, borrowers, agents, claims, funds, wallets, challenges —
+whichever of these moved, plus anything else you find that a colleague would want to know
+about. A category sitting at its usual number is not interesting; a category that is dead,
+spiking, or new is. Order the rows by how interesting they are, not by any fixed list.
 
-| | Platform | Created | Typical (same window) | Note |
+Two things are not negotiable:
+
+- **Attribute every row to its platform.** Inshuwa and Gari both create clients, quotations
+  and policies. Never merge them into one number, and never leave a row's platform ambiguous.
+- **Every count needs its baseline** — the same window on recent days, in the row next to it.
+  A count with no baseline is not a finding.
+
+| What | Platform | Created | Typical (same window) | Note |
 |---|---|---|---|---|
-| Users / customers | | | | |
-| Insurance clients | Inshuwa | | | |
-| Insurance clients | Gari | | | |
-| Quotations | Inshuwa | | | |
-| Quotations | Gari | | | |
-| Policies issued | Inshuwa | | | |
-| Policies issued | Gari | | | |
-| Vehicles insured | Gari | | | |
-| Merchants onboarded | Lipila | | | |
-| Loan borrowers (new) | BNPL | | | |
 
 Then, in prose: anything about the *composition* of what's new that a person would
 want to know. Did one intermediary or agent write most of the new policies? Did signups come
@@ -152,17 +153,21 @@ only if there's something real to say.
 
 ## MONEY MOVED
 
-| | Count | Value | vs typical |
-|---|---|---|---|
-| Premiums collected (Inshuwa) | | | |
-| Premiums collected (Gari) | | | |
-| Commission paid out (Gari) | | | |
-| Loans disbursed (BNPL) | | | |
-| Loan repayments (BNPL) | | | |
-| Collections (Lipila) | | | |
-| Disbursements (Lipila) | | | |
-| Deposits (Patumba) | | | |
-| Withdrawals (Patumba) | | | |
+Money that actually moved in the window. Find the flows each platform ran and report them.
+
+Three rules:
+
+- **Split by direction.** Money in and money out are separate rows. Never net premiums against
+  commission payouts, collections against disbursements, or deposits against withdrawals — a
+  single "net" figure hides both sides and is the easiest way to miss an outage.
+- **Split by platform.** Inshuwa premiums and Gari premiums are different books.
+- **Baseline every figure.** Value with no "vs typical" is not a finding.
+
+| Flow | Platform | Direction | Count | Value | vs typical |
+|---|---|---|---|---|---|
+
+A flow that is normally busy and moved nothing this window belongs in the table with a zero —
+that absence is the most interesting thing money can do. A flow that is always quiet does not.
 
 Call out the largest single transaction of the window if it is materially above the
 usual ceiling. Name the amount and the platform — never the customer's personal details.
@@ -171,7 +176,9 @@ usual ceiling. Name the amount and the platform — never the customer's persona
 
 ## WORTH A LOOK
 
-The interesting part. Anything that stands out but is not necessarily a problem:
+The interesting part, and the one where you should be actively hunting rather than filling in
+a form. Anything that stands out but is not necessarily a problem. These are examples of the
+*kind* of thing worth surfacing, not a checklist to work through:
 
 - Volume well above or below the usual pattern for this time of day
 - One account, merchant, intermediary or agent responsible for an unusual share of activity
@@ -179,6 +186,9 @@ The interesting part. Anything that stands out but is not necessarily a problem:
 - A first — first transaction on a channel, a dormant merchant suddenly active,
   a new record high
 - Timing oddities — meaningful activity at hours when the platform is normally asleep
+
+If you notice something real that fits none of these, it still belongs here. The bar is
+"a colleague would want to know", not "it matches a bullet above".
 
 Each item: one line, with the number and the baseline. Skip the section if it's empty.
 
@@ -192,7 +202,10 @@ Things that look broken or risky. Be specific about what failed and how often.
 |---|---|---|---|
 | | | | |
 
-Cover:
+Report anything in the data that looks broken, stalled or risky. The three below are the
+recurring ones and carry hard-won detail — read them — but they are a starting point, not the
+full set of ways this platform can break.
+
 - **Failed operations** — failure counts materially above the platform's normal baseline.
   Every platform has a standing failure rate, so report the *deviation*, never the baseline itself.
   Lipila sits around 32% failure and is stable. BNPL mobile-money disbursement is **not** stable —
@@ -214,7 +227,8 @@ degraded · MEDIUM = elevated but functioning · LOW = worth noting only.
 
 ## SECURITY
 
-Access and trust events in the window. Report only what the data supports.
+Access and trust events in the window. Report only what the data supports — and report anything
+that bears on access or trust, whether or not it resembles the examples below:
 
 - Admin or privileged accounts created, modified, or granted new access
 - Impersonation sessions started, and by whom
