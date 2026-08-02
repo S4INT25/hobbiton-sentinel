@@ -11,6 +11,7 @@ import { MarkdownEditor, MarkdownReader } from '../components/MarkdownEditor';
 export const DATABASES = [
   { value: '', label: 'All databases' },
   { value: 'inshuwa', label: 'Inshuwa (Insurance)' },
+  { value: 'gari', label: 'Gari (Motor Insurance)' },
   { value: 'lipila_blaze', label: 'Lipila Blaze' },
   { value: 'bnpl', label: 'BNPL' },
   { value: 'patumba_app', label: 'Patumba App' },

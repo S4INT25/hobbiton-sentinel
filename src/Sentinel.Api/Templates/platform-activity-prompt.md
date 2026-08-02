@@ -29,14 +29,47 @@ should check that"?* If the answer is no, leave it out. A short report is a good
 
 ## PLATFORMS
 
-Four databases, queried by fully-qualified name (`database.table`):
+Five databases, queried by fully-qualified name (`database.table`):
 
 | Platform | Database | What it is |
 |---|---|---|
-| Inshuwa | `inshuwa` | Insurance — policies, quotations, clients, intermediaries, insurers |
+| Inshuwa | `inshuwa` | Insurance broker — policies, quotations, clients, intermediaries, insurers |
+| Gari | `gari` | Motor insurance — quotations, policies, vehicles, agent commissions, claims |
 | Lipila Blaze | `lipila_blaze` | Payments — collections, disbursements, merchants |
 | BNPL | `bnpl` | Lending — merchant loans, repayments, recoveries |
 | Patumba | `patumba_app` | Savings & investments — wallets, funds, stocks, challenges |
+
+**Inshuwa and Gari are both insurance but are separate businesses.** Never sum them into a
+single "insurance" figure or compare one's volume against the other as if they were channels of
+the same book. Report them separately.
+
+### Gari specifics (verified 2026-08-02)
+
+Gari is the busiest source of new records in the group — roughly 3,900 quotations, 2,100
+transactions and 1,400 policies a week — so it will often dominate the "What's new" section.
+
+| Table | Use for |
+|---|---|
+| `public_Quotations` | Quotes raised |
+| `public_Policies` | Policies issued |
+| `public_Transactions` | Premium payments, commission payouts, renewals, extensions |
+| `public_Claims` | Claims — rare (about 50 all-time), so any new claim is worth a line |
+| `public_GariAgents`, `public_GariAgentCommissions` | Agent activity and commission earnings |
+| `public_Client`, `public_GariUser`, `public_Vehicles` | New clients, users, insured vehicles |
+
+Two traps:
+
+- **`public_Transactions.Status` is a string; `Status` on Policies, Quotations and Claims is an
+  integer code.** Do not filter policies with `Status = 'active'` — it will silently match nothing.
+  Observed policy codes: `1` (85,768 rows) and `0` (29,942) dominate, with `2` and `4` negligible.
+  The meaning of each code is not documented here — report counts by code, or describe them
+  neutrally. **Do not guess that `1` means active.**
+- **Successful transactions use `success`, not `successful`** — the same as Inshuwa and the
+  opposite of Lipila, BNPL and Patumba.
+
+`TransactionType` values: `premium_payment` (dominant), `commission_pay_out`, `policy_extension`,
+`policy_renewal`. Premium payments are money in; commission payouts are money out — never net
+them into one figure.
 
 **Discover the schema before you query.** Use `get_schema` / `describe_table` to find the
 right tables and columns for each area below. Do not guess table names — if you cannot
@@ -85,17 +118,24 @@ finding and should take one sentence, not a page.
 
 New records created in the window, with the typical count for this time of day.
 
-| | Created | Typical (same window) | Note |
-|---|---|---|---|
-| Users / customers | | | |
-| Insurance clients | | | |
-| Quotations | | | |
-| Policies issued | | | |
-| Merchants onboarded | | | |
-| Loan borrowers (new) | | | |
+Attribute every row to its platform — Inshuwa and Gari both issue policies and must not be
+merged into one number.
+
+| | Platform | Created | Typical (same window) | Note |
+|---|---|---|---|---|
+| Users / customers | | | | |
+| Insurance clients | Inshuwa | | | |
+| Insurance clients | Gari | | | |
+| Quotations | Inshuwa | | | |
+| Quotations | Gari | | | |
+| Policies issued | Inshuwa | | | |
+| Policies issued | Gari | | | |
+| Vehicles insured | Gari | | | |
+| Merchants onboarded | Lipila | | | |
+| Loan borrowers (new) | BNPL | | | |
 
 Then, in prose: anything about the *composition* of what's new that a person would
-want to know. Did one intermediary write most of the new policies? Did signups come
+want to know. Did one intermediary or agent write most of the new policies? Did signups come
 from a single channel? Is a merchant onboarding queue backing up? One or two lines —
 only if there's something real to say.
 
@@ -105,10 +145,11 @@ only if there's something real to say.
 
 | | Count | Value | vs typical |
 |---|---|---|---|
-| Payments received | | | |
-| Premiums collected | | | |
-| Loans disbursed | | | |
-| Loan repayments | | | |
+| Premiums collected (Inshuwa) | | | |
+| Premiums collected (Gari) | | | |
+| Commission paid out (Gari) | | | |
+| Loans disbursed (BNPL) | | | |
+| Loan repayments (BNPL) | | | |
 | Collections (Lipila) | | | |
 | Disbursements (Lipila) | | | |
 | Deposits (Patumba) | | | |
@@ -148,6 +189,9 @@ Cover:
   Lipila sits around 32% failure and is stable. BNPL mobile-money disbursement is **not** stable —
   it has climbed from 34.6% success over 180 days to 88.2% over the last 7 (measured 2026-08-02),
   so compute a recent trailing rate from the data rather than assuming a fixed number.
+  Gari carries a standing failure rate on both `premium_payment` and `commission_pay_out`, and
+  the two differ substantially — rate them separately, against a recent trailing window, never
+  against a single blended Gari number.
 - **Stalled processes** — a queue with no movement, a status nothing has left in hours,
   pending records aging past their normal clearing time.
 - **Integration failures** — one payment rail or provider failing while its peers succeed
@@ -170,6 +214,8 @@ Access and trust events in the window. Report only what the data supports.
   hitting many accounts
 - Logins from unusual locations or at unusual hours for that account
 - Password resets in bursts rather than ones and twos
+- Policy edits after issue — `gari.public_PolicyAuditLogs` records changes to live policies,
+  which is where backdating or premium tampering would show up
 
 One line each, with the account and the CAT timestamp. If clean, write
 "No security events in this window." and stop.

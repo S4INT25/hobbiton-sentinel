@@ -123,24 +123,19 @@ public class PostgresProviderStore(IDbContextFactory<SentinelDbContext> dbFactor
                 });
                 anyChanged = true;
             }
-            else
+            else if (string.IsNullOrWhiteSpace(match.DisplayName))
             {
-                if (match.DisplayName != def.DisplayName || match.Endpoint != def.Endpoint ||
-                    match.Enabled != def.Enabled || match.IsDefault != def.IsDefault ||
-                    match.SortOrder != def.SortOrder)
-                {
-                    match.DisplayName = def.DisplayName;
-                    match.Endpoint = def.Endpoint;
-                    match.Enabled = def.Enabled;
-                    match.IsDefault = def.IsDefault;
-                    match.SortOrder = def.SortOrder;
-                    match.UpdatedAt = now;
-                    anyChanged = true;
-                }
+                // Repair a blank label, nothing more.
+                //
+                // Enabled, IsDefault, Endpoint and ApiKey are all admin-owned: they are edited on
+                // the Models & Providers page and must survive a restart. Re-applying the seed
+                // values here would silently switch a provider the admin turned on back off, and
+                // hand "default" back to OpenRouter, on every deploy.
+                match.DisplayName = def.DisplayName;
+                match.UpdatedAt = now;
+                anyChanged = true;
             }
         }
-
-        var defaultSlugs = defaults.Select(d => d.Slug).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         // Only ensure defaults exist — never delete non-default providers that the admin added
         if (anyChanged)

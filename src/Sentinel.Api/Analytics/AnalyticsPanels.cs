@@ -141,7 +141,55 @@ public static class AnalyticsPanels
               AND created_at < {to}
             GROUP BY day
             ORDER BY day
-            """, Span: 2, Note: "Brokerage and CSD fees live in separate tables and are not in this panel.", Compare: true),
+            """, Span: 2, Note: "Wallet-ledger streams only — brokerage and CSD fees are in the panel below.", Compare: true),
+
+        new AnalyticsPanel("capital_markets_fees", "Brokerage & CSD fees", "area", """
+            -- The other two Patumba revenue streams. Neither lives in the wallet ledger, so they
+            -- are unioned onto a shared day axis rather than joined.
+            -- Brokerage is only earned on settled trades; the CSD fee is the account-opening
+            -- amount itself, not a service_fee column.
+            SELECT day,
+                   round(sum(brokerage_fees), 2) AS brokerage_fees,
+                   round(sum(csd_fees), 2) AS csd_fees
+            FROM (
+                SELECT toDate(created_at) AS day,
+                       service_fee AS brokerage_fees,
+                       toDecimal128(0, 38) AS csd_fees
+                FROM patumba_app.public_trade_transactions FINAL
+                WHERE _peerdb_is_deleted = 0
+                  AND trade_status = 'settled'
+                  AND created_at >= {from}
+                  AND created_at < {to}
+                UNION ALL
+                SELECT toDate(created_at) AS day,
+                       toDecimal128(0, 38) AS brokerage_fees,
+                       amount AS csd_fees
+                FROM patumba_app.public_csd_transactions FINAL
+                WHERE _peerdb_is_deleted = 0
+                  AND status = 'successful'
+                  AND created_at >= {from}
+                  AND created_at < {to}
+            )
+            GROUP BY day
+            ORDER BY day
+            """, Span: 2, Note: "Low volume — a few hundred trades and account openings per 180 days, so expect gaps.", Compare: true),
+
+        new AnalyticsPanel("stocks", "Top stocks by settled value", "table", """
+            SELECT stock_name AS stock,
+                   count() AS orders,
+                   countIf(order_type = 'buy_order') AS buys,
+                   countIf(order_type = 'sell_order') AS sells,
+                   round(sum(total_amount), 2) AS value,
+                   round(sum(service_fee), 2) AS brokerage
+            FROM patumba_app.public_trade_transactions FINAL
+            WHERE _peerdb_is_deleted = 0
+              AND trade_status = 'settled'
+              AND created_at >= {from}
+              AND created_at < {to}
+            GROUP BY stock
+            ORDER BY value DESC
+            LIMIT 10
+            """, Note: "Settled orders only — matched and pending orders carry no brokerage yet."),
 
         new AnalyticsPanel("flow", "Deposits vs withdrawals", "line", """
             SELECT toDate(created_at) AS day,

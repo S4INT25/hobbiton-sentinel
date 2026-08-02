@@ -39,7 +39,7 @@ public static class WorkflowDefaults
             Id = PlatformActivityWorkflowId,
             Name = "Platform Activity Digest",
             Description =
-                "Every 4 hours, summarises notable activity across Inshuwa, Lipila, BNPL and Patumba — "
+                "Every 4 hours, summarises notable activity across Inshuwa, Gari, Lipila, BNPL and Patumba — "
                 + "new records, money movement, unusual spikes, failed operations and security events. "
                 + "An activity digest, not a metrics report.",
             ActionType = WorkflowActionTypes.EmailReport,
@@ -48,7 +48,9 @@ public static class WorkflowDefaults
             // Off until recipients are agreed — with none set it would fall back to Email:To
             // (the security mailbox) and put six digests a day in front of the wrong team.
             Enabled = false,
-            TargetDatabase = "inshuwa",
+            // Spans every platform. Gari is the primary because it produces the most new records
+            // per window, so its schema is the one the agent most needs loaded by default.
+            TargetDatabase = "gari,inshuwa,lipila_blaze,bnpl,patumba_app",
             EmailSubject = "Platform Activity — last 4 hours",
             CustomPrompt = PlatformActivityPrompt,
             CreatedBy = "system"

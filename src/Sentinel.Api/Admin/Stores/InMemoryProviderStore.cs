@@ -84,13 +84,11 @@ public class InMemoryProviderStore(ILlmModelStore llmModelStore) : IProviderStor
                     SortOrder = def.SortOrder
                 });
             }
-            else
+            else if (string.IsNullOrWhiteSpace(existing.DisplayName))
             {
+                // Repair a blank label only — Enabled, IsDefault, Endpoint and ApiKey are
+                // admin-owned and must survive a restart. See PostgresProviderStore for why.
                 existing.DisplayName = def.DisplayName;
-                existing.Endpoint = def.Endpoint;
-                existing.Enabled = def.Enabled;
-                existing.IsDefault = def.IsDefault;
-                existing.SortOrder = def.SortOrder;
                 existing.UpdatedAt = now;
                 _providers[existing.Id] = existing;
             }

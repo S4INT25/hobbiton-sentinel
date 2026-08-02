@@ -67,12 +67,15 @@ public class PostgresDatabaseProductStore(IDbContextFactory<SentinelDbContext> d
     }
 
     /// <summary>
-    /// Seed the default databases if the table is empty. Called once at startup.
+    /// Add any default database that is not already present. Called once at startup.
+    ///
+    /// Seeds per-database rather than bailing when the table is non-empty: the all-or-nothing
+    /// check meant a newly added platform never reached an existing install. Existing rows are
+    /// left untouched — the admin owns their labels and enabled flags.
     /// </summary>
     public async Task SeedDefaultsAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        if (await db.DatabaseProducts.AnyAsync()) return;
 
         var defaults = new List<DatabaseProduct>
         {
@@ -96,9 +99,24 @@ public class PostgresDatabaseProductStore(IDbContextFactory<SentinelDbContext> d
                 DatabaseName = "patumba_app", DisplayName = "Patumba App",
                 Description = "Patumba — user wallets, transactions, transfers", Enabled = true, SortOrder = 3
             },
+            new()
+            {
+                DatabaseName = "gari", DisplayName = "Gari",
+                Description = "Motor insurance — quotations, policies, vehicles, agent commissions, claims",
+                Enabled = true, SortOrder = 4
+            },
         };
 
-        db.DatabaseProducts.AddRange(defaults);
+        var existing = await db.DatabaseProducts
+            .Select(p => p.DatabaseName)
+            .ToListAsync();
+        var missing = defaults
+            .Where(d => !existing.Contains(d.DatabaseName, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+
+        if (missing.Count == 0) return;
+
+        db.DatabaseProducts.AddRange(missing);
         await db.SaveChangesAsync();
     }
 }

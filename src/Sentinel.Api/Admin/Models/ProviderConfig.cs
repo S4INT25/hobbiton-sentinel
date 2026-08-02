@@ -45,5 +45,18 @@ public static class ProviderDefaults
         Enabled = true, IsDefault = true, SortOrder = 0
     };
 
-    public static IReadOnlyList<ProviderConfig> All => [OpenRouter];
+    /// <summary>
+    /// DeepSeek's direct API, which is OpenAI-compatible so it needs no client changes.
+    /// Seeded disabled: it ships without a key, and an enabled keyless provider can be picked
+    /// up by the resolver's last-resort fallback and fail at call time. Paste a key on the
+    /// Models &amp; Providers page, then enable it — the seeder will not switch it back off.
+    /// </summary>
+    public static readonly ProviderConfig DeepSeek = new()
+    {
+        DisplayName = "DeepSeek", Slug = "deepseek",
+        ApiKey = "", Endpoint = "https://api.deepseek.com/v1",
+        Enabled = false, IsDefault = false, SortOrder = 1
+    };
+
+    public static IReadOnlyList<ProviderConfig> All => [OpenRouter, DeepSeek];
 }

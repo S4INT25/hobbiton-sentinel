@@ -97,7 +97,8 @@ public class AnalyticsPanelsTests
     {
         // A top-10 table or a status snapshot has nothing to compare, and each comparison costs
         // a second full scan — so the flag must not drift onto those.
-        string[] noCompare = ["rails", "merchants", "investors", "insurers", "agents", "disbursements", "portfolio"];
+        string[] noCompare =
+            ["rails", "merchants", "investors", "insurers", "agents", "disbursements", "portfolio", "stocks"];
 
         foreach (var platform in AnalyticsPanels.All)
             foreach (var panel in platform.Panels.Where(p => noCompare.Contains(p.Id)))
