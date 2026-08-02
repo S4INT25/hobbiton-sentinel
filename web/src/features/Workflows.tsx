@@ -5,7 +5,7 @@ import { AnimatePresence } from 'motion/react';
 import { api, type WorkflowDefinition } from '../api';
 import {
   PageHeader, Feedback, Dialog, Spinner, EmptyState,
-  btnPrimary, btnDanger, btnGhost, inputCls, fmtDate,
+  btnPrimary, btnDanger, btnGhost, btnOutline, inputCls, fmtDate,
 } from '../components/ui';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 
@@ -17,6 +17,21 @@ export const TIMEZONES = [
 /** Target databases are stored as one comma-separated string, mirroring emailRecipients. */
 export const parseDatabases = (v: string | undefined | null): string[] =>
   (v ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+
+/**
+ * First readable sentences of a prompt, for the card when no description is set.
+ * Prompts are markdown now, so the raw text leads with "#" and "|" noise — strip the
+ * syntax and skip heading/table lines rather than showing a wall of pipes.
+ */
+function summarisePrompt(prompt: string | undefined | null): string {
+  return (prompt ?? '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('#') && !l.startsWith('|') && !l.startsWith('---') && !l.startsWith('```'))
+    .join(' ')
+    .replace(/[*_`>]/g, '')
+    .slice(0, 220);
+}
 
 function DatabasePicker({
   products,
@@ -233,55 +248,113 @@ export default function Workflows() {
 
       {isLoading && <div className="flex justify-center py-8"><Spinner /></div>}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3" data-stagger>
-        {visible.map((w) => (
-          <div key={w.id} className={`panel panel-hover p-4 ${!w.enabled ? 'opacity-60' : ''}`}>
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <Link to={`/workflows/${w.id}`} className="font-display text-sm font-semibold text-white hover:text-emerald-300 transition-colors flex items-center gap-2">
-                  {w.enabled && <span className="glow-dot shrink-0" style={{ height: 5, width: 5 }} />}
-                  <span className="truncate">{w.name}</span>
-                </Link>
-                <p className="text-xs text-gray-500 mt-1 line-clamp-2">{w.description || w.customPrompt}</p>
+      {/* Full width until xl: a workflow can target five databases, and two narrow columns
+          forced the metadata row to overflow. */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3" data-stagger>
+        {visible.map((w) => {
+          const databases = parseDatabases(w.targetDatabase);
+          const isReport = w.actionType !== 'fraud_run';
+          return (
+            <div key={w.id} className={`panel panel-hover p-5 flex flex-col ${!w.enabled ? 'opacity-60' : ''}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <Link
+                    to={`/workflows/${w.id}`}
+                    className="font-display text-[15px] font-semibold text-white hover:text-emerald-300 transition-colors flex items-center gap-2"
+                  >
+                    {w.enabled && <span className="glow-dot shrink-0" style={{ height: 6, width: 6 }} />}
+                    <span className="truncate">{w.name}</span>
+                  </Link>
+                  {(w.description || w.customPrompt) && (
+                    <p className="text-xs text-gray-500 mt-1.5 leading-relaxed line-clamp-2">
+                      {w.description || summarisePrompt(w.customPrompt)}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className={`px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide rounded border ${
+                    isReport
+                      ? 'bg-sky-500/10 border-sky-500/25 text-sky-300'
+                      : 'bg-amber-500/10 border-amber-500/25 text-amber-300'
+                  }`}>
+                    {isReport ? 'Report' : 'Fraud'}
+                  </span>
+                  {!w.enabled && (
+                    <span className="px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide rounded bg-gray-800 text-gray-500">
+                      Paused
+                    </span>
+                  )}
+                </div>
               </div>
-              {!w.enabled && (
-                <span className="px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide rounded bg-gray-800 text-gray-500 shrink-0">Disabled</span>
-              )}
+
+              {/* Labelled rows rather than one undifferentiated strip of 10px text */}
+              <dl className="mt-4 space-y-2 text-xs">
+                <div className="flex items-baseline gap-3">
+                  <dt className="kicker w-20 shrink-0">Schedule</dt>
+                  <dd className="flex items-center gap-2 flex-wrap min-w-0">
+                    <code className="font-mono text-[11px] bg-gray-800/80 border border-gray-700/50 px-1.5 py-0.5 rounded text-gray-300">
+                      {w.cronExpression}
+                    </code>
+                    <span className="text-gray-600">{w.timeZoneId}</span>
+                  </dd>
+                </div>
+                <div className="flex items-baseline gap-3">
+                  <dt className="kicker w-20 shrink-0">{databases.length > 1 ? 'Databases' : 'Database'}</dt>
+                  <dd className="flex items-center gap-1.5 flex-wrap min-w-0">
+                    {databases.length === 0 && <span className="text-gray-600">—</span>}
+                    {databases.map((db, i) => (
+                      <span
+                        key={db}
+                        title={i === 0 && databases.length > 1 ? 'Primary — supplies the default schema' : undefined}
+                        className={`font-mono text-[11px] px-1.5 py-0.5 rounded border ${
+                          i === 0
+                            ? 'bg-sky-500/10 border-sky-500/25 text-sky-300'
+                            : 'bg-gray-800/60 border-gray-700/50 text-gray-400'
+                        }`}
+                      >
+                        {db}
+                      </span>
+                    ))}
+                  </dd>
+                </div>
+                {w.model && (
+                  <div className="flex items-baseline gap-3">
+                    <dt className="kicker w-20 shrink-0">Model</dt>
+                    <dd className="font-mono text-[11px] text-violet-300/90 truncate">{w.model}</dd>
+                  </div>
+                )}
+              </dl>
+
+              <div className="flex items-center gap-2 mt-4 pt-3 border-t border-gray-800/60">
+                <button
+                  onClick={() => triggerMut.mutate(w.id)}
+                  disabled={triggerMut.isPending}
+                  className={btnOutline}
+                >
+                  {triggerMut.isPending && triggerMut.variables === w.id ? 'Queueing…' : 'Run now'}
+                </button>
+                <button onClick={() => saveMut.mutate({ ...w, enabled: !w.enabled })} className={btnOutline}>
+                  {w.enabled ? 'Pause' : 'Enable'}
+                </button>
+                <button onClick={() => setEditing({ ...w })} className={btnOutline}>Edit</button>
+                <span className="ml-auto flex items-center gap-2">
+                  <span className="font-mono text-[10px] text-gray-600 hidden sm:inline">
+                    {fmtDate(w.updatedAt)}
+                  </span>
+                  <button
+                    onClick={() => setDeleteTarget(w)}
+                    className="p-1.5 text-gray-600 hover:text-rose-400 rounded transition-colors"
+                    title="Delete workflow"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </span>
+              </div>
             </div>
-            <div className="flex items-center gap-3 mt-3 font-mono text-[10px] text-gray-600">
-              <span className="bg-gray-800/80 border border-gray-700/50 px-1.5 py-0.5 rounded">{w.cronExpression}</span>
-              <span>{w.timeZoneId}</span>
-              {parseDatabases(w.targetDatabase).map((db, i) => (
-                <span key={db} className={i === 0 ? 'text-sky-400/80' : 'text-sky-400/50'}>{db}</span>
-              ))}
-              {w.model && <span className="text-violet-400/80">{w.model}</span>}
-              <span>updated {fmtDate(w.updatedAt)}</span>
-            </div>
-            <div className="flex items-center gap-1 mt-3 pt-3 border-t border-gray-800/60">
-              <button onClick={() => triggerMut.mutate(w.id)} disabled={triggerMut.isPending} className="p-1.5 text-emerald-400 hover:text-emerald-300 rounded transition-colors disabled:opacity-50" title="Run now">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </button>
-              <button onClick={() => saveMut.mutate({ ...w, enabled: !w.enabled })} className="p-1.5 text-gray-500 hover:text-gray-300 rounded transition-colors" title={w.enabled ? 'Disable' : 'Enable'}>
-                {w.enabled
-                  ? <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                  : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
-              </button>
-              <button onClick={() => setEditing({ ...w })} className="p-1.5 text-gray-500 hover:text-white rounded transition-colors" title="Edit">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-              </button>
-              <button onClick={() => setDeleteTarget(w)} className="p-1.5 text-gray-500 hover:text-rose-400 rounded transition-colors ml-auto" title="Delete">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {!isLoading && visible.length === 0 && (

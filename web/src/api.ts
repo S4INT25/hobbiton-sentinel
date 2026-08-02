@@ -18,8 +18,13 @@ async function f<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await res.json().catch(() => ({}));
     throw { status: res.status, ...body };
   }
-  if (res.status === 204) return undefined as T;
-  return res.json();
+  // Read the body as text first. Several endpoints answer 202 Accepted with no body
+  // (the trigger routes, for instance), and calling res.json() on an empty body throws
+  // "Unexpected end of JSON input" — which surfaced to users as a failed trigger even
+  // though the job had been queued successfully. Only 204 was special-cased before.
+  const text = await res.text();
+  if (!text) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 const post = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) });
