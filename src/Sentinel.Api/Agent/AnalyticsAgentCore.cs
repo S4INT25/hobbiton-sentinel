@@ -20,7 +20,6 @@ public class AnalyticsAgentCore(
     ClickHouseClient ch,
     SchemaLoader schemaLoader,
     EmailClient emailClient,
-    ChartRenderer chartRenderer,
     IAgentMemoryStore memoryStore,
     ModelResolver modelResolver,
     ILogger<AnalyticsAgentCore> logger)
@@ -60,14 +59,27 @@ public class AnalyticsAgentCore(
         Func<AnalyticsStreamEvent, Task>? onEvent = null,
         Func<AgentToolCall, Task>? onToolCall = null,
         IEnumerable<AgentMemory>? memories = null,
+        IReadOnlyList<string>? additionalDatabases = null,
         CancellationToken cancellationToken = default)
     {
         var resolved = await modelResolver.ResolveAsync(profile.Model);
-        var schema = await schemaLoader.GetSchemaBlockAsync(database);
         var isInteractive = profile.Interactive;
 
+        // Cross-database workflows get every schema in the prompt. Queries are fully qualified as
+        // db.table anyway, so the only thing stopping the agent reaching a second database was not
+        // knowing what is in it.
+        var extras = (additionalDatabases ?? [])
+            .Where(d => !string.IsNullOrWhiteSpace(d) && !d.Equals(database, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var schema = await schemaLoader.GetSchemaBlockAsync(database);
+        foreach (var extra in extras)
+            schema += $"\n\n### Database: `{extra}`\n" + await schemaLoader.GetSchemaBlockAsync(extra);
+
         var allowInteractiveReportSending = !isInteractive || HasExplicitEmailIntent(prompt);
-        var systemPrompt = BuildSystemPrompt(database, schema, isInteractive, allowInteractiveReportSending, memories);
+        var systemPrompt = BuildSystemPrompt(database, schema, isInteractive, allowInteractiveReportSending,
+            memories, extras);
         var messages = new List<ChatMessage> { new SystemChatMessage(systemPrompt) };
 
         if (history is { Count: > 0 })
@@ -765,53 +777,14 @@ public class AnalyticsAgentCore(
         if (string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(body))
             return "Subject and body are required.";
 
-        // Parse and render charts if provided
-        List<EmbeddedChartImage>? chartImages = null;
-        if (root.TryGetProperty("charts", out var chartsArr) && chartsArr.ValueKind == JsonValueKind.Array)
-        {
-            chartImages = [];
-            var chartIndex = 0;
-            foreach (var chartEl in chartsArr.EnumerateArray())
-            {
-                var chart = ParseEmailChart(chartEl);
-                if (chart == null) continue;
+        var headline = root.TryGetProperty("headline", out var hl) ? hl.GetString() : null;
+        var metrics = ParseReportMetrics(root);
 
-                await Emit(onEvent, "rendering_chart", $"Rendering chart: {chart.Title}");
-
-                if (ChartRenderer.IsBarType(chart.Type))
-                {
-                    chartImages.Add(new EmbeddedChartImage
-                    {
-                        ContentId = $"chart-{chartIndex++}-{Guid.NewGuid():N}",
-                        PngBytes = [],
-                        Title = chart.Title,
-                        InlineHtml = ChartRenderer.RenderHtml(chart)
-                    });
-                }
-                else
-                {
-                    var pngBytes = chartRenderer.Render(chart);
-                    if (pngBytes is { Length: > 0 })
-                    {
-                        chartImages.Add(new EmbeddedChartImage
-                        {
-                            ContentId = $"chart-{chartIndex++}-{Guid.NewGuid():N}",
-                            PngBytes = pngBytes,
-                            Title = chart.Title
-                        });
-                    }
-                }
-            }
-
-            if (chartImages.Count == 0) chartImages = null;
-        }
-
-        await Emit(onEvent, "sending_report",
-            $"Sending {template} report: {subject}" +
-            (chartImages is { Count: > 0 } ? $" with {chartImages.Count} chart(s)" : ""));
+        await Emit(onEvent, "sending_report", $"Sending {template} report: {subject}");
 
         var result = await emailClient.SendAsync(subject, body, severity, recipients,
-            wide: true, chartImages: chartImages, senderName: "Analytics · Hobbiton", subjectPrefix: "[ANALYTICS]");
+            wide: true, senderName: "Analytics · Hobbiton", subjectPrefix: "[ANALYTICS]",
+            template: template, headline: headline, metrics: metrics);
         response.ReportSent = true;
         response.EmailSubject = subject;
         response.EmailBody = body;
@@ -819,53 +792,26 @@ public class AnalyticsAgentCore(
         return result;
     }
 
-    private static EmailChart? ParseEmailChart(JsonElement el)
+    private static List<ReportMetric>? ParseReportMetrics(JsonElement root)
     {
-        try
-        {
-            var chart = new EmailChart
-            {
-                Type = el.TryGetProperty("type", out var t) ? t.GetString() : "bar",
-                Title = el.TryGetProperty("title", out var tt) ? tt.GetString() : null
-            };
-
-            if (el.TryGetProperty("labels", out var labels) && labels.ValueKind == JsonValueKind.Array)
-                chart.Labels = labels.EnumerateArray()
-                    .Select(l => l.GetString() ?? "")
-                    .ToList();
-
-            if (el.TryGetProperty("datasets", out var datasets) && datasets.ValueKind == JsonValueKind.Array)
-            {
-                chart.Datasets = [];
-                foreach (var ds in datasets.EnumerateArray())
-                {
-                    var dataset = new EmailChartDataset
-                    {
-                        Label = ds.TryGetProperty("label", out var dl) ? dl.GetString() : null
-                    };
-
-                    if (ds.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
-                    {
-                        dataset.Data = data.EnumerateArray()
-                            .Select(d =>
-                            {
-                                if (d.ValueKind == JsonValueKind.Number) return d.GetDecimal();
-                                if (decimal.TryParse(d.GetString(), out var parsed)) return parsed;
-                                return 0m;
-                            })
-                            .ToList();
-                    }
-
-                    chart.Datasets.Add(dataset);
-                }
-            }
-
-            return chart;
-        }
-        catch
-        {
+        if (!root.TryGetProperty("metrics", out var arr) || arr.ValueKind != JsonValueKind.Array)
             return null;
+
+        var metrics = new List<ReportMetric>();
+        foreach (var el in arr.EnumerateArray())
+        {
+            var label = el.TryGetProperty("label", out var l) ? l.GetString() : null;
+            var value = el.TryGetProperty("value", out var v) ? v.GetString() : null;
+            if (string.IsNullOrWhiteSpace(label) || string.IsNullOrWhiteSpace(value)) continue;
+
+            metrics.Add(new ReportMetric(
+                label.Trim(),
+                value.Trim(),
+                el.TryGetProperty("change", out var c) ? c.GetString() : null,
+                el.TryGetProperty("direction", out var d) ? d.GetString() : null));
         }
+
+        return metrics.Count > 0 ? metrics : null;
     }
 
     private async Task<string> HandleSaveMemory(
@@ -937,8 +883,21 @@ public class AnalyticsAgentCore(
     }
 
     private static string BuildSystemPrompt(string database, string schema, bool isInteractive,
-        bool allowInteractiveReportSending, IEnumerable<AgentMemory>? memories = null)
+        bool allowInteractiveReportSending, IEnumerable<AgentMemory>? memories = null,
+        IReadOnlyList<string>? additionalDatabases = null)
     {
+        var crossDbBlock = additionalDatabases is { Count: > 0 }
+            ? $"""
+
+
+               ## Cross-database access
+               This run may also query: {string.Join(", ", additionalDatabases.Select(d => $"`{d}`"))}.
+               Their schemas are included above. Qualify every table with its own database — `{database}.<table>`
+               for the primary, `<other_db>.<table>` for the rest. Do not assume a table exists in more than one.
+               Status values, casing and column naming differ per database; check the schema before filtering.
+               """
+            : "";
+
         var reportPolicyBlock = isInteractive
             ? (allowInteractiveReportSending
                 ? """
@@ -993,12 +952,16 @@ public class AnalyticsAgentCore(
               Format numbers consistently: K 1,250.00 for currency, use percentages for changes.
               Keep it scannable — busy executives should grasp the key points in 10 seconds.
 
-              ## Charts in Emails
-              You can include charts in email reports by providing the `charts` array in `send_report`.
-              Charts are rendered as images and embedded directly in the email.
-              Use charts when visual representation adds insight — trends over time (line/area), comparisons (bar),
-              distributions (pie/doughnut). Use the data you already queried — do NOT re-query for chart data.
-              Keep charts focused: 1-3 charts per report, clear titles, reasonable data points (under 20 labels).
+              Emails carry NO charts — they are a text-and-tables medium. Express trends in words and numbers
+              ("collections fell for the third straight day, K 412k → K 288k"), not by describing a picture.
+              Readers who want visuals follow the dashboard link in the email footer.
+
+              Pick the `template` that matches the report:
+              - `executive` — periodic business summaries for leadership (revenue, growth, portfolio)
+              - `operational` — day-to-day health: success rates, failures, queues, throughput
+              - `incident` — something is broken or a threshold breached and someone must act now
+              - `activity` — a digest of notable events and changes across the platform
+              - `custom` — anything that fits none of the above
               """;
 
         var memoriesBlock = BuildMemoriesBlock(memories);
@@ -1030,6 +993,7 @@ public class AnalyticsAgentCore(
 
                  ## Primary database: `{{database}}`
                  {{schema}}
+                 {{crossDbBlock}}
 
                  ## ClickHouse SQL Rules
                  - ONLY SELECT/WITH queries. Never INSERT/UPDATE/DELETE/DROP.
@@ -1329,7 +1293,8 @@ public class AnalyticsAgentCore(
         result.StartsWith("Error:") ||
         result.StartsWith("Query failed:");
 
-    private static TableData ParseQueryResult(string json)
+    /// <summary>Parses a ClickHouse <c>default_format=JSON</c> payload into columns + string rows.</summary>
+    public static TableData ParseQueryResult(string json)
     {
         var data = new TableData();
         try

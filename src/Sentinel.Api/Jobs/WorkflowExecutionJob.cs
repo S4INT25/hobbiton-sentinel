@@ -54,7 +54,8 @@ public class WorkflowExecutionJob(
                     {
                         TriggeredBy = triggeredBy,
                         RunId = runId,
-                        Database = workflow.TargetDatabase,
+                        // The fraud pipeline is single-database; take the primary.
+                        Database = WorkflowDatabases.Primary(workflow.TargetDatabase),
                         CustomPrompt = workflow.CustomPrompt,
                         WorkflowId = workflow.Id,
                         Model = string.IsNullOrWhiteSpace(workflow.Model) ? null : workflow.Model,
@@ -97,9 +98,8 @@ public class WorkflowExecutionJob(
         var runId = Guid.NewGuid().ToString("N")[..16];
         var startedAt = DateTime.UtcNow;
         var triggeredBy = $"workflow:{workflow.Id}";
-        var database = string.IsNullOrWhiteSpace(workflow.TargetDatabase)
-            ? "lipila_blaze"
-            : workflow.TargetDatabase;
+        var database = WorkflowDatabases.Primary(workflow.TargetDatabase);
+        var additionalDatabases = WorkflowDatabases.Secondary(workflow.TargetDatabase);
 
         if (string.IsNullOrWhiteSpace(workflow.CustomPrompt))
             throw new InvalidOperationException($"Workflow {workflow.Id} has no prompt configured.");
@@ -119,7 +119,9 @@ public class WorkflowExecutionJob(
 
                                                              IMPORTANT: You MUST call the send_report tool to deliver your findings by email.
                                                              Do NOT finish without calling send_report — if you do not call it the workflow will be considered failed.
-                                                             Use template="insights", include an executive summary, key metrics, and recommendations in the body.
+                                                             Pick the template that matches this report's purpose (executive / operational / incident / activity).
+                                                             Include an executive summary, key metrics, and recommendations in the body, and set the
+                                                             headline and metrics fields so the email leads with the numbers that matter.
                                                              """;
 
         AnalyticsResponse? result = null;
@@ -128,9 +130,15 @@ public class WorkflowExecutionJob(
         var maxIteration = 0;
         try
         {
+            // Knowledge is scoped per database, so a cross-database run needs every scope's
+            // definitions or it will reason about the secondary databases with none.
             var memories = await agentMemoryStore.GetEnabledAsync(database);
+            foreach (var extra in additionalDatabases)
+                memories.AddRange(await agentMemoryStore.GetEnabledAsync(extra));
+            memories = [.. memories.DistinctBy(m => m.Id)];
             ct.ThrowIfCancellationRequested();
             result = await analyticsAgent.RunAsync(prompt, database, memories: memories,
+                additionalDatabases: additionalDatabases,
                 model: string.IsNullOrWhiteSpace(workflow.Model) ? null : workflow.Model,
                 reasoningEffort: string.IsNullOrWhiteSpace(workflow.ReasoningEffort) ? null : workflow.ReasoningEffort,
                 onToolCall: async tc =>
@@ -180,7 +188,8 @@ public class WorkflowExecutionJob(
                     "Workflow {WorkflowId} run {RunId}: agent did not call send_report — emailing its analysis as a fallback",
                     workflow.Id, runId);
 
-                await emailClient.SendAsync(fallbackSubject, explanation, "watching", recipients?.ToList(), wide: true);
+                await emailClient.SendAsync(fallbackSubject, explanation, "watching", recipients?.ToList(),
+                    wide: true, template: "operational");
 
                 result.ReportSent = true;
                 result.EmailSubject = fallbackSubject;

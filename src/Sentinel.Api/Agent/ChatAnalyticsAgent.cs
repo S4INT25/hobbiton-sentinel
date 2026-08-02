@@ -26,5 +26,5 @@ public class ChatAnalyticsAgent(AnalyticsAgentCore core)
             onEvent,
             onToolCall: null,
             memories,
-            cancellationToken);
+            cancellationToken: cancellationToken);
 }

@@ -34,6 +34,7 @@ services:
       Email__FromName: ${EMAIL_FROM_NAME:-Sentinel · Hobbiton}
       Email__To__0: ${EMAIL_TO}
       Email__SubjectPrefix: ${EMAIL_SUBJECT_PREFIX:-[SENTINEL]}
+      Email__DashboardUrl: ${DASHBOARD_URL:-https://sentinel.bi.hobbiton.tech}
       Email__Smtp__Host: smtp.gmail.com
       Email__Smtp__Port: 587
       Email__Smtp__User: ${GMAIL_USER}

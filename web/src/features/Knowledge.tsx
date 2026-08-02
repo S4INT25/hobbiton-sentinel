@@ -6,6 +6,7 @@ import {
   PageHeader, Dialog, Spinner, EmptyState,
   btnPrimary, btnDanger, btnGhost, inputCls, fmtDateFull,
 } from '../components/ui';
+import { MarkdownEditor, MarkdownReader } from '../components/MarkdownEditor';
 
 export const DATABASES = [
   { value: '', label: 'All databases' },
@@ -26,6 +27,7 @@ export default function Knowledge() {
 
   const [editing, setEditing] = useState<Partial<AgentMemory> | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AgentMemory | null>(null);
+  const [reading, setReading] = useState<AgentMemory | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
@@ -108,17 +110,28 @@ export default function Knowledge() {
                       )}
                     </div>
                     <div className="relative mt-1.5">
-                      <p className={`text-xs text-gray-400 leading-relaxed whitespace-pre-wrap ${isExpanded ? '' : 'line-clamp-3'}`}>
-                        {m.definition}
-                      </p>
-                      {!isExpanded && isLong && (
-                        <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-gray-900/90 to-transparent pointer-events-none" />
+                      {isExpanded ? (
+                        <div className="text-xs"><MarkdownReader text={m.definition} /></div>
+                      ) : (
+                        <>
+                          <p className="text-xs text-gray-400 leading-relaxed whitespace-pre-wrap line-clamp-3">
+                            {m.definition}
+                          </p>
+                          {isLong && (
+                            <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-gray-900/90 to-transparent pointer-events-none" />
+                          )}
+                        </>
                       )}
                     </div>
                     {isLong && (
-                      <button onClick={() => toggleExpand(m.id)} className="mt-1 text-[10px] text-emerald-400 hover:text-emerald-300 transition-colors">
-                        {isExpanded ? 'Show less' : 'Show more'}
-                      </button>
+                      <div className="mt-1 flex items-center gap-3">
+                        <button onClick={() => toggleExpand(m.id)} className="text-[10px] text-emerald-400 hover:text-emerald-300 transition-colors">
+                          {isExpanded ? 'Show less' : 'Show more'}
+                        </button>
+                        <button onClick={() => setReading(m)} className="text-[10px] text-gray-500 hover:text-gray-300 transition-colors">
+                          Read
+                        </button>
+                      </div>
                     )}
                     <p className="mt-1.5 font-mono text-[10px] text-gray-600">
                       Updated {fmtDateFull(m.updatedAt)}
@@ -154,7 +167,7 @@ export default function Knowledge() {
 
       <AnimatePresence>
         {editing && (
-          <Dialog title={editing.id ? 'Edit Definition' : 'New Definition'} onClose={() => setEditing(null)}>
+          <Dialog title={editing.id ? 'Edit Definition' : 'New Definition'} onClose={() => setEditing(null)} size="lg">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className={label}>Term <span className="text-rose-400">*</span></label>
@@ -169,12 +182,11 @@ export default function Knowledge() {
             </div>
             <div>
               <label className={label}>Definition / Calculation Rule <span className="text-rose-400">*</span></label>
-              <textarea
+              <MarkdownEditor
                 value={editing.definition ?? ''}
-                onChange={(e) => setEditing({ ...editing, definition: e.target.value })}
-                rows={5}
-                className={`${inputCls} leading-relaxed`}
-                placeholder="Explain exactly how this metric is calculated. E.g.: Revenue is the SUM of the `amount` column in public_transactions WHERE status = 'completed'..."
+                onChange={(v) => setEditing({ ...editing, definition: v })}
+                rows={14}
+                placeholder="Explain exactly how this metric is calculated. Markdown supported — use tables for column mappings and code blocks for SQL.&#10;&#10;e.g. Revenue is `SUM(charge_amount)` on `public_transactions` WHERE `status = 'successful'`."
               />
             </div>
             <label className="flex items-center gap-2 cursor-pointer">
@@ -187,6 +199,16 @@ export default function Knowledge() {
                 {saveMut.isPending ? 'Saving…' : 'Save'}
               </button>
               <button onClick={() => setEditing(null)} className={btnGhost}>Cancel</button>
+            </div>
+          </Dialog>
+        )}
+
+        {reading && (
+          <Dialog title={reading.term} onClose={() => setReading(null)} size="lg">
+            <MarkdownReader text={reading.definition} />
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button onClick={() => { setReading(null); setFormError(null); setEditing({ ...reading }); }} className={btnGhost}>Edit</button>
+              <button onClick={() => setReading(null)} className={btnPrimary}>Close</button>
             </div>
           </Dialog>
         )}

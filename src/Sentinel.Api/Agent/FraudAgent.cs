@@ -516,7 +516,7 @@ public class FraudAgent(
                     $"Run {currentRunId} reached the iteration limit ({maxIterations} steps) without completing. " +
                     "Review Hangfire logs for partial findings.",
                     "warning",
-                    senderName: "Sentinel", subjectPrefix: "[SENTINEL]");
+                    senderName: "Sentinel", subjectPrefix: "[SENTINEL]", template: "operational");
             }
         }
         else if (!alertSent)
@@ -596,7 +596,7 @@ public class FraudAgent(
                     root.GetProperty("subject").GetString()!,
                     root.GetProperty("body").GetString()!,
                     root.TryGetProperty("severity", out var sev) ? sev.GetString()! : "watching",
-                    senderName: "Sentinel", subjectPrefix: "[SENTINEL]"),
+                    senderName: "Sentinel", subjectPrefix: "[SENTINEL]", template: "incident"),
                 "lookup_ip" => await ipLookup.LookupAsync(
                     JsonHelpers.ToIpList(root.GetProperty("ips"))),
                 "describe_table" => await schemaLoader.DescribeTableAsync(

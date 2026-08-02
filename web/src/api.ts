@@ -350,6 +350,34 @@ export interface DashboardData {
   workflows: WorkflowDefinition[];
 }
 
+export interface AnalyticsPlatformInfo {
+  key: string;
+  label: string;
+  database: string;
+}
+
+export interface AnalyticsPanel {
+  id: string;
+  title: string;
+  /** line | area | bar | donut | table */
+  chart: string;
+  span: number;
+  note?: string | null;
+  columns: string[];
+  rows: Record<string, string>[];
+  /** Set when the panel's query failed — render an error card, not a chart. */
+  error?: string | null;
+}
+
+export interface PlatformDashboard {
+  key: string;
+  label: string;
+  database: string;
+  days: number;
+  panels: AnalyticsPanel[];
+  generatedAt: string;
+}
+
 // ── Client ──
 
 export const api = {
@@ -391,6 +419,11 @@ export const api = {
 
   // dashboard
   dashboard: () => f<DashboardData>('/api/dashboard'),
+
+  // analytics dashboard (fixed ClickHouse panels, not the agent)
+  analyticsPlatforms: () => f<AnalyticsPlatformInfo[]>('/api/analytics/dashboard/platforms'),
+  analyticsDashboard: (platform: string, days: number) =>
+    f<PlatformDashboard>(`/api/analytics/dashboard/${platform}?days=${days}`),
 
   // runs
   listRuns: (limit = 50, offset = 0) => f<RunSummary[]>(`/api/runs?limit=${limit}&offset=${offset}`),

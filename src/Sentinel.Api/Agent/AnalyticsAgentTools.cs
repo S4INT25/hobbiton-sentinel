@@ -146,9 +146,12 @@ public static class AnalyticsAgentTools
                                  and stakeholders — make it clean, polished, and executive-ready.
                                  In chat mode, only use this when the user explicitly asks to send an email/report.
 
-                                 Use template "fraud_alert" for security/fraud findings (include severity, evidence, recommendations).
-                                 Use template "insights" for general analytics/business intelligence reports.
-                                 Use template "custom" for any other structured report.
+                                 Pick the template that matches the report:
+                                 - "executive"   — periodic business summary for leadership (revenue, growth, portfolio health)
+                                 - "operational" — day-to-day system/process health: success rates, failures, queues, throughput
+                                 - "incident"    — something broke or a threshold was breached and someone must act now
+                                 - "activity"    — digest of notable events and changes across the platform
+                                 - "custom"      — anything that fits none of the above
 
                                  The body must be well-formatted markdown suitable for a professional audience:
                                  - Start with a brief executive summary (2-3 sentences)
@@ -157,9 +160,8 @@ public static class AnalyticsAgentTools
                                  - End with actionable recommendations if applicable
                                  - Keep it concise — respect the reader's time
 
-                                 You can include charts by providing the "charts" array. Each chart is rendered as an image
-                                 and embedded inline in the email. Use charts to visualize trends, comparisons, and distributions.
-                                 Provide the data you already queried — do NOT re-query for chart data.
+                                 Emails contain no charts. Convey trends in words and numbers, not by describing a visual.
+                                 A dashboard link is appended automatically for readers who want the charts.
                                  """,
             functionParameters: BinaryData.FromString("""
                                                       {
@@ -167,8 +169,8 @@ public static class AnalyticsAgentTools
                                                           "properties": {
                                                               "template": {
                                                                   "type": "string",
-                                                                  "enum": ["fraud_alert", "insights", "custom"],
-                                                                  "description": "The email template style to use"
+                                                                  "enum": ["executive", "operational", "incident", "activity", "custom"],
+                                                                  "description": "The email template that matches this report's purpose"
                                                               },
                                                               "subject": {
                                                                   "type": "string",
@@ -188,40 +190,26 @@ public static class AnalyticsAgentTools
                                                                   "items": { "type": "string" },
                                                                   "description": "Email addresses to send to. If empty, uses the default configured recipient."
                                                               },
-                                                              "charts": {
+                                                              "headline": {
+                                                                  "type": "string",
+                                                                  "description": "Optional one-line takeaway shown prominently under the title, e.g. 'Revenue up 12% WoW on Airtel volume'. Keep under 120 characters."
+                                                              },
+                                                              "metrics": {
                                                                   "type": "array",
-                                                                  "description": "Optional charts to render as images and embed in the email. Use data from your queries.",
+                                                                  "description": "Optional 2-4 headline figures rendered as a scannable strip at the top of the email. Use only the numbers that matter most.",
                                                                   "items": {
                                                                       "type": "object",
                                                                       "properties": {
-                                                                          "type": {
+                                                                          "label": { "type": "string", "description": "Short metric name, e.g. 'Revenue'" },
+                                                                          "value": { "type": "string", "description": "Formatted value, e.g. 'K 2,401,880'" },
+                                                                          "change": { "type": "string", "description": "Optional delta, e.g. '+12% WoW' or '-4% vs 7d avg'" },
+                                                                          "direction": {
                                                                               "type": "string",
-                                                                              "enum": ["bar", "line", "area", "pie", "doughnut", "radar", "horizontalBar"],
-                                                                              "description": "Chart type"
-                                                                          },
-                                                                          "title": {
-                                                                              "type": "string",
-                                                                              "description": "Chart title displayed above the chart"
-                                                                          },
-                                                                          "labels": {
-                                                                              "type": "array",
-                                                                              "items": { "type": "string" },
-                                                                              "description": "X-axis labels (categories, dates, names)"
-                                                                          },
-                                                                          "datasets": {
-                                                                              "type": "array",
-                                                                              "description": "One or more data series",
-                                                                              "items": {
-                                                                                  "type": "object",
-                                                                                  "properties": {
-                                                                                      "label": { "type": "string", "description": "Series name" },
-                                                                                      "data": { "type": "array", "items": { "type": "number" }, "description": "Numeric values" }
-                                                                                  },
-                                                                                  "required": ["label", "data"]
-                                                                              }
+                                                                              "enum": ["up", "down", "flat"],
+                                                                              "description": "Direction of the change, for colour coding"
                                                                           }
                                                                       },
-                                                                      "required": ["type", "title", "labels", "datasets"]
+                                                                      "required": ["label", "value"]
                                                                   }
                                                               }
                                                           },

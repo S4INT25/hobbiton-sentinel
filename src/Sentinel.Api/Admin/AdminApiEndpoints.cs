@@ -6,6 +6,7 @@ using Sentinel.Admin.Auth;
 using Sentinel.Admin.Models;
 using Sentinel.Admin.Stores;
 using Sentinel.Agent;
+using Sentinel.Analytics;
 using Sentinel.Infrastructure;
 using Sentinel.Jobs;
 using Sentinel.Memory;
@@ -297,6 +298,23 @@ public static class AdminApiEndpoints
 
         // ── Analytics ──
         var analytics = api.MapGroup("/analytics");
+
+        // Business dashboard panels: fixed, cached ClickHouse queries, deliberately NOT routed
+        // through the agent so the numbers are identical on every refresh and cost no tokens.
+        // Nested under /dashboard so the {platform} parameter cannot shadow the literal routes
+        // in this group.
+        var analyticsDashboard = analytics.MapGroup("/dashboard");
+
+        analyticsDashboard.MapGet("/platforms", () =>
+            Results.Ok(AnalyticsPanels.All.Select(p => new { key = p.Key, label = p.Label, database = p.Database })));
+
+        analyticsDashboard.MapGet("/{platform}", async (string platform, int? days, AnalyticsDashboardService svc) =>
+        {
+            var dashboard = await svc.GetAsync(platform, days);
+            return dashboard is null
+                ? Results.NotFound(new { error = $"Unknown platform '{platform}'." })
+                : Results.Ok(dashboard);
+        });
 
         analytics.MapGet("/databases", async (SchemaLoader schemaLoader) =>
         {
