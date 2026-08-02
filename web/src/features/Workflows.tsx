@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence } from 'motion/react';
-import { api, type WorkflowDefinition } from '../api';
+import { api, runWorkflowId, type WorkflowDefinition } from '../api';
 import {
   PageHeader, Feedback, Dialog, Spinner, EmptyState,
-  btnPrimary, btnDanger, btnGhost, btnOutline, inputCls, fmtDate,
+  btnPrimary, btnDanger, btnGhost, btnOutline, inputCls, fmtDate, LiveRunPill,
 } from '../components/ui';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 
@@ -236,6 +236,20 @@ export default function Workflows() {
     onError: (e: Error) => setFeedback({ message: `Failed to trigger: ${e.message}`, kind: 'error' }),
   });
 
+  // Runs record their origin in `triggeredBy` rather than a foreign key, so this is how a
+  // workflow learns it is currently running. Polled so the badge appears without a refresh.
+  const { data: activeRuns = [] } = useQuery({
+    queryKey: ['active-runs'],
+    queryFn: api.activeRuns,
+    refetchInterval: 5000,
+  });
+
+  const runByWorkflow = new Map(
+    activeRuns
+      .map((r) => [runWorkflowId(r.triggeredBy), r] as const)
+      .filter((e): e is [string, (typeof activeRuns)[number]] => e[0] !== null)
+  );
+
   const visible = workflows.filter((w) => !w.isDeleted);
 
   return (
@@ -254,6 +268,7 @@ export default function Workflows() {
         {visible.map((w) => {
           const databases = parseDatabases(w.targetDatabase);
           const isReport = w.actionType !== 'fraud_run';
+          const activeRun = runByWorkflow.get(w.id);
           return (
             <div key={w.id} className={`panel panel-hover p-5 flex flex-col ${!w.enabled ? 'opacity-60' : ''}`}>
               <div className="flex items-start justify-between gap-3">
@@ -272,6 +287,7 @@ export default function Workflows() {
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
+                  {activeRun && <LiveRunPill to={`/runs/${activeRun.runId}`} label={activeRun.status} />}
                   <span className={`px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide rounded border ${
                     isReport
                       ? 'bg-sky-500/10 border-sky-500/25 text-sky-300'
@@ -326,13 +342,17 @@ export default function Workflows() {
               </dl>
 
               <div className="flex items-center gap-2 mt-4 pt-3 border-t border-gray-800/60">
-                <button
-                  onClick={() => triggerMut.mutate(w.id)}
-                  disabled={triggerMut.isPending}
-                  className={btnOutline}
-                >
-                  {triggerMut.isPending && triggerMut.variables === w.id ? 'Queueing…' : 'Run now'}
-                </button>
+                {activeRun ? (
+                  <Link to={`/runs/${activeRun.runId}`} className={btnOutline}>View live logs</Link>
+                ) : (
+                  <button
+                    onClick={() => triggerMut.mutate(w.id)}
+                    disabled={triggerMut.isPending}
+                    className={btnOutline}
+                  >
+                    {triggerMut.isPending && triggerMut.variables === w.id ? 'Queueing…' : 'Run now'}
+                  </button>
+                )}
                 <button onClick={() => saveMut.mutate({ ...w, enabled: !w.enabled })} className={btnOutline}>
                   {w.enabled ? 'Pause' : 'Enable'}
                 </button>

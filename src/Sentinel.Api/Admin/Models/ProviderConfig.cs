@@ -66,4 +66,7 @@ public static class ProviderDefaults
     /// the deployment environment rather than only in a row a redeploy can lose.
     /// </summary>
     public static string ApiKeyConfigPath(string slug) => $"Providers:{slug}:ApiKey";
+
+    /// <summary>The same setting as an environment variable name, for error messages and docs.</summary>
+    public static string ApiKeyEnvVar(string slug) => $"Providers__{slug}__ApiKey";
 }

@@ -53,11 +53,34 @@ public static class AdminApiEndpoints
         api.MapGet("/runs", async (IRunLogStore store, int? limit, int? offset) =>
             Results.Ok(await store.GetRecentRunsAsync(limit ?? 50, offset ?? 0)));
 
-        api.MapGet("/runs/{runId}", async (string runId, IRunLogStore store) =>
+        api.MapGet("/runs/{runId}", async (string runId, IRunLogStore store, IActiveRunTracker runTracker) =>
         {
             var summary = await store.GetRunSummaryAsync(runId);
             var logs = await store.GetRunLogsAsync(runId);
-            return Results.Ok(new { summary, logs });
+
+            // A summary is only persisted when the run finishes, so an in-flight run had nothing
+            // to show and the detail page reported "run not found" — exactly when you most want
+            // to watch it. Synthesize one from the active tracker; tool-call logs are already
+            // written incrementally, so the page fills in as the run progresses.
+            var active = await runTracker.GetAsync(runId);
+
+            // "Live" means still working. The tracker keeps terminal entries around for a while,
+            // so trusting its mere presence would leave a failed run pulsing "running" forever.
+            var live = ActiveRunStatuses.IsInFlight(active?.Status);
+
+            summary ??= active is null
+                ? null
+                : new RunSummary
+                {
+                    RunId = active.RunId,
+                    StartedAt = active.StartedAtUtc,
+                    FinishedAt = DateTime.UtcNow,
+                    Status = active.Status,
+                    TriggeredBy = active.TriggeredBy,
+                    Iterations = (ushort)logs.Count
+                };
+
+            return Results.Ok(new { summary, logs, live });
         });
 
         api.MapPost("/runs/trigger", async (IAuditLogStore audit, HttpContext ctx) =>
@@ -784,7 +807,7 @@ public static class AdminApiEndpoints
         {
             var wf = await store.GetByIdAsync(id);
             if (wf is null) return Results.NotFound();
-            BackgroundJob.Enqueue<WorkflowExecutionJob>(j => j.ExecuteAsync(id));
+            BackgroundJob.Enqueue<WorkflowExecutionJob>(j => j.ExecuteAsync(id, true));
             await AuditAction(audit, ctx, "trigger", "workflow", id, wf.Name);
             return Results.Accepted();
         }).RequireAuthorization(AuthConstants.AdminOnlyPolicy);

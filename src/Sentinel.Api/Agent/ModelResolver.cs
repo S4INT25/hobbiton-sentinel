@@ -69,8 +69,17 @@ public class ModelResolver(
         if (!string.IsNullOrWhiteSpace(fromConfig)) return fromConfig;
 
         // Legacy single-provider setting, kept so existing OpenRouter deployments keep working.
-        return provider.Slug.Equals("openrouter", StringComparison.OrdinalIgnoreCase)
-            ? config["OpenRouter:ApiKey"] ?? ""
-            : "";
+        if (provider.Slug.Equals("openrouter", StringComparison.OrdinalIgnoreCase))
+        {
+            var legacy = config["OpenRouter:ApiKey"];
+            if (!string.IsNullOrWhiteSpace(legacy)) return legacy;
+        }
+
+        // The OpenAI client throws "Value cannot be an empty string. (Parameter 'key')" on a blank
+        // key, which tells whoever reads the run log nothing about what to do. Name the provider
+        // and both places the key can come from.
+        throw new InvalidOperationException(
+            $"No API key for provider '{provider.Slug}'. Set it on the Models & Providers page, " +
+            $"or supply {ProviderDefaults.ApiKeyEnvVar(provider.Slug)} as an environment variable.");
     }
 }

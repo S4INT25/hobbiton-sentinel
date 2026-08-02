@@ -75,7 +75,9 @@ public class ActiveRunTracker(IFusionCache cache, ILogger<ActiveRunTracker> logg
                 continue;
             }
 
-            active.Add(state);
+            // Terminal entries linger for their TTL so GetAsync can still describe how a run
+            // ended; they are not "active" and must not be reported as such.
+            if (ActiveRunStatuses.IsInFlight(state.Status)) active.Add(state);
         }
 
         if (stale.Count > 0)
@@ -110,3 +112,18 @@ public sealed record ActiveRunState(
     string TriggeredBy,
     DateTime StartedAtUtc,
     DateTime UpdatedAtUtc);
+
+public static class ActiveRunStatuses
+{
+    public const string Queued = "queued";
+    public const string Running = "running";
+
+    /// <summary>
+    /// Whether a tracked run is still working. Failed and stopped entries stay in the tracker for
+    /// their TTL so the detail page can report how a run ended, so presence in the tracker is not
+    /// the same as being active — without this check a workflow keeps advertising "running" for a
+    /// day after it died.
+    /// </summary>
+    public static bool IsInFlight(string? status) =>
+        status is Queued or Running;
+}

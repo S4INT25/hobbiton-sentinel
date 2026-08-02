@@ -167,9 +167,21 @@ export interface RunLog {
 export interface ActiveRunState {
   runId: string;
   status: string;
+  /** "workflow:{id}", "manual:{user}" or "scheduler". */
   triggeredBy: string;
   startedAtUtc: string;
 }
+
+/**
+ * The workflow a run belongs to, or null for manual/scheduler runs.
+ * Runs carry their origin in `triggeredBy` rather than a foreign key, so this is the only
+ * link between the two — keep the parsing in one place.
+ */
+export const runWorkflowId = (triggeredBy: string | undefined | null): string | null =>
+  triggeredBy?.startsWith('workflow:') ? triggeredBy.slice('workflow:'.length) : null;
+
+export const isLiveStatus = (status: string | undefined | null) =>
+  status === 'running' || status === 'queued' || status === 'pending';
 
 export interface AgentMemory {
   id: number;
@@ -442,7 +454,8 @@ export const api = {
 
   // runs
   listRuns: (limit = 50, offset = 0) => f<RunSummary[]>(`/api/runs?limit=${limit}&offset=${offset}`),
-  getRun: (runId: string) => f<{ summary: RunSummary; logs: RunLog[] }>(`/api/runs/${runId}`),
+  getRun: (runId: string) =>
+    f<{ summary: RunSummary | null; logs: RunLog[]; live: boolean }>(`/api/runs/${runId}`),
   activeRuns: () => f<ActiveRunState[]>('/api/runs/active'),
   triggerRun: () => f<void>('/api/runs/trigger', { method: 'POST' }),
   stopRun: (runId: string) => f<{ stopped: boolean }>(`/api/runs/${runId}/stop`, { method: 'POST' }),

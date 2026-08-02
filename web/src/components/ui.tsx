@@ -1,5 +1,6 @@
 import { marked } from 'marked';
 import { motion } from 'motion/react';
+import { Link } from 'react-router-dom';
 
 // ── formatting ──
 
@@ -82,6 +83,20 @@ export function ConfidenceBadge({ confidence }: { confidence: number }) {
           ? 'bg-amber-500/10 text-amber-400 border-amber-500/25'
           : 'bg-sky-500/10 text-sky-400 border-sky-500/25';
   return <span className={`${badge} ${cls} tnum`}>{confidence}%</span>;
+}
+
+/** Pulsing "running now" pill, linking straight to the live log view. */
+export function LiveRunPill({ to, label = 'Running' }: { to: string; label?: string }) {
+  return (
+    <Link
+      to={to}
+      title="View live logs"
+      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 font-mono text-[10px] uppercase tracking-wide text-emerald-300 hover:bg-emerald-500/20 transition-colors"
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+      {label}
+    </Link>
+  );
 }
 
 export function StatusBadge({ status }: { status: string }) {

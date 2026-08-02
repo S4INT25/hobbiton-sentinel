@@ -50,7 +50,7 @@ public class WorkflowSchedulerService(
                 var workflowTimeZone = WorkflowTimeZones.ResolveOrDefault(workflow.TimeZoneId);
                 jobs.AddOrUpdate<WorkflowExecutionJob>(
                     recurringJobId: recurringId,
-                    methodCall: job => job.ExecuteAsync(workflow.Id),
+                    methodCall: job => job.ExecuteAsync(workflow.Id, false),
                     cronExpression: workflow.CronExpression,
                     queue: "default",
                     options: new RecurringJobOptions

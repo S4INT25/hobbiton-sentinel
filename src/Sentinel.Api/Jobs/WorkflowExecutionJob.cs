@@ -20,7 +20,13 @@ public class WorkflowExecutionJob(
     RunCancellationRegistry cancellationRegistry,
     ILogger<WorkflowExecutionJob> logger)
 {
-    public async Task ExecuteAsync(string workflowId)
+    /// <param name="manual">
+    /// True when a person pressed "Run now". A paused workflow still runs in that case: pausing
+    /// stops the cron, it does not mean the workflow can never be run. Previously the enabled
+    /// check rejected manual triggers too, so the button reported "run queued" and then nothing
+    /// happened — no run, no log, no error.
+    /// </param>
+    public async Task ExecuteAsync(string workflowId, bool manual = false)
     {
         var workflow = await workflowStore.GetByIdAsync(workflowId);
         if (workflow is null)
@@ -29,9 +35,15 @@ public class WorkflowExecutionJob(
             return;
         }
 
-        if (!workflow.Enabled || workflow.IsDeleted)
+        if (workflow.IsDeleted)
         {
-            logger.LogInformation("Workflow {WorkflowId} is disabled/deleted; skipping execution", workflowId);
+            logger.LogInformation("Workflow {WorkflowId} is deleted; skipping execution", workflowId);
+            return;
+        }
+
+        if (!workflow.Enabled && !manual)
+        {
+            logger.LogInformation("Workflow {WorkflowId} is paused; skipping scheduled execution", workflowId);
             return;
         }
 

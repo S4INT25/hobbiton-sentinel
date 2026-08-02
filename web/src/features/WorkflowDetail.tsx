@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence } from 'motion/react';
-import { api, type RunSummary, type WorkflowDefinition, type FraudPattern, type EvidenceSource, type AgentMemory } from '../api';
+import { api, runWorkflowId, type RunSummary, type WorkflowDefinition, type FraudPattern, type EvidenceSource, type AgentMemory } from '../api';
 import {
   Feedback, Dialog, Spinner, StatusBadge, Markdown, Tabs,
   btnPrimary, btnDanger, btnGhost, btnOutline, inputCls,
-  fmtDate, fmtDateFull, tableWrap, thCls, tdCls,
+  fmtDate, fmtDateFull, tableWrap, thCls, tdCls, LiveRunPill,
 } from '../components/ui';
 import { MarkdownEditor, MarkdownReader } from '../components/MarkdownEditor';
 import { WorkflowForm, parseDatabases } from './Workflows';
@@ -53,10 +53,21 @@ export default function WorkflowDetail() {
     queryKey: ['workflow', id],
     queryFn: () => api.getWorkflow(id),
   });
+  const { data: activeRuns = [] } = useQuery({
+    queryKey: ['active-runs'],
+    queryFn: api.activeRuns,
+    refetchInterval: 5000,
+  });
+
+  // Runs link back via `triggeredBy`, not a foreign key.
+  const activeRun = activeRuns.find((r) => runWorkflowId(r.triggeredBy) === id);
+
   const { data: runs = [] } = useQuery({
     queryKey: ['workflow-runs', id],
     queryFn: () => api.workflowRuns(id),
     enabled: !!workflow,
+    // Only while something is in flight — a finished history never changes.
+    refetchInterval: activeRun ? 5000 : false,
   });
   const { data: patterns = [] } = useQuery({
     queryKey: ['workflow-patterns', id],
@@ -199,11 +210,16 @@ export default function WorkflowDetail() {
           {!workflow.enabled && (
             <span className="px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide rounded bg-gray-800 text-gray-500 shrink-0">Disabled</span>
           )}
+          {activeRun && <LiveRunPill to={`/runs/${activeRun.runId}`} label={activeRun.status} />}
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => triggerMut.mutate()} disabled={triggerMut.isPending} className={btnPrimary}>
-            {triggerMut.isPending ? 'Queuing…' : 'Run now'}
-          </button>
+          {activeRun ? (
+            <Link to={`/runs/${activeRun.runId}`} className={btnPrimary}>View live logs</Link>
+          ) : (
+            <button onClick={() => triggerMut.mutate()} disabled={triggerMut.isPending} className={btnPrimary}>
+              {triggerMut.isPending ? 'Queuing…' : 'Run now'}
+            </button>
+          )}
           <button onClick={() => setEditing({ ...workflow })} className={btnOutline}>Edit</button>
           <button onClick={() => setDeleteOpen(true)} className="px-2.5 py-1.5 text-xs border border-gray-800 rounded-md text-gray-600 hover:text-rose-400 hover:bg-gray-900 transition-colors">
             Delete

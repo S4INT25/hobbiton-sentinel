@@ -44,12 +44,15 @@ public class ProviderDefaultsTests
     }
 
     [Theory]
-    [InlineData("deepseek", "Providers:deepseek:ApiKey")]
-    [InlineData("openrouter", "Providers:openrouter:ApiKey")]
-    public void Api_key_config_path_matches_the_documented_env_var(string slug, string expected)
+    [InlineData("deepseek", "Providers:deepseek:ApiKey", "Providers__deepseek__ApiKey")]
+    [InlineData("openrouter", "Providers:openrouter:ApiKey", "Providers__openrouter__ApiKey")]
+    public void Api_key_config_path_and_env_var_agree(string slug, string path, string envVar)
     {
-        // Env binding turns ':' into '__', so this is Providers__deepseek__ApiKey in compose.
-        Assert.Equal(expected, ProviderDefaults.ApiKeyConfigPath(slug));
+        // The env var is what compose sets and what the "no API key" error tells you to set,
+        // so it has to be the ':' → '__' form of the same setting.
+        Assert.Equal(path, ProviderDefaults.ApiKeyConfigPath(slug));
+        Assert.Equal(envVar, ProviderDefaults.ApiKeyEnvVar(slug));
+        Assert.Equal(envVar, path.Replace(":", "__"));
     }
 
     [Fact]
