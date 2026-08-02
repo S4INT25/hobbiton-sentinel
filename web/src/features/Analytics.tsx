@@ -147,7 +147,11 @@ export default function Analytics() {
 
   return (
     <div className="space-y-5 px-4 lg:px-16">
-      <PageHeader title="Analytics" subtitle="Business metrics across the four platforms">
+      {/* Count comes from the data — a hardcoded "four platforms" went stale the moment Gari landed. */}
+      <PageHeader
+        title="Analytics"
+        subtitle={platforms.length ? `Business metrics across ${platforms.length} platforms` : 'Business metrics'}
+      >
         <select value={days} onChange={(e) => setDays(Number(e.target.value))} className={selectCls}>
           {WINDOWS.map((d) => <option key={d} value={d}>Last {d} days</option>)}
         </select>

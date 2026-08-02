@@ -53,7 +53,7 @@ public static class AnalyticsPanels
     public static int ClampDays(int? days) =>
         Math.Clamp(days ?? DefaultDays, MinDays, MaxDays);
 
-    public static IReadOnlyList<AnalyticsPlatform> All => [Lipila, Patumba, Inshuwa, Bnpl];
+    public static IReadOnlyList<AnalyticsPlatform> All => [Lipila, Patumba, Inshuwa, Gari, Bnpl];
 
     public static AnalyticsPlatform? Find(string? key) =>
         All.FirstOrDefault(p => string.Equals(p.Key, key, StringComparison.OrdinalIgnoreCase));
@@ -300,6 +300,95 @@ public static class AnalyticsPanels
             ORDER BY policies DESC
             LIMIT 10
             """, Note: "Agents only — brokers sit in public_Brokers against the same IntermediaryId."),
+    ]);
+
+    // ── Gari ────────────────────────────────────────────────────────────────
+    // Motor insurance, a separate business from Inshuwa — never blend the two into one
+    // "insurance" figure. Successful transactions are 'success', not 'successful'.
+    //
+    // Status is a STRING on public_Transactions but an INTEGER code on Policies, Quotations and
+    // Claims. Nothing here filters on those integer codes: their meaning is undocumented, and
+    // guessing that 1 means "active" would quietly produce a wrong number that still renders.
+
+    private static AnalyticsPlatform Gari => new("gari", "Gari", "gari",
+    [
+        new AnalyticsPanel("revenue", "Premiums collected vs commission paid", "area", """
+            SELECT toDate(CreatedAt) AS day,
+                   round(sumIf(Amount, TransactionType = 'premium_payment'), 2) AS premiums,
+                   round(sumIf(Amount, TransactionType = 'commission_pay_out'), 2) AS commission_paid
+            FROM gari.public_Transactions FINAL
+            WHERE _peerdb_is_deleted = 0
+              AND Status = 'success'
+              AND CreatedAt >= {from}
+              AND CreatedAt < {to}
+            GROUP BY day
+            ORDER BY day
+            """, Span: 2, Note: "Premiums are money in, commission is money out — shown side by side, never netted.", Compare: true),
+
+        new AnalyticsPanel("funnel", "Quotations vs policies issued", "line", """
+            -- Two tables with no join key at day level, so they are unioned onto a shared axis.
+            -- Counts every row created in the window regardless of status code.
+            SELECT day, sum(quotations) AS quotations, sum(policies) AS policies
+            FROM (
+                SELECT toDate(CreatedAt) AS day, 1 AS quotations, 0 AS policies
+                FROM gari.public_Quotations FINAL
+                WHERE _peerdb_is_deleted = 0 AND CreatedAt >= {from} AND CreatedAt < {to}
+                UNION ALL
+                SELECT toDate(CreatedAt) AS day, 0 AS quotations, 1 AS policies
+                FROM gari.public_Policies FINAL
+                WHERE _peerdb_is_deleted = 0 AND CreatedAt >= {from} AND CreatedAt < {to}
+            )
+            GROUP BY day
+            ORDER BY day
+            """, Compare: true),
+
+        new AnalyticsPanel("transactions", "Success rate by transaction type", "table", """
+            SELECT TransactionType AS type,
+                   count() AS attempts,
+                   countIf(Status = 'success') AS successful,
+                   round(100.0 * countIf(Status = 'success') / count(), 1) AS success_rate,
+                   round(sumIf(Amount, Status = 'success'), 2) AS value
+            FROM gari.public_Transactions FINAL
+            WHERE _peerdb_is_deleted = 0
+              AND CreatedAt >= {from}
+              AND CreatedAt < {to}
+            GROUP BY type
+            ORDER BY attempts DESC
+            """, Note: "Premium payments and commission payouts fail at very different rates — read them separately."),
+
+        new AnalyticsPanel("insurers", "Top insurers by premium", "table", """
+            SELECT c.Name AS insurer,
+                   count() AS payments,
+                   round(sum(t.Amount), 2) AS premiums
+            FROM gari.public_Transactions AS t FINAL
+            INNER JOIN gari.public_InsuranceCompanies AS c FINAL ON t.InsuranceCompanyId = c.Id
+            WHERE t._peerdb_is_deleted = 0
+              AND c._peerdb_is_deleted = 0
+              AND t.Status = 'success'
+              AND t.TransactionType = 'premium_payment'
+              AND t.CreatedAt >= {from}
+              AND t.CreatedAt < {to}
+            GROUP BY insurer
+            ORDER BY premiums DESC
+            LIMIT 10
+            """),
+
+        new AnalyticsPanel("agents", "Top agents by premium written", "table", """
+            SELECT concat(a.FirstName, ' ', a.LastName) AS agent,
+                   count() AS payments,
+                   round(sum(t.Amount), 2) AS premiums
+            FROM gari.public_Transactions AS t FINAL
+            INNER JOIN gari.public_GariAgents AS a FINAL ON t.GariAgentId = a.Id
+            WHERE t._peerdb_is_deleted = 0
+              AND a._peerdb_is_deleted = 0
+              AND t.Status = 'success'
+              AND t.TransactionType = 'premium_payment'
+              AND t.CreatedAt >= {from}
+              AND t.CreatedAt < {to}
+            GROUP BY agent
+            ORDER BY premiums DESC
+            LIMIT 10
+            """, Note: "Agent-attributed premiums only — direct business carries no GariAgentId."),
     ]);
 
     // ── BNPL ────────────────────────────────────────────────────────────────
