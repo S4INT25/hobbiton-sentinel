@@ -81,15 +81,28 @@ public class InMemoryProviderStore(ILlmModelStore llmModelStore) : IProviderStor
                     ApiKey = def.ApiKey,
                     Endpoint = def.Endpoint,
                     Enabled = def.Enabled,
+                    IsDefault = def.IsDefault,
                     SortOrder = def.SortOrder
                 });
             }
-            else if (string.IsNullOrWhiteSpace(existing.DisplayName))
+            else
             {
-                // Repair a blank label only — Enabled, IsDefault, Endpoint and ApiKey are
-                // admin-owned and must survive a restart. See PostgresProviderStore for why.
-                existing.DisplayName = def.DisplayName;
-                existing.UpdatedAt = now;
+                if (string.IsNullOrWhiteSpace(existing.DisplayName))
+                {
+                    existing.DisplayName = def.DisplayName;
+                    existing.UpdatedAt = now;
+                }
+
+                // An untouched row follows the seed; once an admin saves it, it is theirs.
+                // Never ApiKey. See PostgresProviderStore for the reasoning.
+                if (existing.UpdatedAt == existing.CreatedAt)
+                {
+                    existing.Enabled = def.Enabled;
+                    existing.IsDefault = def.IsDefault;
+                    existing.Endpoint = def.Endpoint;
+                    existing.SortOrder = def.SortOrder;
+                }
+
                 _providers[existing.Id] = existing;
             }
         }

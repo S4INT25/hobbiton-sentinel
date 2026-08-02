@@ -86,16 +86,22 @@ public class PostgresLlmModelStore(
     public async Task SeedDefaultsAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
+        var seeded = LlmModelDefaults.Seeded;
         var defaults = LlmModelDefaults.All;
         var existing = await db.LlmModels.ToListAsync();
         var now = DateTime.UtcNow;
         var anyChanged = false;
 
-        var openRouter = await providerStore.GetBySlugAsync("openrouter");
-        var defaultProviderId = openRouter?.Id ?? 0;
+        // Each model names its own provider — a DeepSeek model id is not valid on OpenRouter and
+        // vice versa, so they cannot all be pointed at one provider.
+        var providerIds = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var slug in seeded.Select(m => m.ProviderSlug).Distinct(StringComparer.OrdinalIgnoreCase))
+            providerIds[slug] = (await providerStore.GetBySlugAsync(slug))?.Id ?? 0;
 
-        foreach (var def in defaults)
+        foreach (var entry in seeded)
         {
+            var def = entry.Model;
+            var defaultProviderId = providerIds.GetValueOrDefault(entry.ProviderSlug);
             var match = existing.FirstOrDefault(e =>
                 string.Equals(e.ModelId, def.ModelId, StringComparison.OrdinalIgnoreCase));
             if (match is null)
@@ -125,7 +131,10 @@ public class PostgresLlmModelStore(
                     match.Enabled = def.Enabled;
                     match.IsDefault = def.IsDefault;
                     match.SortOrder = def.SortOrder;
-                    if (match.ProviderId == 0) match.ProviderId = defaultProviderId;
+                    // Re-point whenever the seed says a different provider, not only when unset.
+                    // The old guard (== 0) meant the change-detection above would flag a provider
+                    // mismatch on every boot and then never fix it.
+                    if (defaultProviderId != 0) match.ProviderId = defaultProviderId;
                     match.UpdatedAt = now;
                     anyChanged = true;
                 }

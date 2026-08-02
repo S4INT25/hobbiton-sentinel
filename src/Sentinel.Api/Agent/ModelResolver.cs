@@ -44,11 +44,33 @@ public class ModelResolver(
                     ?? enabledProviders.FirstOrDefault();
 
         var client = provider is not null
-            ? clientFactory.GetOrCreate(provider.Endpoint, provider.ApiKey)
+            ? clientFactory.GetOrCreate(provider.Endpoint, ResolveApiKey(provider))
             : clientFactory.GetOrCreate(
                 config["OpenRouter:Endpoint"] ?? "https://openrouter.ai/api/v1",
                 config["OpenRouter:ApiKey"] ?? "");
 
         return new ResolvedModel(client, modelId);
+    }
+
+    /// <summary>
+    /// The provider's API key: the stored value if an admin has entered one, otherwise
+    /// configuration (<c>Providers:{slug}:ApiKey</c>, i.e. env <c>Providers__{slug}__ApiKey</c>).
+    ///
+    /// The config fallback exists because a key that lives only in a database row disappears with
+    /// the row — a redeploy that recreates the volume silently leaves every agent unauthenticated.
+    /// Supplying it through the environment means credentials survive rebuilds without anyone
+    /// re-pasting them, which is also how secrets should reach a container.
+    /// </summary>
+    private string ResolveApiKey(ProviderConfig provider)
+    {
+        if (!string.IsNullOrWhiteSpace(provider.ApiKey)) return provider.ApiKey;
+
+        var fromConfig = config[ProviderDefaults.ApiKeyConfigPath(provider.Slug)];
+        if (!string.IsNullOrWhiteSpace(fromConfig)) return fromConfig;
+
+        // Legacy single-provider setting, kept so existing OpenRouter deployments keep working.
+        return provider.Slug.Equals("openrouter", StringComparison.OrdinalIgnoreCase)
+            ? config["OpenRouter:ApiKey"] ?? ""
+            : "";
     }
 }

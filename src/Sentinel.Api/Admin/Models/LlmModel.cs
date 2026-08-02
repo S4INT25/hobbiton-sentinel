@@ -45,29 +45,40 @@ public class LlmModel
     [Column("updated_at")] public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
 
+/// <summary>A seeded model plus the provider slug it belongs to.</summary>
+/// <remarks>
+/// The slug lives here rather than on <see cref="LlmModel"/> because provider ids are assigned
+/// by the database and are not known until seed time. Model ids are provider-specific: DeepSeek's
+/// direct API expects <c>deepseek-v4-flash</c>, while the same model routed through OpenRouter is
+/// <c>deepseek/deepseek-v4-flash</c>. Attaching the wrong provider produces a 404 from the vendor.
+/// </remarks>
+public sealed record SeededModel(string ProviderSlug, LlmModel Model);
+
 public static class LlmModelDefaults
 {
-    public static IReadOnlyList<LlmModel> All =>
+    public static IReadOnlyList<SeededModel> Seeded =>
     [
-        new LlmModel
+        new("deepseek", new LlmModel
         {
-            DisplayName = "DeepSeek V4 Flash", ModelId = "deepseek/deepseek-v4-flash",
+            DisplayName = "DeepSeek V4 Flash", ModelId = "deepseek-v4-flash",
             Description = "Fast and cheap — great for most tasks", Enabled = true, IsDefault = true, SortOrder = 0
-        },
-        new LlmModel
+        }),
+        new("deepseek", new LlmModel
         {
-            DisplayName = "DeepSeek V4 Pro", ModelId = "deepseek/deepseek-v4-pro",
+            DisplayName = "DeepSeek V4 Pro", ModelId = "deepseek-v4-pro",
             Description = "Deeper reasoning for complex analysis", Enabled = true, SortOrder = 1
-        },
-        new LlmModel
+        }),
+        new("openrouter", new LlmModel
         {
             DisplayName = "Kimi K3", ModelId = "moonshotai/kimi-k3",
             Description = "Moonshot AI — strong long-context reasoning", Enabled = true, SortOrder = 2
-        },
-        new LlmModel
+        }),
+        new("openrouter", new LlmModel
         {
             DisplayName = "Claude Opus 5 Fast", ModelId = "anthropic/claude-opus-5-fast",
             Description = "Anthropic top-tier reasoning", Enabled = true, SortOrder = 3
-        },
+        }),
     ];
+
+    public static IReadOnlyList<LlmModel> All => [.. Seeded.Select(s => s.Model)];
 }

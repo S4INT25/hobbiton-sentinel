@@ -50,15 +50,20 @@ public class InMemoryLlmModelStore(IProviderStore providerStore) : ILlmModelStor
 
     public async Task SeedDefaultsAsync()
     {
+        var seeded = LlmModelDefaults.Seeded;
         var defaults = LlmModelDefaults.All;
         var now = DateTime.UtcNow;
         var existing = _models.Values.ToList();
 
-        var openRouter = await providerStore.GetBySlugAsync("openrouter");
-        var defaultProviderId = openRouter?.Id ?? 0;
+        // Each model names its own provider — DeepSeek ids are not valid on OpenRouter.
+        var providerIds = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var slug in seeded.Select(m => m.ProviderSlug).Distinct(StringComparer.OrdinalIgnoreCase))
+            providerIds[slug] = (await providerStore.GetBySlugAsync(slug))?.Id ?? 0;
 
-        foreach (var def in defaults)
+        foreach (var entry in seeded)
         {
+            var def = entry.Model;
+            var defaultProviderId = providerIds.GetValueOrDefault(entry.ProviderSlug);
             var match = existing.FirstOrDefault(m =>
                 string.Equals(m.ModelId, def.ModelId, StringComparison.OrdinalIgnoreCase));
             if (match is null)
@@ -81,7 +86,7 @@ public class InMemoryLlmModelStore(IProviderStore providerStore) : ILlmModelStor
                 match.Enabled = def.Enabled;
                 match.IsDefault = def.IsDefault;
                 match.SortOrder = def.SortOrder;
-                if (match.ProviderId == 0) match.ProviderId = defaultProviderId;
+                if (defaultProviderId != 0) match.ProviderId = defaultProviderId;
                 match.UpdatedAt = now;
                 _models[match.Id] = match;
             }

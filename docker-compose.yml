@@ -45,6 +45,11 @@ services:
       Dashboard__Password: ${DASHBOARD_PASSWORD}
 
       # Sentinel tuning
+      # Provider API keys. Read when the database row has none, so credentials survive a
+      # redeploy that recreates the Postgres volume instead of needing to be re-pasted.
+      Providers__deepseek__ApiKey: ${DEEPSEEK_API_KEY:-}
+      Providers__openrouter__ApiKey: ${OPENROUTER_API_KEY:-}
+
       Sentinel__CronSchedule: ${CRON_SCHEDULE:-0 * * * *}
       Sentinel__LookbackMinutes: ${LOOKBACK_MINUTES:-70}
       Sentinel__MaxIterations: ${MAX_ITERATIONS:-60}
