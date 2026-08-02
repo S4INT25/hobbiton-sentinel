@@ -25,7 +25,6 @@ public class AnalyticsAgentCore(
     ILogger<AnalyticsAgentCore> logger)
 {
     private const int MaxHistoryExchanges = 10;
-    private const int MaxIterations = 15;
 
     private static readonly Regex FromTableRegex = new(
         @"(?i)\bFROM\s+`?(\w+)`?\.`?(\w+)`?", RegexOptions.Compiled);
@@ -122,6 +121,8 @@ public class AnalyticsAgentCore(
         List<string>? pendingChoices = null;
         var sendReportNudgeCount = 0;
         const int maxNudges = 3;
+        var forceSendReportNextTurn = false;
+        var forcedChoiceSupported = true;
         var allExplanationParts = new List<string>();
 
         // Helper to log a conversation message to the run audit trail
@@ -151,7 +152,7 @@ public class AnalyticsAgentCore(
         // Log the initial user prompt
         await LogMessage("user", prompt, 0);
 
-        while (iteration++ < MaxIterations)
+        while (iteration++ < profile.MaxIterations)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -163,6 +164,30 @@ public class AnalyticsAgentCore(
             ReasoningEffort.Apply(options, profile.ReasoningEffort);
 
             foreach (var tool in tools) options.Tools.Add(tool);
+
+            // Last resort for a workflow that has not delivered a report. Two ways to get here:
+            // it ignored every plain-English nudge, or it spent the whole iteration budget on
+            // tool calls and never stopped to write anything — the nudges only fire on a Stop, so
+            // that second path previously ran out silently with nothing to send. Reserving the
+            // final iteration and constraining the model to send_report covers both; a forced
+            // tool choice cannot be talked out of.
+            var outOfRoad = !isInteractive && !response.ReportSent && iteration >= profile.MaxIterations;
+            var forcedThisTurn = forcedChoiceSupported && (forceSendReportNextTurn || outOfRoad);
+            if (forcedThisTurn)
+            {
+                options.ToolChoice = ChatToolChoice.CreateFunctionChoice("send_report");
+                forceSendReportNextTurn = false;
+
+                if (outOfRoad)
+                    messages.Add(new UserChatMessage(
+                        "This is your final turn — the iteration budget is spent. Call `send_report` " +
+                        "now with whatever you have established so far. If the picture is incomplete, " +
+                        "say so plainly in the body rather than omitting the report."));
+
+                logger.LogWarning(
+                    "[Analytics] Forcing send_report tool choice on iteration {N} (budget exhausted: {Exhausted})",
+                    iteration, outOfRoad);
+            }
 
             // Streaming accumulation
             var streamTextSb = new StringBuilder();
@@ -208,6 +233,19 @@ public class AnalyticsAgentCore(
             }
             catch (Exception ex)
             {
+                // Not every OpenAI-compatible provider accepts a forced tool choice. Losing the
+                // whole run because of an optional constraint would be a worse failure than the
+                // one it exists to prevent, so drop it and retry this iteration unconstrained.
+                if (forcedThisTurn)
+                {
+                    logger.LogWarning(ex,
+                        "[Analytics] Provider rejected a forced send_report tool choice — " +
+                        "retrying without it and not forcing again this run");
+                    forcedChoiceSupported = false;
+                    iteration--; // retry the same step rather than spending budget on the failure
+                    continue;
+                }
+
                 logger.LogError(ex, "[Analytics] LLM call failed on iteration {Iteration}", iteration);
                 return new AnalyticsResponse
                 {
@@ -256,7 +294,7 @@ public class AnalyticsAgentCore(
                 // In autonomous (workflow) mode the agent MUST call send_report before stopping.
                 // Nudge it back into the loop, up to maxNudges times with escalating urgency.
                 if (!isInteractive && !response.ReportSent && sendReportNudgeCount < maxNudges &&
-                    iteration < MaxIterations)
+                    iteration < profile.MaxIterations)
                 {
                     sendReportNudgeCount++;
                     logger.LogWarning(
@@ -268,14 +306,19 @@ public class AnalyticsAgentCore(
                         1 => "You finished without calling `send_report`. This is a scheduled workflow — " +
                              "the ONLY way to deliver results is via `send_report`. " +
                              "Call `send_report` now with the analysis you just produced. " +
-                             "Use template=\"insights\", a clear subject line, and include the full report body.",
+                             "Use a valid template (executive, operational, incident, activity or custom), a clear " +
+                             "subject line, and the full report body.",
                         2 => "You STILL did not call the `send_report` tool. Do NOT reply with text. " +
                              "You MUST make a tool call to `send_report` right now. " +
-                             "Arguments: template=\"insights\", subject=\"<your subject>\", body=\"<your analysis>\", severity=\"watching\".",
+                             "Arguments: template=\"operational\", subject=\"<your subject>\", body=\"<your analysis>\", severity=\"watching\".",
                         _ => "FINAL ATTEMPT: Call the send_report tool immediately. " +
                              "Do not output any text — ONLY a tool call. " +
-                             "send_report(template=\"insights\", subject=\"Scheduled Report\", body=\"<full analysis>\", severity=\"watching\")"
+                             "send_report(template=\"operational\", subject=\"Scheduled Report\", body=\"<full analysis>\", severity=\"watching\")"
                     };
+
+                    // On the last nudge stop relying on persuasion and constrain the next turn to
+                    // the send_report tool.
+                    if (sendReportNudgeCount >= maxNudges) forceSendReportNextTurn = true;
 
                     messages.Add(new UserChatMessage(nudgeMessage));
                     await LogMessage("system_nudge", nudgeMessage, iteration);
@@ -287,7 +330,38 @@ public class AnalyticsAgentCore(
                 break;
             }
 
-            if (finishReason == ChatFinishReason.ToolCalls)
+            // The model ran out of output tokens mid-answer. Neither the Stop nor the ToolCalls
+            // branch matches, so before this the loop simply went round again with the same
+            // messages, truncated identically, and burned the whole iteration budget without ever
+            // producing text or a tool call — surfacing as "the agent returned no substantive
+            // content". Tell it what happened so the retry can actually differ.
+            if (finishReason == ChatFinishReason.Length)
+            {
+                logger.LogWarning(
+                    "[Analytics] Output truncated at the token limit on iteration {N} " +
+                    "(tool calls so far: {Tools}) — asking the agent to shorten",
+                    iteration, streamedToolCalls.Count);
+
+                if (!string.IsNullOrWhiteSpace(textContent))
+                    allExplanationParts.Add(textContent.Trim());
+
+                if (streamedToolCalls.Count == 0)
+                {
+                    messages.Add(new UserChatMessage(
+                        "Your previous response was cut off at the output token limit. " +
+                        "Be significantly more concise: shorten the report body, drop optional " +
+                        "sections, and keep tables to the rows that matter. " +
+                        (isInteractive
+                            ? "Answer briefly."
+                            : "Then deliver it with a single `send_report` tool call.")));
+                    await Emit(onEvent, "fixing", "Response hit the token limit — retrying shorter…");
+                    continue;
+                }
+                // Truncated *during* tool calls: fall through and run whatever parsed, so a
+                // partially-emitted batch still makes progress rather than being discarded.
+            }
+
+            if (finishReason is ChatFinishReason.ToolCalls or ChatFinishReason.Length)
             {
                 foreach (var toolCall in streamedToolCalls)
                 {

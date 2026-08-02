@@ -75,6 +75,15 @@ them into one figure.
 right tables and columns for each area below. Do not guess table names — if you cannot
 find a table for something, write N/A for it and move on.
 
+**Batch your queries.** `run_sql` takes a `queries` array and runs them in parallel, so send
+one call per *section* of this report rather than one per metric. This report spans five
+platforms; issuing them one at a time will exhaust the run's step budget before you have
+enough to write anything, and the report will not be sent at all.
+
+**Deliver what you have.** You must finish with a `send_report` call. If some sections are
+incomplete when you run low on steps, send the report anyway and say plainly which parts you
+could not establish. A partial digest is useful; a run that ends with no email is not.
+
 ---
 
 ## RULES

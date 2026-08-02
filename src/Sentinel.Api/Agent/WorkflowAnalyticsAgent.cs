@@ -19,14 +19,17 @@ public class WorkflowAnalyticsAgent(AnalyticsAgentCore core, IConfiguration conf
         IReadOnlyList<string>? additionalDatabases = null,
         CancellationToken cancellationToken = default)
     {
-        // Reports can be long; allow tuning the budget without a code change (default keeps
-        // the historical 4096 cap so this is a no-op until configured).
-        var maxOutputTokens = config.GetValue("Analytics:WorkflowMaxOutputTokens", 4096);
+        // Both budgets are tunable without a rebuild, but the defaults now match what a report
+        // actually needs. The old 4096-token cap could not hold a multi-section report inside a
+        // single send_report argument, and 15 iterations ran out while the agent was still
+        // querying — in both cases the run ended with no report and nothing to fall back on.
+        var maxOutputTokens = config.GetValue("Analytics:WorkflowMaxOutputTokens", 16000);
+        var maxIterations = config.GetValue("Analytics:WorkflowMaxIterations", 40);
 
         return core.AskAsync(
             prompt,
             database,
-            AgentProfile.Workflow(maxOutputTokens, model, reasoningEffort),
+            AgentProfile.Workflow(maxOutputTokens, model, reasoningEffort, maxIterations),
             history: null,
             onEvent: null,
             onToolCall: onToolCall,
