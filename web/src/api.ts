@@ -356,6 +356,14 @@ export interface AnalyticsPlatformInfo {
   database: string;
 }
 
+export interface PanelComparison {
+  column: string;
+  current: number;
+  previous: number;
+  /** null when the previous period was zero — no honest percentage exists. */
+  changePercent: number | null;
+}
+
 export interface AnalyticsPanel {
   id: string;
   title: string;
@@ -365,6 +373,8 @@ export interface AnalyticsPanel {
   note?: string | null;
   columns: string[];
   rows: Record<string, string>[];
+  /** Period-over-period deltas. Empty when the panel opts out of comparison. */
+  comparisons: PanelComparison[];
   /** Set when the panel's query failed — render an error card, not a chart. */
   error?: string | null;
 }

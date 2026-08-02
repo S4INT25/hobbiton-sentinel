@@ -6,16 +6,25 @@ namespace Sentinel.Analytics;
 /// <param name="Id">Stable identifier, used as the cache key suffix and the React key.</param>
 /// <param name="Title">Panel heading.</param>
 /// <param name="Chart">"line" | "area" | "bar" | "donut" | "table".</param>
-/// <param name="Sql">Query template. <c>{days}</c> is substituted with the clamped window.</param>
+/// <param name="Sql">
+/// Query template. <c>{from}</c> and <c>{to}</c> are substituted with the window bounds, so the
+/// same SQL serves both the current period and the one before it.
+/// </param>
 /// <param name="Span">Grid columns to occupy (1 = half width, 2 = full width).</param>
 /// <param name="Note">Optional caveat shown under the panel.</param>
+/// <param name="Compare">
+/// Run the query a second time over the preceding window and report the delta. Only worth it for
+/// panels with a meaningful period total — a top-10 table or a status snapshot has nothing to
+/// compare, and each comparison costs another full ClickHouse scan.
+/// </param>
 public sealed record AnalyticsPanel(
     string Id,
     string Title,
     string Chart,
     string Sql,
     int Span = 1,
-    string? Note = null);
+    string? Note = null,
+    bool Compare = false);
 
 public sealed record AnalyticsPlatform(
     string Key,
@@ -61,11 +70,11 @@ public static class AnalyticsPanels
             FROM lipila_blaze.public_transactions FINAL
             WHERE _peerdb_is_deleted = 0
               AND status = 'successful'
-              AND created_at >= toStartOfDay(now()) - INTERVAL {days} DAY
-              AND created_at < toStartOfDay(now())
+              AND created_at >= {from}
+              AND created_at < {to}
             GROUP BY day
             ORDER BY day
-            """, Span: 2),
+            """, Span: 2, Compare: true),
 
         new AnalyticsPanel("flow", "Collections vs disbursements", "line", """
             SELECT toDate(created_at) AS day,
@@ -74,11 +83,11 @@ public static class AnalyticsPanels
             FROM lipila_blaze.public_transactions FINAL
             WHERE _peerdb_is_deleted = 0
               AND status = 'successful'
-              AND created_at >= toStartOfDay(now()) - INTERVAL {days} DAY
-              AND created_at < toStartOfDay(now())
+              AND created_at >= {from}
+              AND created_at < {to}
             GROUP BY day
             ORDER BY day
-            """),
+            """, Compare: true),
 
         new AnalyticsPanel("rails", "Success rate by rail", "table", """
             SELECT payment_type AS rail,
@@ -88,8 +97,8 @@ public static class AnalyticsPanels
                    round(sumIf(charge_amount, status = 'successful'), 2) AS revenue
             FROM lipila_blaze.public_transactions FINAL
             WHERE _peerdb_is_deleted = 0
-              AND created_at >= toStartOfDay(now()) - INTERVAL {days} DAY
-              AND created_at < toStartOfDay(now())
+              AND created_at >= {from}
+              AND created_at < {to}
             GROUP BY rail
             ORDER BY attempts DESC
             """, Note: "~32% failure rate overall is the standing baseline, driven by MNO rejections."),
@@ -107,8 +116,8 @@ public static class AnalyticsPanels
               AND m._peerdb_is_deleted = 0
               AND t.status = 'successful'
               AND t.type = 'collection'
-              AND t.created_at >= toStartOfDay(now()) - INTERVAL {days} DAY
-              AND t.created_at < toStartOfDay(now())
+              AND t.created_at >= {from}
+              AND t.created_at < {to}
             GROUP BY merchant
             ORDER BY value DESC
             LIMIT 10
@@ -128,11 +137,11 @@ public static class AnalyticsPanels
             FROM patumba_app.public_wallet_transactions FINAL
             WHERE _peerdb_is_deleted = 0
               AND status = 'successful'
-              AND created_at >= toStartOfDay(now()) - INTERVAL {days} DAY
-              AND created_at < toStartOfDay(now())
+              AND created_at >= {from}
+              AND created_at < {to}
             GROUP BY day
             ORDER BY day
-            """, Span: 2, Note: "Brokerage and CSD fees live in separate tables and are not in this panel."),
+            """, Span: 2, Note: "Brokerage and CSD fees live in separate tables and are not in this panel.", Compare: true),
 
         new AnalyticsPanel("flow", "Deposits vs withdrawals", "line", """
             SELECT toDate(created_at) AS day,
@@ -141,11 +150,11 @@ public static class AnalyticsPanels
             FROM patumba_app.public_wallet_transactions FINAL
             WHERE _peerdb_is_deleted = 0
               AND status = 'successful'
-              AND created_at >= toStartOfDay(now()) - INTERVAL {days} DAY
-              AND created_at < toStartOfDay(now())
+              AND created_at >= {from}
+              AND created_at < {to}
             GROUP BY day
             ORDER BY day
-            """),
+            """, Compare: true),
 
         new AnalyticsPanel("rails", "Deposits by payment rail", "donut", """
             SELECT payment_method AS rail,
@@ -155,8 +164,8 @@ public static class AnalyticsPanels
               AND status = 'successful'
               AND wallet_transaction_type = 'deposit'
               AND mode = 'credit'
-              AND created_at >= toStartOfDay(now()) - INTERVAL {days} DAY
-              AND created_at < toStartOfDay(now())
+              AND created_at >= {from}
+              AND created_at < {to}
             GROUP BY rail
             ORDER BY value DESC
             """),
@@ -172,8 +181,8 @@ public static class AnalyticsPanels
               AND w.status = 'successful'
               AND w.wallet_transaction_type = 'deposit'
               AND w.mode = 'credit'
-              AND w.created_at >= toStartOfDay(now()) - INTERVAL {days} DAY
-              AND w.created_at < toStartOfDay(now())
+              AND w.created_at >= {from}
+              AND w.created_at < {to}
             GROUP BY investor
             ORDER BY total_deposited DESC
             LIMIT 10
@@ -194,11 +203,11 @@ public static class AnalyticsPanels
             FROM inshuwa.public_RevenueWallets FINAL
             WHERE _peerdb_is_deleted = 0
               AND Status = 'active'
-              AND CreatedAt >= toStartOfDay(now()) - INTERVAL {days} DAY
-              AND CreatedAt < toStartOfDay(now())
+              AND CreatedAt >= {from}
+              AND CreatedAt < {to}
             GROUP BY day
             ORDER BY day
-            """, Span: 2, Note: "Credits minus reversals — reversals are time-on-risk refunds on cancellations."),
+            """, Span: 2, Note: "Credits minus reversals — reversals are time-on-risk refunds on cancellations.", Compare: true),
 
         new AnalyticsPanel("transactions", "Premium transactions by status", "bar", """
             SELECT toDate(CreatedAt) AS day,
@@ -206,11 +215,11 @@ public static class AnalyticsPanels
                    countIf(Status = 'failed') AS failed
             FROM inshuwa.public_PolicyTransactions FINAL
             WHERE _peerdb_is_deleted = 0
-              AND CreatedAt >= toStartOfDay(now()) - INTERVAL {days} DAY
-              AND CreatedAt < toStartOfDay(now())
+              AND CreatedAt >= {from}
+              AND CreatedAt < {to}
             GROUP BY day
             ORDER BY day
-            """),
+            """, Compare: true),
 
         new AnalyticsPanel("insurers", "Top insurers", "table", """
             SELECT i.Name AS insurer,
@@ -221,8 +230,8 @@ public static class AnalyticsPanels
             WHERE t._peerdb_is_deleted = 0
               AND i._peerdb_is_deleted = 0
               AND t.Status = 'success'
-              AND t.CreatedAt >= toStartOfDay(now()) - INTERVAL {days} DAY
-              AND t.CreatedAt < toStartOfDay(now())
+              AND t.CreatedAt >= {from}
+              AND t.CreatedAt < {to}
             GROUP BY insurer
             ORDER BY policies DESC
             LIMIT 10
@@ -237,8 +246,8 @@ public static class AnalyticsPanels
             WHERE t._peerdb_is_deleted = 0
               AND a._peerdb_is_deleted = 0
               AND t.Status = 'success'
-              AND t.CreatedAt >= toStartOfDay(now()) - INTERVAL {days} DAY
-              AND t.CreatedAt < toStartOfDay(now())
+              AND t.CreatedAt >= {from}
+              AND t.CreatedAt < {to}
             GROUP BY agent
             ORDER BY policies DESC
             LIMIT 10
@@ -257,11 +266,11 @@ public static class AnalyticsPanels
             FROM bnpl.public_MerchantTransactions FINAL
             WHERE _peerdb_is_deleted = 0
               AND Status = 'successful'
-              AND CreatedAt >= toStartOfDay(now()) - INTERVAL {days} DAY
-              AND CreatedAt < toStartOfDay(now())
+              AND CreatedAt >= {from}
+              AND CreatedAt < {to}
             GROUP BY day
             ORDER BY day
-            """, Span: 2, Note: "Originated, not collected — realised revenue depends on repayment."),
+            """, Span: 2, Note: "Originated, not collected — realised revenue depends on repayment.", Compare: true),
 
         new AnalyticsPanel("disbursements", "Disbursements by loan type", "table", """
             SELECT LoanType AS loan_type,
@@ -271,8 +280,8 @@ public static class AnalyticsPanels
                    round(sumIf(Amount, Status = 'successful'), 2) AS disbursed
             FROM bnpl.public_MerchantTransactions FINAL
             WHERE _peerdb_is_deleted = 0
-              AND CreatedAt >= toStartOfDay(now()) - INTERVAL {days} DAY
-              AND CreatedAt < toStartOfDay(now())
+              AND CreatedAt >= {from}
+              AND CreatedAt < {to}
             GROUP BY loan_type
             ORDER BY attempts DESC
             """, Note: "Success rate is trending up hard — 34.6% over 180d vs 88.2% over 7d (2026-08-02). Compare windows before calling anything a regression."),
@@ -293,10 +302,10 @@ public static class AnalyticsPanels
             FROM bnpl.public_MerchantRepaymentTransactions FINAL
             WHERE _peerdb_is_deleted = 0
               AND Status = 'successful'
-              AND CreatedAt >= toStartOfDay(now()) - INTERVAL {days} DAY
-              AND CreatedAt < toStartOfDay(now())
+              AND CreatedAt >= {from}
+              AND CreatedAt < {to}
             GROUP BY day
             ORDER BY day
-            """),
+            """, Compare: true),
     ]);
 }

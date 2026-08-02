@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api, type AnalyticsPanel } from '../api';
+import { api, type AnalyticsPanel, type PanelComparison } from '../api';
 import { DataChart, DataTable } from '../components/charts';
 import { PageHeader, Spinner, Tabs, selectCls, fmtDateFull } from '../components/ui';
 
@@ -39,6 +39,35 @@ function shortenDateLabels(columns: string[], rows: Record<string, string>[]) {
   });
 }
 
+/**
+ * Period-over-period delta. Rendered neutral rather than green/red: "up" is good for revenue
+ * and bad for withdrawals, and the component cannot tell which it is holding. Colour here would
+ * be a judgement the data does not support — the arrow states direction, the reader judges.
+ */
+function Delta({ cmp }: { cmp: PanelComparison }) {
+  if (cmp.changePercent === null) {
+    // Previous period was zero, so a percentage would be invented. Distinguish "went from
+    // nothing to something" from "nothing in either period" — calling the latter "new" is a lie.
+    const label = cmp.current === 0 ? 'no activity' : 'new';
+    const title = cmp.current === 0
+      ? 'Nothing in this period or the previous one'
+      : 'No activity in the previous period';
+    return <div className="font-mono text-[10px] text-gray-500 mt-0.5" title={title}>{label}</div>;
+  }
+  const pct = cmp.changePercent;
+  const arrow = pct > 0 ? '↑' : pct < 0 ? '↓' : '→';
+  // Sub-0.05% rounds to "0.0%", which reads as a change that did not happen.
+  const shown = Math.abs(pct) < 0.05 ? 'flat' : `${arrow} ${Math.abs(pct).toFixed(1)}%`;
+  return (
+    <div
+      className="font-mono text-[10px] text-gray-500 mt-0.5"
+      title={`Previous period: ${compact(cmp.previous)}`}
+    >
+      {shown}
+    </div>
+  );
+}
+
 function PanelCard({ panel }: { panel: AnalyticsPanel }) {
   const span = panel.span >= 2 ? 'lg:col-span-2' : '';
 
@@ -61,12 +90,16 @@ function PanelCard({ panel }: { panel: AnalyticsPanel }) {
         </div>
         {totals.length > 0 && (
           <div className="flex items-center gap-4 shrink-0">
-            {totals.map((t) => (
-              <div key={t.column} className="text-right">
-                <div className="kicker">{t.column.replace(/_/g, ' ')}</div>
-                <div className="font-display text-base font-semibold text-white tnum">{compact(t.total)}</div>
-              </div>
-            ))}
+            {totals.map((t) => {
+              const cmp = panel.comparisons?.find((c) => c.column === t.column);
+              return (
+                <div key={t.column} className="text-right">
+                  <div className="kicker">{t.column.replace(/_/g, ' ')}</div>
+                  <div className="font-display text-base font-semibold text-white tnum">{compact(t.total)}</div>
+                  {cmp && <Delta cmp={cmp} />}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -143,7 +176,8 @@ export default function Analytics() {
           </div>
 
           <p className="font-mono text-[10px] text-gray-600 pt-1">
-            {data.database} · {data.days}-day window · generated {fmtDateFull(data.generatedAt)}
+            {data.database} · {data.days} complete days · deltas vs the previous {data.days} days
+            · generated {fmtDateFull(data.generatedAt)}
             {isFetching && ' · refreshing…'}
           </p>
         </>

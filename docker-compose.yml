@@ -58,7 +58,7 @@ services:
       redis:
         condition: service_healthy
       postgres:
-        condition: service_healthysg
+        condition: service_healthy
 
   postgres:
     image: postgres:18-alpine

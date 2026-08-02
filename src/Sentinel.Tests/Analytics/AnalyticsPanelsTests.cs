@@ -77,14 +77,43 @@ public class AnalyticsPanelsTests
     }
 
     [Fact]
-    public void Windowed_panels_use_the_days_placeholder()
+    public void Windowed_panels_use_both_window_placeholders()
     {
         // The portfolio snapshot is deliberately un-windowed; everything else must respect
-        // the selected range or the window control silently does nothing.
+        // the selected range or the window control silently does nothing. Both bounds are
+        // required — an open-ended upper bound reintroduces the partial-day cliff.
         foreach (var platform in AnalyticsPanels.All)
             foreach (var panel in platform.Panels.Where(p => p.Id != "portfolio"))
-                Assert.True(panel.Sql.Contains("{days}", StringComparison.Ordinal),
-                    $"{platform.Key}/{panel.Id} ignores the {{days}} window.");
+            {
+                Assert.True(panel.Sql.Contains("{from}", StringComparison.Ordinal),
+                    $"{platform.Key}/{panel.Id} has no lower window bound.");
+                Assert.True(panel.Sql.Contains("{to}", StringComparison.Ordinal),
+                    $"{platform.Key}/{panel.Id} has no upper window bound — the last day will be partial.");
+            }
+    }
+
+    [Fact]
+    public void Comparison_is_only_enabled_where_a_period_total_means_something()
+    {
+        // A top-10 table or a status snapshot has nothing to compare, and each comparison costs
+        // a second full scan — so the flag must not drift onto those.
+        string[] noCompare = ["rails", "merchants", "investors", "insurers", "agents", "disbursements", "portfolio"];
+
+        foreach (var platform in AnalyticsPanels.All)
+            foreach (var panel in platform.Panels.Where(p => noCompare.Contains(p.Id)))
+                Assert.False(panel.Compare,
+                    $"{platform.Key}/{panel.Id} is a snapshot/table — a period delta is meaningless there.");
+    }
+
+    [Fact]
+    public void Every_time_series_panel_reports_a_delta()
+    {
+        // These are the panels that render a headline total; a total without a comparison is
+        // the thing this feature exists to fix.
+        foreach (var platform in AnalyticsPanels.All)
+            foreach (var panel in platform.Panels.Where(p => p.Chart is "line" or "area"))
+                Assert.True(panel.Compare,
+                    $"{platform.Key}/{panel.Id} is a trend panel but reports no period-over-period delta.");
     }
 
     [Theory]
