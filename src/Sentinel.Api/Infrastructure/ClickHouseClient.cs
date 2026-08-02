@@ -15,6 +15,13 @@ public class ClickHouseClient(
     private static readonly Regex StripLimit =
         new(@"\s+LIMIT\s+\d+\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    /// <summary>
+    /// Character budget for a single result once rendered for the agent. Enforced by the caller
+    /// that formats rows, not here — the raw JSON is also used by schema loading, which must not
+    /// be clipped.
+    /// </summary>
+    public int MaxResultLength => config.GetValue("ClickHouse:MaxResultLength", 10000);
+
     public async Task<string> QueryAsync(string sql)
     {
         var trimmed = sql.TrimStart();
@@ -54,7 +61,6 @@ public class ClickHouseClient(
             var host = config["ClickHouse:Host"]!;
             var user = config["ClickHouse:User"]!;
             var password = config["ClickHouse:Password"]!;
-            var maxLength = config.GetValue("ClickHouse:MaxResultLength", 10000);
 
             var request = new HttpRequestMessage(HttpMethod.Post, $"{host}/?default_format=JSON")
             {
