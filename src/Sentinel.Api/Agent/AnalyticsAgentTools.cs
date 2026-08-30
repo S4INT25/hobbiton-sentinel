@@ -144,7 +144,9 @@ public static class AnalyticsAgentTools
             functionDescription: """
                                  Send a professional email report with your analysis findings. This will be read by management
                                  and stakeholders — make it clean, polished, and executive-ready.
-                                 In chat mode, only use this when the user explicitly asks to send an email/report.
+                                 In chat mode, only use this when the user explicitly asks to send an email/report,
+                                 and only after the user has given you the recipient email address(es) in this
+                                 conversation — ask for it first if they haven't. Never fall back to a default recipient.
 
                                  Pick the template that matches the report:
                                  - "executive"   — periodic business summary for leadership (revenue, growth, portfolio health)
@@ -188,7 +190,7 @@ public static class AnalyticsAgentTools
                                                               "recipients": {
                                                                   "type": "array",
                                                                   "items": { "type": "string" },
-                                                                  "description": "Email addresses to send to. If empty, uses the default configured recipient."
+                                                                  "description": "Email addresses to send to. Required in chat mode — ask the user for this if they haven't given it; leaving it empty will fail the call."
                                                               },
                                                               "headline": {
                                                                   "type": "string",
@@ -214,6 +216,30 @@ public static class AnalyticsAgentTools
                                                               }
                                                           },
                                                           "required": ["template", "subject", "body", "severity"]
+                                                      }
+                                                      """)
+        ),
+
+        ChatTool.CreateFunctionTool(
+            functionName: "lookup_ip",
+            functionDescription: """
+                                 Look up geolocation and threat intelligence for an IP address.
+                                 Returns country, region, ISP, organisation, ASN, and flags for
+                                 proxy, VPN, and hosting/datacenter origin.
+                                 You can pass multiple IPs in one call (up to 10).
+                                 """,
+            functionParameters: BinaryData.FromString("""
+                                                      {
+                                                          "type": "object",
+                                                          "properties": {
+                                                              "ips": {
+                                                                  "type": "array",
+                                                                  "items": { "type": "string" },
+                                                                  "description": "List of IPv4 or IPv6 addresses to look up (max 10).",
+                                                                  "maxItems": 10
+                                                              }
+                                                          },
+                                                          "required": ["ips"]
                                                       }
                                                       """)
         ),

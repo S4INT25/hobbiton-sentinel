@@ -20,6 +20,7 @@ public class AnalyticsAgentCore(
     ClickHouseClient ch,
     SchemaLoader schemaLoader,
     EmailClient emailClient,
+    IpLookupClient ipLookup,
     IAgentMemoryStore memoryStore,
     ModelResolver modelResolver,
     ILogger<AnalyticsAgentCore> logger)
@@ -555,6 +556,7 @@ public class AnalyticsAgentCore(
                     "send_report" => await HandleSendReport(root, isInteractive, allowInteractiveReportSending, onEvent,
                         response),
                     "save_memory" => await HandleSaveMemory(root, database, onEvent),
+                    "lookup_ip" => await ipLookup.LookupAsync(JsonHelpers.ToIpList(root.GetProperty("ips"))),
                     "ask_user" => HandleAskUser(root, isInteractive),
                     "get_current_time" => HandleGetCurrentTime(),
                     _ => $"Unknown tool: {toolCall.FunctionName}"
@@ -881,6 +883,11 @@ public class AnalyticsAgentCore(
             if (recipients.Count == 0) recipients = null;
         }
 
+        // Chat mode must never fall back to the default configured recipient — ask the user instead.
+        if (isInteractive && recipients == null)
+            return "Ask the user which email address(es) to send this report to, then call send_report again with " +
+                   "\"recipients\" filled in. Do not send without an explicit address from the user.";
+
         if (string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(body))
             return "Subject and body are required.";
 
@@ -1014,6 +1021,8 @@ public class AnalyticsAgentCore(
                   ## Email Reports
                   The user explicitly asked to send an email report in this message.
                   You may use `send_report` if it improves the outcome.
+                  Never guess or reuse a recipient — if the user hasn't given you an email address in
+                  this conversation, ask for it before calling `send_report`.
                   """
                 : """
 
