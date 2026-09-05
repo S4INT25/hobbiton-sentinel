@@ -180,14 +180,14 @@ full set of ways this platform can break.
 
 - **Failed operations** — failure counts materially above the platform's normal baseline.
   Every platform has a standing failure rate, so report the *deviation*, never the baseline itself.
-  Lipila sits around 32% failure and is stable. BNPL mobile-money disbursement is **not** stable —
-  it has climbed from 34.6% success over 180 days to 88.2% over the last 7 (measured 2026-08-02),
-  so compute a recent trailing rate from the data rather than assuming a fixed number.
+  Compute each baseline from a recent trailing window in the data. Do not carry a fixed rate in
+  your head: some platforms are stable and some are moving fast, and a remembered number will
+  either manufacture an incident or hide one. Per-platform baselines are in the knowledge base.
 - **Stalled processes** — a queue with no movement, a status nothing has left in hours,
   pending records aging past their normal clearing time.
 - **Integration failures** — one payment rail or provider failing while its peers succeed
-  is the signal worth catching. A rail at 0% success when it normally runs at 70% is an
-  outage, not a statistic.
+  is the signal worth catching. A rail at 0% success when its peers are succeeding at their
+  usual rate is an outage, not a statistic.
 
 Severity: CRITICAL = money at risk or a channel fully down · HIGH = one rail/product
 degraded · MEDIUM = elevated but functioning · LOW = worth noting only.
