@@ -127,14 +127,14 @@ public static class AnalyticsPanels
     // ── Patumba ─────────────────────────────────────────────────────────────
     // Loans are a BNPL channel, not Patumba revenue, so no loan interest here.
 
-    private static AnalyticsPlatform Patumba => new("patumba", "Patumba", "patumba_app",
+    private static AnalyticsPlatform Patumba => new("patumba", "Patumba", "patumba",
     [
         new AnalyticsPanel("revenue", "Fee income by stream", "area", """
             SELECT toDate(created_at) AS day,
                    round(sumIf(service_fee, wallet_transaction_type = 'withdraw'), 2) AS withdrawal_fees,
                    round(sumIf(service_fee, wallet_transaction_type = 'wallet_transfer'), 2) AS transfer_fees,
                    round(sumIf(amount, wallet_transaction_type IN ('challenge_join_fee', 'challenge_create_fee')), 2) AS challenge_fees
-            FROM patumba_app.public_wallet_transactions FINAL
+            FROM patumba.public_wallet_transactions FINAL
             WHERE _peerdb_is_deleted = 0
               AND status = 'successful'
               AND created_at >= {from}
@@ -155,7 +155,7 @@ public static class AnalyticsPanels
                 SELECT toDate(created_at) AS day,
                        service_fee AS brokerage_fees,
                        toDecimal128(0, 38) AS csd_fees
-                FROM patumba_app.public_trade_transactions FINAL
+                FROM patumba.public_trade_transactions FINAL
                 WHERE _peerdb_is_deleted = 0
                   AND trade_status = 'settled'
                   AND created_at >= {from}
@@ -164,7 +164,7 @@ public static class AnalyticsPanels
                 SELECT toDate(created_at) AS day,
                        toDecimal128(0, 38) AS brokerage_fees,
                        amount AS csd_fees
-                FROM patumba_app.public_csd_transactions FINAL
+                FROM patumba.public_csd_transactions FINAL
                 WHERE _peerdb_is_deleted = 0
                   AND status = 'successful'
                   AND created_at >= {from}
@@ -181,7 +181,7 @@ public static class AnalyticsPanels
                    countIf(order_type = 'sell_order') AS sells,
                    round(sum(total_amount), 2) AS value,
                    round(sum(service_fee), 2) AS brokerage
-            FROM patumba_app.public_trade_transactions FINAL
+            FROM patumba.public_trade_transactions FINAL
             WHERE _peerdb_is_deleted = 0
               AND trade_status = 'settled'
               AND created_at >= {from}
@@ -195,7 +195,7 @@ public static class AnalyticsPanels
             SELECT toDate(created_at) AS day,
                    round(sumIf(amount, wallet_transaction_type = 'deposit' AND mode = 'credit'), 2) AS deposits,
                    round(sumIf(amount, wallet_transaction_type = 'withdraw' AND mode = 'debit'), 2) AS withdrawals
-            FROM patumba_app.public_wallet_transactions FINAL
+            FROM patumba.public_wallet_transactions FINAL
             WHERE _peerdb_is_deleted = 0
               AND status = 'successful'
               AND created_at >= {from}
@@ -207,7 +207,7 @@ public static class AnalyticsPanels
         new AnalyticsPanel("rails", "Deposits by payment rail", "donut", """
             SELECT payment_method AS rail,
                    round(sum(amount), 2) AS value
-            FROM patumba_app.public_wallet_transactions FINAL
+            FROM patumba.public_wallet_transactions FINAL
             WHERE _peerdb_is_deleted = 0
               AND status = 'successful'
               AND wallet_transaction_type = 'deposit'
@@ -222,8 +222,8 @@ public static class AnalyticsPanels
             SELECT concat(u.first_name, ' ', u.last_name) AS investor,
                    count() AS deposits,
                    round(sum(w.amount), 2) AS total_deposited
-            FROM patumba_app.public_wallet_transactions AS w FINAL
-            INNER JOIN patumba_app.public_users AS u FINAL ON w.created_by_id = u.id
+            FROM patumba.public_wallet_transactions AS w FINAL
+            INNER JOIN patumba.public_users AS u FINAL ON w.created_by_id = u.id
             WHERE w._peerdb_is_deleted = 0
               AND u._peerdb_is_deleted = 0
               AND w.status = 'successful'

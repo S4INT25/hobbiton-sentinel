@@ -1,6 +1,6 @@
 # ClickHouse — Central Knowledge Base
 
-All Hobbiton fintech databases (patumba_app, inshuwa, lipila_blaze, bnpl) are replicated from PostgreSQL to ClickHouse via PeerDB for analytics. This document covers behaviors that apply to every database. Platform-specific KBs do not repeat this material.
+All Hobbiton fintech databases (patumba, inshuwa, lipila_blaze, gari, bnpl) are replicated from PostgreSQL to ClickHouse via PeerDB for analytics. This document covers behaviors that apply to every database. Platform-specific KBs do not repeat this material.
 
 ---
 
@@ -69,4 +69,4 @@ All timestamps in all replicated databases are stored in UTC. All reports and us
 toTimezone(created_at, 'Africa/Lusaka')
 ```
 
-Each platform uses different column name casing — `created_at` (snake_case in patumba_app, lipila_blaze) vs `CreatedAt` (PascalCase in inshuwa, bnpl). Always check the platform KB for the correct column name.
+Each platform uses different column name casing — `created_at` (snake_case in patumba, lipila_blaze — but note patumba.public_transactions uses dateCreated) vs `CreatedAt` (PascalCase in inshuwa, bnpl). Always check the platform KB for the correct column name.

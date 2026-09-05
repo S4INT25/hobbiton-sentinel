@@ -37,7 +37,7 @@ Five databases, queried by fully-qualified name (`database.table`):
 | Gari | `gari` | Motor insurance — quotations, policies, vehicles, agent commissions, claims |
 | Lipila Blaze | `lipila_blaze` | Payments — collections, disbursements, merchants |
 | BNPL | `bnpl` | Lending — merchant loans, repayments, recoveries |
-| Patumba | `patumba_app` | Savings & investments — wallets, funds, stocks, challenges |
+| Patumba | `patumba` | Savings & investments — two ledgers: `public_wallet_transactions` (app, `created_at`) and `public_transactions` (USSD investment platform, `dateCreated`, ~99% of volume) |
 
 **Inshuwa and Gari are both insurance but are separate businesses.** Never sum them into a
 single "insurance" figure or compare one's volume against the other as if they were channels of

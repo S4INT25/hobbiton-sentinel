@@ -29,12 +29,29 @@ PREVIOUS_DATE is always REPORT_DATE minus 1 calendar day.
 - If data is insufficient, state it — do not speculate.
 - All money metrics must use successful transactions only (status = 'successful'). If failed or pending records appear to be included, flag it in Section 4 Anomalies.
 - All data must exclude soft-deleted records. If this cannot be confirmed, flag it in Section 4 Anomalies.
-- Patumba has 5 distinct revenue streams. Each must be sourced correctly:
-  1. Withdrawal Fee — `SUM(service_fee)` on `public_wallet_transactions` where `wallet_transaction_type='withdraw'`
-  2. Transfer Fee — `SUM(service_fee)` on `public_wallet_transactions` where `wallet_transaction_type='wallet_transfer'`
+- **Database is `patumba`.** The app and USSD investment backends were merged. `patumba_app`,
+  `patumba_mtn`, `patumba_airtel` and `patumba_zamtel` are frozen — they still return numbers,
+  they just stop before today. If any figure you produce came from one of them, that figure is
+  wrong; flag it in Section 4 rather than reporting it.
+- **There are two ledgers and they are not interchangeable:**
+  - `public_wallet_transactions` — the smartphone app. 450k rows all-time, `created_at`,
+    users in `public_users` (121k).
+  - `public_transactions` — the USSD investment platform. 62.2M rows, `dateCreated` (not
+    `created_at`), customers in `public_customers` (8.01M), rail in `provider`, product in
+    `account_type`, `service_type` is only `deposit` or `withdrawal`.
+
+  The investment platform is ~99% of volume. Report both. Where you add them, say so; never
+  present a combined figure as if it came from one place, and never rank app users and
+  investment customers in the same table.
+- Patumba has 6 distinct revenue streams. Each must be sourced correctly:
+  1. Fixed-Term Deposit Fee — `SUM(chargeAmount)` on `public_transactions` where `status='successful'` (flat ZMW 2.00 per `fixed_term` deposit; **largest fee line**, ~ZMW 88.7k/30d)
+  2. Withdrawal Fee — `SUM(service_fee)` on `public_wallet_transactions` where `wallet_transaction_type='withdraw'` (~ZMW 43.9k/30d)
   3. Brokerage Fee — `SUM(service_fee)` on `public_trade_transactions` where `trade_status='settled'`
   4. Challenge Fees — `SUM(amount)` on `public_wallet_transactions` where `wallet_transaction_type IN ('challenge_join_fee','challenge_create_fee')`
   5. CSD Account Fee — `SUM(amount)` on `public_csd_transactions` where `status='successful'`
+  6. Transfer Fee — `SUM(service_fee)` on `public_wallet_transactions` where `wallet_transaction_type='wallet_transfer'` — effectively dead (1 transaction in the last 30 days). Report it as zero rather than omitting it, and say a word if it revives.
+- `amount` on `public_transactions` is corrupt on failed and pending rows (one failed deposit
+  holds 5e39). Never sum it without `status='successful'`.
 - Do NOT include loan disbursements or interest income — these are BNPL channel data, not Patumba revenue.
 - Do NOT use `service_fee` on deposits, investments, airtime, or bills — it is always zero for those types.
 - Fund management fees are not in the database (NAV-level deduction) — write N/A for that line.
@@ -59,23 +76,27 @@ PREVIOUS_DATE is always REPORT_DATE minus 1 calendar day.
 
 | Revenue Stream | Prev Day | Day Before | 7-Day Avg | vs Day Before | vs 7-Day Avg |
 |---|---|---|---|---|---|
+| Fixed-Term Deposit Fees | | | | | |
 | Withdrawal Fees | | | | | |
-| Transfer Fees | | | | | |
 | Brokerage Fees | | | | | |
 | Challenge Fees | | | | | |
 | CSD Account Fees | | | | | |
+| Transfer Fees | | | | | |
 | **Total Revenue** | | | | | |
-| Net Flow (Deposits − Withdrawals) | | | | | |
-| New Customers | | | | | |
+| Net Flow — app | | | | | |
+| Net Flow — investment platform | | | | | |
+| New App Users | | | | | |
+| New Investment Customers | | | | | |
+
+New app users and new investment customers are different populations keyed differently. Show
+them as two rows; do not add them.
 
 **Revenue Mix** *(if material shift)*
 | Stream | Prev Day % | 7-Day Avg % |
 |---|---|---|
-| Withdrawal | | |
-| Transfer | | |
-| Brokerage | | |
-| Challenge | | |
-| CSD | | |
+
+One row per revenue stream that earned anything, plus any stream that normally earns and
+earned nothing yesterday.
 
 ---
 
@@ -87,19 +108,43 @@ PREVIOUS_DATE is always REPORT_DATE minus 1 calendar day.
 - Use ↑ / ↓ in change columns.
 - Use N/A for unavailable values.
 
-**Money Movement**
-| Metric | Count | Value |
-|---|---|---|
-| Total Deposits | | |
-| Total Withdrawals | | |
-| Net Flow | | |
+**Money Movement** — one row per ledger per direction, never netted across ledgers
+| Ledger | Direction | Count | Value |
+|---|---|---|---|
 
-**Transaction Health**
-| Metric | Count | Success Rate (%) |
-|---|---|---|
-| Total Transactions | | |
-| Failed | | |
-| Reversals / Refunds | | |
+Then a single Net Flow line per ledger.
+
+**Transaction Health** — the two ledgers have different baselines (app ~81%, investment
+platform ~77% over 30 days); rate them separately, never blended
+| Ledger | Total | Failed | Success Rate (%) |
+|---|---|---|---|
+
+Refunds (`wallet_transaction_type='refund'`, app ledger only): count and value.
+
+**Investment Platform — by Product**
+*Source: `public_transactions`, group by `account_type`, `status='successful'`*
+| Product | Deposits | Withdrawals | Net | vs 7-Day Avg |
+|---|---|---|---|---|
+
+One row per `account_type` present. `investment` dominates by an order of magnitude, so give
+the smaller products their own reading rather than letting the total speak for them.
+
+**Investment Platform — by Provider**
+*Source: `public_transactions`, group by `provider`*
+| Provider | Count | Value | Success Rate (%) | vs 7-Day Avg |
+|---|---|---|---|---|
+
+A provider at 0% success when it normally runs at ~77% is an outage, not a statistic.
+
+**Withdrawals — Patumba vs SACCO**
+*Source: `public_withdraw_counts`, group by `service_type` and `provider_type`*
+| Book | Provider | Count | Value |
+|---|---|---|---|
+
+**Fund Position**
+*Source: `public_fund_end_of_day` — latest row per `provider_id`*
+| Provider | NAV | Unit Price | Total Units | vs Prev Day |
+|---|---|---|---|---|
 
 **MOU Loans** *(portfolio data only, not revenue)*
 | Metric | Count | Principal |
@@ -129,15 +174,18 @@ PREVIOUS_DATE is always REPORT_DATE minus 1 calendar day.
 | Challenges Joined | |
 | Challenges Created | |
 
-**Volume Patterns — Deposits by Payment Rail**
+**Volume Patterns — App Deposits by Payment Rail**
+*Source: `public_wallet_transactions.payment_method`*
 | Rail | Count | Value | % of Total |
 |---|---|---|---|
 
 One row per rail present in the data — query the distinct values rather than assuming the set.
 A rail that normally takes deposits and took none gets a row with zero; that is the finding.
 
-**Top Investors by Deposit Value** *(top 5)*
-*JOIN: `public_wallet_transactions.created_by_id = public_users.id` — use `first_name`, `last_name`*
+**Top Investors by Deposit Value** *(top 5 per ledger — two separate tables, never merged)*
+*App: JOIN `public_wallet_transactions.created_by_id = public_users.id`*
+*Investment platform: JOIN `public_transactions.MSISDN = public_customers.MSISDN`*
+*Both: use `first_name`, `last_name`. Label which ledger each table is.*
 | Rank | Investor | Deposit Count | Total Deposited |
 |---|---|---|---|
 | 1 | | | |
@@ -164,7 +212,10 @@ A rail that normally takes deposits and took none gets a row with zero; that is 
 | 3 | | | | | |
 
 **Decision Tree — FLAG if:**
+- Fixed-Term Deposit Fees drop > 20% → fixed_term deposit volume; this is the largest fee line
 - Withdrawal Fees drop > 20% → check withdrawal volume & mode distribution
+- Either ledger's success rate moves > 5pp from its own baseline → check `provider` / `payment_method` for a single failing rail
+- A dormant transaction type or provider becomes active again → say so; it is more interesting than any of the routine numbers
 - Brokerage Fees spike > 30% → trading activity surge, expected or anomaly?
 - Fund Redemptions > Fund Investments → liquidity pressure signal
 - Loan Default Rate > 20% → BNPL portfolio risk escalating

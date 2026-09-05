@@ -45,10 +45,13 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
             "public_CommissionSettlements", "public_Insurers",
             "public_InsurerLipilaMerchants"
         },
-        ["patumba_app"] = new(StringComparer.OrdinalIgnoreCase)
+        ["patumba"] = new(StringComparer.OrdinalIgnoreCase)
         {
-            "public_wallet_transactions", "public_wallets",
-            "public_lipila_wallet_transfers"
+            // Two ledgers: the app (public_wallet_transactions) and the merged USSD investment
+            // platform (public_transactions), which is ~99% of volume.
+            "public_wallet_transactions", "public_wallets", "public_lipila_wallet_transfers",
+            "public_transactions", "public_customers", "public_accounts",
+            "public_withdraw_counts", "public_fund_end_of_day", "public_users"
         },
         ["gari"] = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -64,10 +67,11 @@ public class SchemaLoader(ClickHouseClient ch, IFusionCache cache, ILogger<Schem
         ["inshuwa"] =
             "Insurance platform — all classes: motor, life, travel, health, general; policies, claims, premiums",
         ["bnpl"] = "Lipila Later — buy-now-pay-later loans, repayments, credit scoring",
-        ["patumba_mtn"] = "Patumba investments (MTN) — savings goals, contributions, withdrawals",
-        ["patumba_airtel"] = "Patumba investments (Airtel) — savings goals, contributions, withdrawals",
-        ["patumba_zamtel"] = "Patumba investments (Zamtel) — savings goals, contributions, withdrawals",
-        ["patumba_app"] = "Patumba App — user wallets, transactions, internal transfers",
+        ["patumba"] = "Patumba — savings & investments. Merged app + USSD investment platform; the active database",
+        ["patumba_app"] = "FROZEN at the 2026-09-05 merge (last row 2026-09-04). Use `patumba`",
+        ["patumba_mtn"] = "FROZEN (last row 2026-01-25). Merged into `patumba.public_transactions` where provider='mtn'",
+        ["patumba_airtel"] = "FROZEN (last row 2026-04-13). Merged into `patumba.public_transactions` where provider='airtel'",
+        ["patumba_zamtel"] = "FROZEN (last row 2026-01-27). Merged into `patumba.public_transactions` where provider='zamtel'",
     };
 
     public async Task<List<string>> GetDatabasesAsync()
