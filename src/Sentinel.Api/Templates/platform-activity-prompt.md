@@ -43,34 +43,6 @@ Five databases, queried by fully-qualified name (`database.table`):
 single "insurance" figure or compare one's volume against the other as if they were channels of
 the same book. Report them separately.
 
-### Gari specifics (verified 2026-08-02)
-
-Gari is the busiest source of new records in the group — roughly 3,900 quotations, 2,100
-transactions and 1,400 policies a week — so it will often dominate the "What's new" section.
-
-| Table | Use for |
-|---|---|
-| `public_Quotations` | Quotes raised |
-| `public_Policies` | Policies issued |
-| `public_Transactions` | Premium payments, commission payouts, renewals, extensions |
-| `public_Claims` | Claims — rare (about 50 all-time), so any new claim is worth a line |
-| `public_GariAgents`, `public_GariAgentCommissions` | Agent activity and commission earnings |
-| `public_Client`, `public_GariUser`, `public_Vehicles` | New clients, users, insured vehicles |
-
-Two traps:
-
-- **`public_Transactions.Status` is a string; `Status` on Policies, Quotations and Claims is an
-  integer code.** Do not filter policies with `Status = 'active'` — it will silently match nothing.
-  Observed policy codes: `1` (85,768 rows) and `0` (29,942) dominate, with `2` and `4` negligible.
-  The meaning of each code is not documented here — report counts by code, or describe them
-  neutrally. **Do not guess that `1` means active.**
-- **Successful transactions use `success`, not `successful`** — the same as Inshuwa and the
-  opposite of Lipila, BNPL and Patumba.
-
-`TransactionType` values: `premium_payment` (dominant), `commission_pay_out`, `policy_extension`,
-`policy_renewal`. Premium payments are money in; commission payouts are money out — never net
-them into one figure.
-
 **Discover the schema before you query.** Use `get_schema` / `describe_table` to find the
 right tables and columns for each area below. Do not guess table names — if you cannot
 find a table for something, write N/A for it and move on.
@@ -211,9 +183,6 @@ full set of ways this platform can break.
   Lipila sits around 32% failure and is stable. BNPL mobile-money disbursement is **not** stable —
   it has climbed from 34.6% success over 180 days to 88.2% over the last 7 (measured 2026-08-02),
   so compute a recent trailing rate from the data rather than assuming a fixed number.
-  Gari carries a standing failure rate on both `premium_payment` and `commission_pay_out`, and
-  the two differ substantially — rate them separately, against a recent trailing window, never
-  against a single blended Gari number.
 - **Stalled processes** — a queue with no movement, a status nothing has left in hours,
   pending records aging past their normal clearing time.
 - **Integration failures** — one payment rail or provider failing while its peers succeed
