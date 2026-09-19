@@ -8,6 +8,7 @@ using Sentinel.Admin;
 using Sentinel.Admin.Models;
 using Sentinel.Admin.Stores;
 using Sentinel.Infrastructure;
+using Sentinel.Memory;
 
 namespace Sentinel.Agent;
 
@@ -22,6 +23,7 @@ public class AnalyticsAgentCore(
     EmailClient emailClient,
     IpLookupClient ipLookup,
     IAgentMemoryStore memoryStore,
+    ICaseStore caseStore,
     ModelResolver modelResolver,
     ILogger<AnalyticsAgentCore> logger)
 {
@@ -559,6 +561,7 @@ public class AnalyticsAgentCore(
                     "lookup_ip" => await ipLookup.LookupAsync(JsonHelpers.ToIpList(root.GetProperty("ips"))),
                     "ask_user" => HandleAskUser(root, isInteractive),
                     "get_current_time" => HandleGetCurrentTime(),
+                    "get_case" => await HandleGetCase(root),
                     _ => $"Unknown tool: {toolCall.FunctionName}"
                 };
             }
@@ -988,6 +991,19 @@ public class AnalyticsAgentCore(
         return "Question sent to user. Waiting for response.";
     }
 
+    private async Task<string> HandleGetCase(JsonElement root)
+    {
+        var id = root.TryGetProperty("case_id", out var el) ? el.GetString()?.Trim() : null;
+        if (string.IsNullOrWhiteSpace(id)) return await caseStore.GetOpenCasesSummaryAsync();
+
+        var fraudCase = await caseStore.GetCaseAsync(id.ToUpperInvariant());
+        if (fraudCase == null)
+            return $"No case with ID {id}. Open cases:\n{await caseStore.GetOpenCasesSummaryAsync()}";
+
+        var json = JsonSerializer.Serialize(fraudCase, new JsonSerializerOptions { WriteIndented = true });
+        return json.Length > 12000 ? json[..12000] + "\n\n[… case truncated]" : json;
+    }
+
     private static string HandleGetCurrentTime()
     {
         var utcNow = DateTime.UtcNow;
@@ -1089,7 +1105,8 @@ public class AnalyticsAgentCore(
                  You investigate questions by querying data, analysing results, and presenting findings clearly.
 
                  You have tools: run_sql, get_schema, describe_table, emit_chart, export_csv, send_report, ask_user.
-                 You can also use save_memory to store durable business definitions for future analyses.
+                 You can also use save_memory to store durable business definitions for future analyses,
+                 and get_case to read Sentinel's fraud investigation cases.
 
                  ## How to work
                  1. Think about what data you need to answer the question
@@ -1104,6 +1121,13 @@ public class AnalyticsAgentCore(
                  - If you find something interesting while investigating, follow up on it
                  - You can run multiple rounds of queries if initial results lead to follow-up questions
                   
+                 ## Fraud Cases
+                 Sentinel's fraud agent tracks investigations as cases with an 8-character ID (e.g. `A1B2C3D4`).
+                 When the user names a case ID or asks about open cases, call `get_case` BEFORE any SQL —
+                 it gives you the affected entities, evidence gathered so far, analyst notes and the
+                 follow-up queries the fraud agent already suggested. Use those as the starting point
+                 of your own investigation rather than re-deriving the case from scratch.
+
                  ## Memory
                  - If the user gives a durable metric/term definition (or asks you to remember one), call `save_memory`.
                  - Save only reusable business knowledge, not temporary one-off context.

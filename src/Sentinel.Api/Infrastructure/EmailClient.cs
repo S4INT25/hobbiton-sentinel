@@ -203,7 +203,7 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
     /// Handles: h1/h2/h3, tables (class="data", thead/tbody), blockquotes,
     /// ordered/unordered lists, code blocks, inline bold/italic/code, paragraphs.
     /// </summary>
-    private static string MarkdownToHtml(string markdown)
+    public static string MarkdownToHtml(string markdown)
     {
         var lines = markdown.Replace("\r\n", "\n").Split('\n');
         var sb = new StringBuilder();
@@ -409,6 +409,7 @@ public class EmailClient(IConfiguration config, ILogger<EmailClient> logger)
 
     private static string InlineFormat(string text)
     {
+        text = Regex.Replace(text, @"\[([^\]]+)\]\(([^)\s]+)\)", "<a href=\"$2\">$1</a>");
         text = Regex.Replace(text, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
         text = Regex.Replace(text, @"\*(.+?)\*", "<em>$1</em>");
         text = Regex.Replace(text, @"`(.+?)`", "<code>$1</code>");
