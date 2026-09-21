@@ -90,6 +90,106 @@ public static class Tripwires
                AND t.amount >= 10000
                AND m.created_at > t.created_at - INTERVAL 7 DAY
              GROUP BY entity_key, merchant_name, merchant_created_at
+             """),
+
+        // The two rules below are integrity checks, not behavioural ones. Every pattern in
+        // FraudPatternRegistry describes someone acting suspiciously; these describe the ledger
+        // itself being wrong. An attacker exploiting a replay or a balance race looks like an
+        // ordinary merchant making ordinary payouts, so nothing that watches behaviour sees them.
+        new("duplicate_request_id",
+            "The same request_id produced more than one successful disbursement — a replay that "
+            + "paid out twice. Idempotency has failed and money was created from nothing.",
+            $"""
+             SELECT
+                 toString(t.request_id)  AS entity_key,
+                 count()                 AS txn_count,
+                 sum(t.amount)           AS total_amount,
+                 groupUniqArray(t.id)    AS transaction_ids,
+                 any(t.merchant_id)      AS merchant_id,
+                 any(t.account_number)   AS account_number
+             FROM lipila_blaze.public_transactions t FINAL
+             WHERE t._peerdb_is_deleted = 0
+               AND t.type = 'disbursement'
+               AND t.status = 'successful'
+               AND t.created_at > now() - INTERVAL 7 DAY
+               AND toString(t.request_id) != '00000000-0000-0000-0000-000000000000'
+               -- The duplicate is only news when one leg just landed, but its twin may be days
+               -- old, so the group is counted over 7 days and filtered to ids seen in the window.
+               AND t.request_id IN (
+                   SELECT request_id FROM lipila_blaze.public_transactions FINAL
+                   WHERE _peerdb_is_deleted = 0 AND type = 'disbursement' AND status = 'successful'
+                     AND created_at > now() - INTERVAL {LookbackMinutes} MINUTE)
+             GROUP BY entity_key
+             HAVING txn_count > 1
+             """,
+            // Never suppress a second occurrence for long — each one is another double payout.
+            CooldownHours: 1),
+
+        new("negative_wallet_balance",
+            "A wallet went below zero on a successful transaction. Either the balance check was "
+            + "bypassed or concurrent debits raced past it.",
+            $"""
+             SELECT
+                 toString(t.wallet_id) AS entity_key,
+                 count()               AS txn_count,
+                 min(t.post_balance)   AS lowest_balance,
+                 sum(t.amount)         AS total_amount,
+                 groupUniqArray(t.id)  AS transaction_ids
+             FROM lipila_blaze.public_transactions t FINAL
+             WHERE t._peerdb_is_deleted = 0
+               AND t.status = 'successful'
+               AND t.created_at > now() - INTERVAL {LookbackMinutes} MINUTE
+               AND t.post_balance < 0
+               AND t.wallet_id != 0
+             GROUP BY entity_key
+             """,
+            CooldownHours: 1),
+
+        new("dormant_api_key_disbursing",
+            "An API key with no activity in 30 days started disbursing — the signature of a leaked "
+            + "or stolen key (FraudPatternRegistry pattern 17). No api_keys table is replicated, so "
+            + "a key being used for the very first time matches identically: check whether this is "
+            + "a new merchant integration before treating it as compromise.",
+            $"""
+             SELECT
+                 toString(t.api_key_id) AS entity_key,
+                 any(t.merchant_id)     AS merchant_id,
+                 count()                AS txn_count,
+                 sum(t.amount)          AS total_amount,
+                 groupUniqArray(t.ip_address) AS source_ips
+             FROM lipila_blaze.public_transactions t FINAL
+             WHERE t._peerdb_is_deleted = 0
+               AND t.type = 'disbursement'
+               AND t.api_key_id != 0
+               AND t.created_at > now() - INTERVAL {LookbackMinutes} MINUTE
+               AND t.api_key_id NOT IN (
+                   SELECT api_key_id FROM lipila_blaze.public_transactions FINAL
+                   WHERE _peerdb_is_deleted = 0 AND api_key_id != 0
+                     AND created_at BETWEEN now() - INTERVAL 30 DAY
+                                        AND now() - INTERVAL {LookbackMinutes} MINUTE)
+             GROUP BY entity_key
+             """,
+            // A woken key keeps disbursing; one alert per day is enough to act on.
+            CooldownHours: 24),
+
+        new("wallet_funding_multiple_merchants",
+            "One wallet funded disbursements for more than one merchant. Wallets are scoped to a "
+            + "single merchant (FraudPatternRegistry pattern 18), so this means the binding broke "
+            + "or one actor is driving several merchant accounts.",
+            $"""
+             SELECT
+                 toString(t.wallet_id)         AS entity_key,
+                 uniq(t.merchant_id)           AS merchant_count,
+                 groupUniqArray(t.merchant_id) AS merchant_ids,
+                 count()                       AS txn_count,
+                 sum(t.amount)                 AS total_amount
+             FROM lipila_blaze.public_transactions t FINAL
+             WHERE t._peerdb_is_deleted = 0
+               AND t.type = 'disbursement'
+               AND t.wallet_id != 0
+               AND t.created_at > now() - INTERVAL {LookbackMinutes} MINUTE
+             GROUP BY entity_key
+             HAVING merchant_count > 1
              """)
     ];
 }
