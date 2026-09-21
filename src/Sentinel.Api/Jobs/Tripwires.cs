@@ -30,6 +30,26 @@ public static class Tripwires
     public const int LookbackMinutes = 15;
 
     /// <summary>
+    /// How far behind real time the replicated data may fall before the scan is considered
+    /// untrustworthy. PeerDB normally runs about a minute behind, so ten minutes is a stall rather
+    /// than jitter. Overridable via <c>Sentinel:Tripwires:MaxLagSeconds</c>.
+    /// </summary>
+    public const int DefaultMaxLagSeconds = 600;
+
+    /// <summary>
+    /// Watches the data rather than the transactions in it. Every tripwire goes quiet when
+    /// replication stalls, and quiet is exactly what a healthy system looks like — so without this
+    /// a dead pipeline reads as "no fraud" indefinitely. No FINAL: max() over unmerged duplicates
+    /// gives the same answer, and FINAL on the full table every minute would not pay for itself.
+    /// </summary>
+    public const string IngestionLagSql =
+        """
+        SELECT dateDiff('second', max(created_at), now()) AS lag_seconds
+        FROM lipila_blaze.public_transactions
+        WHERE _peerdb_is_deleted = 0
+        """;
+
+    /// <summary>
     /// Mandatory on every replicated table: FINAL collapses unmerged ReplacingMergeTree duplicates,
     /// _peerdb_is_deleted excludes rows deleted in Postgres. Omitting either is silently wrong.
     /// </summary>

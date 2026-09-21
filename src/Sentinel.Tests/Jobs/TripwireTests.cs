@@ -73,6 +73,26 @@ public class TripwireTests
     }
 
     [Fact]
+    public void IngestionLag_ParsesFromClickHouseResponse()
+    {
+        const string json = """{"meta":[{"name":"lag_seconds"}],"data":[{"lag_seconds":"62"}],"rows":1}""";
+
+        Assert.True(TripwireScanJob.TryParseRows(json, out var rows));
+        Assert.True(long.TryParse(rows[0]["lag_seconds"].ToString(), out var lag));
+        Assert.Equal(62, lag);
+    }
+
+    [Fact]
+    public void IngestionLagCheck_IsNotATripwire()
+    {
+        // It watches the pipeline, not the money. If it ever became a rule in All, a stalled
+        // replica would enqueue an LLM investigation every minute to rediscover that the
+        // replica is stalled.
+        Assert.DoesNotContain(Tripwires.All, t => t.Sql.Contains("lag_seconds"));
+        Assert.Contains("max(created_at)", Tripwires.IngestionLagSql);
+    }
+
+    [Fact]
     public void RuleNames_AreUnique()
     {
         // Names are the cooldown key. Two rules sharing one would suppress each other's alerts.

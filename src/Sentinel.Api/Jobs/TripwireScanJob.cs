@@ -23,28 +23,82 @@ public class TripwireScanJob(
     SentinelDbContext db,
     IActiveRunTracker runTracker,
     IBackgroundJobClient backgroundJobs,
+    IConfiguration config,
     ILogger<TripwireScanJob> logger)
 {
     private const string Database = "lipila_blaze";
 
     public async Task RunAsync()
     {
+        var lagSeconds = await CheckIngestionLagAsync();
+
+        var fired = 0;
+        var failed = 0;
+
         foreach (var tripwire in Tripwires.All)
         {
             try
             {
-                await ScanAsync(tripwire);
+                fired += await ScanAsync(tripwire);
             }
             catch (Exception ex)
             {
+                failed++;
                 // One broken rule must not take the other tripwires down with it — a scan that
                 // dies silently is the worst outcome here, so log loudly and keep going.
                 logger.LogError(ex, "Tripwire {Rule} failed to scan", tripwire.Name);
             }
         }
+
+        // The heartbeat. A clean scan writes no alert row and logs nothing else, so without this
+        // line "working perfectly" and "broken for a week" produce identical evidence.
+        logger.LogInformation(
+            "Tripwire scan complete: {Rules} rules, {Fired} fired, {Failed} failed, ingestion lag {Lag}s",
+            Tripwires.All.Count, fired, failed, lagSeconds?.ToString() ?? "unknown");
     }
 
-    private async Task ScanAsync(Tripwire tripwire)
+    /// <summary>
+    /// Verifies the data is fresh enough for the scan to mean anything. Logged rather than
+    /// escalated to the fraud agent: stalled replication is an ops failure, and an LLM
+    /// investigation of it would burn a run to conclude "the pipeline is down".
+    /// </summary>
+    /// <returns>Lag in seconds, or null if it could not be determined.</returns>
+    private async Task<long?> CheckIngestionLagAsync()
+    {
+        long? lagSeconds = null;
+
+        try
+        {
+            var raw = await clickHouse.QueryAsync(Tripwires.IngestionLagSql);
+
+            if (TryParseRows(raw, out var rows) && rows.Count > 0 &&
+                rows[0].TryGetValue("lag_seconds", out var value) &&
+                long.TryParse(value.ToString(), out var parsed))
+                lagSeconds = parsed;
+            else
+                logger.LogError("Ingestion lag check could not be read: {Response}",
+                    raw[..Math.Min(300, raw.Length)]);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Ingestion lag check failed");
+        }
+
+        var maxLag = config.GetValue("Sentinel:Tripwires:MaxLagSeconds", Tripwires.DefaultMaxLagSeconds);
+
+        // Scanning continues either way — stale data still catches whatever did land, and refusing
+        // to scan would trade one blind spot for a larger one.
+        if (lagSeconds > maxLag)
+            logger.LogError(
+                "Ingestion lag is {Lag}s (limit {Max}s) — tripwires are scanning stale data and "
+                + "their silence does not mean there is no fraud",
+                lagSeconds, maxLag);
+
+        return lagSeconds;
+    }
+
+    /// <returns>How many alerts this rule fired.</returns>
+    private async Task<int> ScanAsync(Tripwire tripwire)
     {
         var raw = await clickHouse.QueryAsync(tripwire.Sql);
 
@@ -52,8 +106,10 @@ public class TripwireScanJob(
         {
             logger.LogError("Tripwire {Rule} query failed: {Response}", tripwire.Name,
                 raw[..Math.Min(300, raw.Length)]);
-            return;
+            return 0;
         }
+
+        var fired = 0;
 
         foreach (var row in rows)
         {
@@ -73,7 +129,10 @@ public class TripwireScanJob(
             }
 
             await FireAsync(tripwire, entityKey, row);
+            fired++;
         }
+
+        return fired;
     }
 
     private Task<bool> IsInCooldownAsync(Tripwire tripwire, string entityKey)
