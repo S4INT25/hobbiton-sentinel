@@ -16,6 +16,7 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
     public DbSet<LlmModel> LlmModels => Set<LlmModel>();
     public DbSet<ProviderConfig> Providers => Set<ProviderConfig>();
     public DbSet<CaseOutcome> CaseOutcomes => Set<CaseOutcome>();
+    public DbSet<TripwireAlert> TripwireAlerts => Set<TripwireAlert>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -231,6 +232,20 @@ public class SentinelDbContext(DbContextOptions<SentinelDbContext> options) : Db
             e.HasIndex(o => o.Category);
             e.HasIndex(o => o.Outcome);
             e.HasIndex(o => o.ResolvedAt);
+        });
+
+        modelBuilder.Entity<TripwireAlert>(e =>
+        {
+            e.HasKey(a => a.Id);
+            e.ToTable("tripwire_alerts");
+            e.Property(a => a.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            e.Property(a => a.RuleName).HasColumnName("rule_name").HasMaxLength(100);
+            e.Property(a => a.EntityKey).HasColumnName("entity_key").HasMaxLength(200);
+            e.Property(a => a.Detail).HasColumnName("detail");
+            e.Property(a => a.RunId).HasColumnName("run_id").HasMaxLength(50);
+            e.Property(a => a.FiredAt).HasColumnName("fired_at");
+            // The cooldown lookup on every scan, every minute, for every rule.
+            e.HasIndex(a => new { a.RuleName, a.EntityKey, a.FiredAt });
         });
     }
 }

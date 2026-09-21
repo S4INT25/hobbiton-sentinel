@@ -144,6 +144,7 @@ try
     builder.Services.AddScoped<SentinelJob>();
     builder.Services.AddScoped<WorkflowExecutionJob>();
     builder.Services.AddScoped<StaleResolutionJob>();
+    builder.Services.AddScoped<TripwireScanJob>();
     builder.Services.AddScoped<AnalyticsAgentCore>();
     builder.Services.AddScoped<ModelResolver>();
     builder.Services.AddScoped<ChatAnalyticsAgent>();
@@ -272,6 +273,23 @@ try
     }
 
     app.UseHangfireDashboard("/hangfire", dashOptions);
+
+    // The tripwire scanner needs Postgres for its cooldown table. Without it every scan would
+    // re-fire on the same entity a minute later, so it stays off rather than degrading to a loop.
+    if (usePostgresStores && app.Configuration.GetValue("Sentinel:Tripwires:Enabled", true))
+    {
+        var tripwireCron = app.Configuration["Sentinel:Tripwires:Cron"] ?? Cron.Minutely();
+        RecurringJob.AddOrUpdate<TripwireScanJob>(
+            "tripwire-scan",
+            queue: "fraud",
+            j => j.RunAsync(),
+            tripwireCron);
+    }
+    else
+    {
+        RecurringJob.RemoveIfExists("tripwire-scan");
+        Log.Information("Tripwire scanner disabled (postgres: {Postgres})", usePostgresStores);
+    }
 
     var staleCron = app.Configuration["Sentinel:StaleCase:Cron"] ?? Cron.Daily(2);
     RecurringJob.AddOrUpdate<StaleResolutionJob>(
