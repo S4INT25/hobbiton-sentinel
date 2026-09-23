@@ -17,7 +17,7 @@ namespace Sentinel.Jobs;
 /// hours — which means a pattern at 09:05 waits until 11:00. This job costs milliseconds, so it can
 /// run continuously, and the agent now runs on real hits instead of on a timer.
 /// </summary>
-[Queue("fraud")]
+[Queue(Queue)]
 public class TripwireScanJob(
     ClickHouseClient clickHouse,
     SentinelDbContext db,
@@ -26,6 +26,9 @@ public class TripwireScanJob(
     IConfiguration config,
     ILogger<TripwireScanJob> logger)
 {
+    /// <summary>Served by a dedicated Hangfire server so scans never queue behind agent runs.</summary>
+    public const string Queue = "tripwire";
+
     private const string Database = "lipila_blaze";
 
     public async Task RunAsync()

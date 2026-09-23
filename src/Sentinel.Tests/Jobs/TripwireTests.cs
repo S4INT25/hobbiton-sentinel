@@ -1,3 +1,5 @@
+using System.Reflection;
+using Hangfire;
 using Sentinel.Jobs;
 
 namespace Sentinel.Tests.Jobs;
@@ -90,6 +92,19 @@ public class TripwireTests
         // replica is stalled.
         Assert.DoesNotContain(Tripwires.All, t => t.Sql.Contains("lag_seconds"));
         Assert.Contains("max(created_at)", Tripwires.IngestionLagSql);
+    }
+
+    [Fact]
+    public void Scans_AndAgentRuns_UseSeparateQueues()
+    {
+        // Scans run on their own Hangfire server. If they shared the fraud queue again they would
+        // wait behind agent runs for minutes; if agent runs landed on the tripwire queue they would
+        // block the scans from the other side. Either way the one-minute detection is gone.
+        static string? QueueOf<T>() => typeof(T).GetCustomAttribute<QueueAttribute>()?.Queue;
+
+        Assert.Equal(TripwireScanJob.Queue, QueueOf<TripwireScanJob>());
+        Assert.Equal("fraud", QueueOf<SentinelJob>());
+        Assert.NotEqual(QueueOf<SentinelJob>(), QueueOf<TripwireScanJob>());
     }
 
     [Fact]
