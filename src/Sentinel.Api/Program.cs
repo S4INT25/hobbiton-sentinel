@@ -140,6 +140,18 @@ try
         options.Queues = ["fraud", "default"];
     });
 
+    // Tripwire scans get their own worker. With only the one above, a scan waits behind whatever
+    // agent run holds it — minutes — so "detected within a minute" became "within a minute or
+    // however long the current run takes", and a hit made it worse by enqueuing the very run that
+    // then blocked the next scans. Agent runs stay serialized on the server above; this one only
+    // ever runs millisecond scans.
+    builder.Services.AddHangfireServer(options =>
+    {
+        options.ServerName = $"{Environment.MachineName}:tripwire";
+        options.WorkerCount = 1;
+        options.Queues = [TripwireScanJob.Queue];
+    });
+
     builder.Services.AddScoped<FraudAgent>();
     builder.Services.AddScoped<SentinelJob>();
     builder.Services.AddScoped<WorkflowExecutionJob>();
@@ -281,7 +293,7 @@ try
         var tripwireCron = app.Configuration["Sentinel:Tripwires:Cron"] ?? Cron.Minutely();
         RecurringJob.AddOrUpdate<TripwireScanJob>(
             "tripwire-scan",
-            queue: "fraud",
+            queue: TripwireScanJob.Queue,
             j => j.RunAsync(),
             tripwireCron);
     }
