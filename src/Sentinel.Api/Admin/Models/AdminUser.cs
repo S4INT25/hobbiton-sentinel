@@ -11,10 +11,13 @@ public class AdminUser
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastLoginAt { get; set; }
     public bool IsActive { get; set; } = true;
+
+    // Set for Google sign-ins with no existing account; cleared when an admin activates the user.
+    public bool PendingApproval { get; set; }
     public string? PasswordResetToken { get; set; }
     public DateTime? PasswordResetTokenExpiry { get; set; }
 
-    // Self-signup accounts start unverified; admin-created accounts default verified.
+    // Legacy self-signup accounts may be unverified; Google sign-in marks them verified.
     public bool EmailVerified { get; set; } = true;
 
     // Pending one-time code slot — shared by signup verification and passwordless email-OTP login.

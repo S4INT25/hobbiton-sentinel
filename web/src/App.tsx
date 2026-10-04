@@ -20,11 +20,10 @@ import Knowledge from './features/Knowledge';
 import Products from './features/Products';
 import ModelProviders from './features/ModelProviders';
 import SharedReport from './features/SharedReport';
-import Signup from './features/Signup';
 import ForgotPassword from './features/ForgotPassword';
 import ResetPassword from './features/ResetPassword';
-import VerifyEmail from './features/VerifyEmail';
 import Security from './features/Security';
+import IdentityProvider from './features/IdentityProvider';
 
 const MeContext = createContext<Me | null>(null);
 export const useMe = () => useContext(MeContext);
@@ -63,6 +62,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
     section: 'Admin',
     items: [
       { to: '/users', label: 'Users', roles: ['admin'], icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' },
+      { to: '/identity-provider', label: 'Identity Provider', roles: ['admin'], icon: 'M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z' },
       { to: '/audit', label: 'Audit Log', roles: ['admin'], icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
     ],
   },
@@ -349,8 +349,6 @@ export default function App() {
       <Routes>
         <Route path="/shared/:id" element={<SharedReport />} />
         <Route path="/login" element={<Login onLogin={setMe} />} />
-        <Route path="/signup" element={<Signup />} />
-        <Route path="/verify-email" element={<VerifyEmail onLogin={setMe} />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         {me === null ? (
@@ -368,6 +366,7 @@ export default function App() {
             <Route path="/runs/:id" element={<Shell me={me}><RunDetail /></Shell>} />
             <Route path="/rules" element={<Shell me={me}><Rules /></Shell>} />
             <Route path="/users" element={<Shell me={me}><Users /></Shell>} />
+            <Route path="/identity-provider" element={<Shell me={me}><IdentityProvider /></Shell>} />
             <Route path="/audit" element={<Shell me={me}><Audit /></Shell>} />
             <Route path="/knowledge" element={<Shell me={me}><Knowledge /></Shell>} />
             <Route path="/products" element={<Shell me={me}><Products /></Shell>} />

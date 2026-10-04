@@ -51,6 +51,16 @@ export default function Users() {
     onError: (e: Error) => setFeedback({ message: `Failed to update user: ${e.message}`, kind: 'error' }),
   });
 
+  // Approve = activate with the role they already have (analyst by default); change role via Edit if needed.
+  const approveMut = useMutation({
+    mutationFn: (u: AdminUser) => api.updateUser(u.id, { isActive: true }),
+    onSuccess: (_, u) => {
+      invalidate();
+      setFeedback({ message: `${u.displayName || u.username} approved.`, kind: 'success' });
+    },
+    onError: (e: Error) => setFeedback({ message: `Failed to approve user: ${e.message}`, kind: 'error' }),
+  });
+
   const deleteMut = useMutation({
     mutationFn: (id: string) => api.deleteUser(id),
     onSuccess: () => {
@@ -104,13 +114,24 @@ export default function Users() {
                     }`}>{u.role}</span>
                   </td>
                   <td className={tdCls}>
-                    {u.isActive
+                    {u.pendingApproval
+                      ? <span className="px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide rounded border bg-amber-500/10 text-amber-300 border-amber-500/25">pending</span>
+                      : u.isActive
                       ? <span className="flex items-center gap-1.5 text-emerald-400"><span className="inline-block h-1 w-1 rounded-full bg-emerald-400" />active</span>
                       : <span className="text-gray-600">disabled</span>}
                   </td>
                   <td className={`${tdCls} font-mono text-gray-500`}>{u.lastLoginAt ? fmtDateFull(u.lastLoginAt) : 'never'}</td>
                   <td className={tdCls}>
                     <div className="flex items-center gap-1">
+                      {u.pendingApproval && (
+                        <button
+                          onClick={() => approveMut.mutate(u)}
+                          disabled={approveMut.isPending}
+                          className="px-2 py-0.5 mr-1 font-mono text-[10px] uppercase tracking-wide rounded border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10 transition-colors"
+                        >
+                          Approve
+                        </button>
+                      )}
                       <button
                         onClick={() => {
                           setEditTarget(u);

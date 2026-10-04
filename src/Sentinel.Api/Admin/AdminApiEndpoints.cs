@@ -175,7 +175,11 @@ public static class AdminApiEndpoints
         // ── Users (admin only) ──
         var adminApi = api.MapGroup("/users").RequireAuthorization(AuthConstants.AdminOnlyPolicy);
 
-        adminApi.MapGet("/", async (IUserStore store) => Results.Ok(await store.GetAllAsync()));
+        // Explicit projection — AdminUser also carries password hashes, TOTP secrets and reset tokens.
+        adminApi.MapGet("/", async (IUserStore store) => Results.Ok((await store.GetAllAsync()).Select(u => new
+        {
+            u.Id, u.Username, u.Role, u.DisplayName, u.Email, u.CreatedAt, u.LastLoginAt, u.IsActive, u.PendingApproval
+        })));
 
         adminApi.MapPost("/", async (CreateUserRequest req, IUserStore store,
             IAuditLogStore audit, HttpContext ctx) =>
@@ -224,9 +228,7 @@ public static class AdminApiEndpoints
             if (!user.EmailVerified)
                 return Results.BadRequest(new
                 {
-                    error = "Please verify your email before signing in.",
-                    verificationRequired = true,
-                    email = user.Email
+                    error = "This account's email was never verified. Sign in with Google instead."
                 });
 
             return await CompletePrimaryLoginAsync(user, userStore, cache, audit, ctx);
@@ -533,95 +535,149 @@ public static class AdminApiEndpoints
             return Results.NoContent();
         });
 
-        // ── JSON auth (SPA) ──
-        api.MapPost("/auth/signup", async (SignupRequest req, IUserStore userStore,
-            EmailClient emailClient, IAuditLogStore audit, HttpContext ctx) =>
+        // ── Google sign-in (replaces self-signup). New accounts land disabled + PendingApproval until an admin approves. ──
+        api.MapGet("/auth/google/enabled", async (IFusionCache cache) =>
         {
-            var email = req.Email.Trim().ToLowerInvariant();
-            if (!email.EndsWith("@hobbiton.co.zm"))
-                return Results.BadRequest(new { error = "Only @hobbiton.co.zm emails are allowed." });
-            if (req.Password.Length < 8)
-                return Results.BadRequest(new { error = "Password must be at least 8 characters." });
-            if (req.Password != req.ConfirmPassword)
-                return Results.BadRequest(new { error = "Passwords do not match." });
-            if (await userStore.GetByEmailAsync(email) != null)
-                return Results.BadRequest(new { error = "An account with this email already exists." });
-
-            var username = email[..email.IndexOf('@')];
-            var taken = (await userStore.GetAllAsync()).Select(u => u.Username)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var finalUsername = username;
-            var suffix = 1;
-            while (taken.Contains(finalUsername)) finalUsername = $"{username}{suffix++}";
-
-            var user = new AdminUser
-            {
-                Username = finalUsername,
-                Email = email,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
-                DisplayName = string.IsNullOrWhiteSpace(req.DisplayName) ? finalUsername : req.DisplayName,
-                Role = AuthConstants.AnalystRole,
-                IsActive = true,
-                EmailVerified = false
-            };
-            SetEmailOtp(user);
-            await userStore.SaveAsync(user);
-            await SendEmailOtp(emailClient, user, "Verify your Sentinel account",
-                $"Hi {user.DisplayName},\n\nYour verification code is **{user.EmailOtpCode}**. " +
-                "It expires in 10 minutes.\n\nIf you did not create a Sentinel account, ignore this email.");
-            await AuditAction(audit, ctx, "signup", "auth", user.Id);
-            return Results.Ok(new { verificationRequired = true, email = user.Email });
+            var s = await cache.GetOrDefaultAsync<GoogleIdpSettings>(GoogleIdp.SettingsKey);
+            return Results.Ok(new { enabled = s is { Enabled: true } && s.ClientId != "" && s.ClientSecret != "" });
         }).AllowAnonymous();
 
-        // Second factor for registration — proves the signup email is real before first login.
-        api.MapPost("/auth/verify-email", async (VerifyEmailRequest req, IUserStore userStore,
-            IAuditLogStore audit, HttpContext ctx) =>
+        api.MapGet("/auth/google/start", async (IFusionCache cache, HttpContext ctx) =>
         {
-            var email = req.Email.Trim().ToLowerInvariant();
-            var user = await userStore.GetByEmailAsync(email);
-            if (user is null || user.EmailVerified)
-                return Results.BadRequest(new { error = "Invalid or expired code." });
+            var s = await cache.GetOrDefaultAsync<GoogleIdpSettings>(GoogleIdp.SettingsKey);
+            if (s is not { Enabled: true }) return Results.Redirect("/login?error=google_disabled");
 
-            if (user.EmailOtpCodeExpiry is null || user.EmailOtpCodeExpiry < DateTime.UtcNow
-                                                || user.EmailOtpAttempts >= 5)
-                return Results.BadRequest(new { error = "This code has expired. Request a new one." });
-
-            if (user.EmailOtpCode != req.Code.Trim())
+            var state = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+                .Replace("+", "-").Replace("/", "_").Replace("=", "");
+            // State bound to this browser via cookie — blocks login-CSRF on the callback.
+            ctx.Response.Cookies.Append(GoogleIdp.StateCookie, state, new CookieOptions
             {
-                user.EmailOtpAttempts++;
-                await userStore.SaveAsync(user);
-                return Results.BadRequest(new { error = "Incorrect code." });
+                HttpOnly = true, Secure = ctx.Request.IsHttps, SameSite = SameSiteMode.Lax,
+                MaxAge = TimeSpan.FromMinutes(10), Path = GoogleIdp.CallbackPath
+            });
+            var query = QueryString.Create(new Dictionary<string, string?>
+            {
+                ["client_id"] = s.ClientId,
+                ["redirect_uri"] = GoogleRedirectUri(ctx),
+                ["response_type"] = "code",
+                ["scope"] = "openid email profile",
+                ["state"] = state,
+                ["prompt"] = "select_account",
+                ["hd"] = string.IsNullOrWhiteSpace(s.AllowedDomain) ? null : s.AllowedDomain.Trim()
+            });
+            return Results.Redirect(GoogleIdp.AuthorizeUrl + query);
+        }).AllowAnonymous();
+
+        api.MapGet("/auth/google/callback", async (string? code, string? state, string? error,
+            IFusionCache cache, IUserStore userStore, IHttpClientFactory http, EmailClient emailClient,
+            IAuditLogStore audit, ILoggerFactory loggerFactory, HttpContext ctx) =>
+        {
+            var expectedState = ctx.Request.Cookies[GoogleIdp.StateCookie];
+            ctx.Response.Cookies.Delete(GoogleIdp.StateCookie, new CookieOptions { Path = GoogleIdp.CallbackPath });
+            if (error is not null || code is null || state is null || state != expectedState)
+                return Results.Redirect("/login?error=google_failed");
+
+            var s = await cache.GetOrDefaultAsync<GoogleIdpSettings>(GoogleIdp.SettingsKey);
+            if (s is not { Enabled: true }) return Results.Redirect("/login?error=google_disabled");
+
+            var tokenRes = await http.CreateClient().PostAsync(GoogleIdp.TokenUrl, new FormUrlEncodedContent(
+                new Dictionary<string, string>
+                {
+                    ["code"] = code, ["client_id"] = s.ClientId, ["client_secret"] = s.ClientSecret,
+                    ["redirect_uri"] = GoogleRedirectUri(ctx), ["grant_type"] = "authorization_code"
+                }));
+            var tokenBody = await tokenRes.Content.ReadAsStringAsync();
+            var log = loggerFactory.CreateLogger("GoogleSignIn");
+            if (!tokenRes.IsSuccessStatusCode)
+            {
+                log.LogWarning("Google token exchange failed: {Status} {Body}", tokenRes.StatusCode, tokenBody);
+                return Results.Redirect("/login?error=google_failed");
             }
 
+            var idToken = GoogleIdp.DecodeIdToken(
+                System.Text.Json.JsonDocument.Parse(tokenBody).RootElement.GetProperty("id_token").GetString()!);
+            var rejected = GoogleIdp.Validate(idToken, s, DateTimeOffset.UtcNow);
+            if (rejected is not null)
+            {
+                log.LogWarning("Google sign-in rejected for {Email}: {Reason}", idToken.Email, rejected);
+                await AuditAction(audit, ctx, "login_failed", "auth", idToken.Email, $"google: {rejected}");
+                return Results.Redirect(rejected == "wrong domain" ? "/login?error=google_domain" : "/login?error=google_failed");
+            }
+
+            var email = idToken.Email.ToLowerInvariant();
+            var user = await userStore.GetByEmailAsync(email);
+            if (user is null)
+            {
+                var username = email[..email.IndexOf('@')];
+                var taken = (await userStore.GetAllAsync()).Select(u => u.Username)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var finalUsername = username;
+                var suffix = 1;
+                while (taken.Contains(finalUsername)) finalUsername = $"{username}{suffix++}";
+
+                user = new AdminUser
+                {
+                    Username = finalUsername,
+                    Email = email,
+                    // Unusable random password: Google accounts sign in via Google (or a reset link).
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))),
+                    DisplayName = string.IsNullOrWhiteSpace(idToken.Name) ? finalUsername : idToken.Name,
+                    Role = AuthConstants.AnalystRole,
+                    IsActive = false,
+                    PendingApproval = true
+                };
+                await userStore.SaveAsync(user);
+                await AuditAction(audit, ctx, "signup", "auth", user.Id, "google, pending approval");
+
+                var adminEmails = (await userStore.GetAllAsync())
+                    .Where(u => u is { Role: AuthConstants.AdminRole, IsActive: true } && !string.IsNullOrEmpty(u.Email))
+                    .Select(u => u.Email!).ToList();
+                if (adminEmails.Count > 0)
+                    await emailClient.SendAsync(subject: "Sentinel access request",
+                        body: $"{user.DisplayName} ({email}) signed in with Google and is waiting for approval.\n\n" +
+                              $"Approve them on the Users page: {ctx.Request.Scheme}://{ctx.Request.Host}/users",
+                        severity: "info", recipients: adminEmails);
+
+                return Results.Redirect("/login?pending=1");
+            }
+
+            if (!user.IsActive)
+                return Results.Redirect(user.PendingApproval ? "/login?pending=1" : "/login?error=disabled");
+
+            // Google already proved the address; TOTP is skipped here since Google enforces its own MFA.
             user.EmailVerified = true;
-            user.EmailOtpCode = null;
-            user.EmailOtpCodeExpiry = null;
             await userStore.SaveAsync(user);
-
-            var principal = new ClaimsPrincipal(new ClaimsIdentity(BuildClaims(user), AuthConstants.Scheme));
-            await ctx.SignInAsync(AuthConstants.Scheme, principal);
-            ctx.User = principal;
-            await AuditAction(audit, ctx, "verify_email", "auth", user.Id);
-            return Results.Ok(new { user.Id, user.Username, user.Role, user.DisplayName });
+            await FinishSignInAsync(user, userStore, audit, ctx);
+            return Results.Redirect(user.Role is AuthConstants.AdminRole or AuthConstants.DeveloperRole ? "/" : "/chat");
         }).AllowAnonymous();
 
-        api.MapPost("/auth/resend-verification", async (ResendVerificationRequest req, IUserStore userStore,
-            EmailClient emailClient) =>
+        var idp = api.MapGroup("/identity-provider/google").RequireAuthorization(AuthConstants.AdminOnlyPolicy);
+
+        idp.MapGet("/", async (IFusionCache cache, HttpContext ctx) =>
         {
-            var email = req.Email.Trim().ToLowerInvariant();
-            var user = await userStore.GetByEmailAsync(email);
-            // Always 200 — don't reveal whether the email exists. Skip if a code was just sent (anti-spam).
-            if (user is { EmailVerified: false } && CanIssueNewOtp(user))
+            var s = await cache.GetOrDefaultAsync<GoogleIdpSettings>(GoogleIdp.SettingsKey) ?? new GoogleIdpSettings();
+            // Never echo the secret back — the page only needs to know one is stored.
+            return Results.Ok(new
             {
-                SetEmailOtp(user);
-                await userStore.SaveAsync(user);
-                await SendEmailOtp(emailClient, user, "Verify your Sentinel account",
-                    $"Hi {user.DisplayName},\n\nYour verification code is **{user.EmailOtpCode}**. " +
-                    "It expires in 10 minutes.\n\nIf you did not create a Sentinel account, ignore this email.");
-            }
+                s.Enabled, s.ClientId, s.AllowedDomain,
+                hasClientSecret = s.ClientSecret != "",
+                redirectUri = GoogleRedirectUri(ctx)
+            });
+        });
 
-            return Results.Ok(new { sent = true });
-        }).AllowAnonymous();
+        idp.MapPut("/", async (SaveGoogleIdpRequest req, IFusionCache cache, IAuditLogStore audit, HttpContext ctx) =>
+        {
+            var current = await cache.GetOrDefaultAsync<GoogleIdpSettings>(GoogleIdp.SettingsKey) ?? new GoogleIdpSettings();
+            var next = new GoogleIdpSettings(req.Enabled, req.ClientId.Trim(),
+                string.IsNullOrWhiteSpace(req.ClientSecret) ? current.ClientSecret : req.ClientSecret.Trim(),
+                req.AllowedDomain.Trim().TrimStart('@').ToLowerInvariant());
+            if (next.Enabled && (next.ClientId == "" || next.ClientSecret == ""))
+                return Results.BadRequest(new { error = "Client ID and client secret are required to enable Google sign-in." });
+
+            await cache.SetAsync(GoogleIdp.SettingsKey, next, o => o.SetDuration(TimeSpan.MaxValue));
+            await AuditAction(audit, ctx, "update", "identity_provider", "google", next.Enabled ? "enabled" : "disabled");
+            return Results.Ok(new { saved = true });
+        });
 
         api.MapPost("/auth/forgot-password", async (ForgotPasswordRequest req, IUserStore userStore,
             EmailClient emailClient, HttpContext ctx) =>
@@ -948,6 +1004,7 @@ public static class AdminApiEndpoints
             if (req.Role is not null) user.Role = req.Role;
             if (req.DisplayName is not null) user.DisplayName = req.DisplayName;
             if (req.IsActive is not null) user.IsActive = req.IsActive.Value;
+            if (user.IsActive) user.PendingApproval = false;
             if (!string.IsNullOrWhiteSpace(req.Password))
                 user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password);
             await store.SaveAsync(user);
@@ -1065,6 +1122,10 @@ public static class AdminApiEndpoints
         return id is null ? null : await userStore.GetByIdAsync(id);
     }
 
+    // Must match the URI registered in Google Cloud exactly; X-Forwarded-Proto is honoured via UseForwardedHeaders.
+    private static string GoogleRedirectUri(HttpContext ctx) =>
+        $"{ctx.Request.Scheme}://{ctx.Request.Host}{GoogleIdp.CallbackPath}";
+
     private static string TwoFactorChallengeKey(string token) => $"sentinel:2fa-challenge:{token}";
 
     private static string GenerateTitle(string message)
@@ -1115,15 +1176,9 @@ public record UpdateUserRequest(string? Role, string? DisplayName, bool? IsActiv
 
 public record RenameConversationRequest(string Title);
 
-public record SignupRequest(string Email, string DisplayName, string Password, string ConfirmPassword);
-
 public record ForgotPasswordRequest(string Email);
 
 public record ResetPasswordRequest(string Token, string Password, string ConfirmPassword);
-
-public record VerifyEmailRequest(string Email, string Code);
-
-public record ResendVerificationRequest(string Email);
 
 public record TwoFactorLoginRequest(string Challenge, string Code);
 
@@ -1136,3 +1191,4 @@ public record TwoFactorCodeRequest(string Code);
 public record DisableTwoFactorRequest(string Password);
 
 public record TwoFactorChallenge(string UserId, int Attempts);
+public record SaveGoogleIdpRequest(bool Enabled, string ClientId, string? ClientSecret, string AllowedDomain);
