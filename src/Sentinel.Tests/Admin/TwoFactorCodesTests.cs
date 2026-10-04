@@ -6,13 +6,6 @@ namespace Sentinel.Tests.Admin;
 public class TwoFactorCodesTests
 {
     [Fact]
-    public void GenerateEmailCode_IsSixDigits()
-    {
-        for (var i = 0; i < 20; i++)
-            Assert.Matches("^\\d{6}$", TwoFactorCodes.GenerateEmailCode());
-    }
-
-    [Fact]
     public void VerifyTotp_CurrentCode_Succeeds()
     {
         var secret = TwoFactorCodes.GenerateSecret();

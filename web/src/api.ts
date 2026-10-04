@@ -417,10 +417,6 @@ export const api = {
     f<Me | TwoFactorChallenge>('/api/auth/login', post({ username, password })),
   verifyLogin2fa: (challenge: string, code: string) =>
     f<Me>('/api/auth/login/2fa', post({ challenge, code })),
-  requestLoginEmailOtp: (email: string) =>
-    f<{ sent: boolean }>('/api/auth/login/email-otp/request', post({ email })),
-  verifyLoginEmailOtp: (email: string, code: string) =>
-    f<Me | TwoFactorChallenge>('/api/auth/login/email-otp/verify', post({ email, code })),
   logout: () => fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }),
   me: () => f<Me>('/api/auth/me'),
   googleEnabled: () => f<{ enabled: boolean }>('/api/auth/google/enabled'),
