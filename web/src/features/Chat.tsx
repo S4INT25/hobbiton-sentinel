@@ -11,6 +11,8 @@ const DB_KEY = 'sentinel.chat.db';
 const MODE_KEY = 'sentinel.chat.mode';
 const MODEL_KEY = 'sentinel.chat.model';
 const EFFORT_KEY = 'sentinel.chat.effort';
+// Live trace shows only the newest steps; older ones collapse into a "+N earlier steps" line.
+const TRACE_LIMIT = 4;
 
 type MessageVM = {
   role: string;
@@ -442,8 +444,14 @@ export default function Chat() {
                       <span className="text-xs text-gray-400 ml-1">Thinking…</span>
                     </div>
                   )}
+                  {streamEvents.length > TRACE_LIMIT && (
+                    <div className="relative py-1 ml-1 font-mono text-[10px] uppercase tracking-wider text-gray-600">
+                      +{streamEvents.length - TRACE_LIMIT} earlier steps
+                    </div>
+                  )}
                   <AnimatePresence initial={false}>
-                    {streamEvents.map((evt, i) => {
+                    {streamEvents.slice(-TRACE_LIMIT).map((evt, j, shown) => {
+                      const i = streamEvents.length - shown.length + j;
                       const isLatest = i === streamEvents.length - 1;
                       return (
                         <motion.div

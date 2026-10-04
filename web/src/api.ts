@@ -40,11 +40,6 @@ export interface Me {
   displayName: string;
 }
 
-export interface SignupResult {
-  verificationRequired: true;
-  email: string;
-}
-
 export interface TwoFactorChallenge {
   twoFactorRequired: true;
   challenge: string;
@@ -113,6 +108,15 @@ export interface AdminUser {
   createdAt: string;
   lastLoginAt: string | null;
   isActive: boolean;
+  pendingApproval: boolean;
+}
+
+export interface GoogleIdpSettings {
+  enabled: boolean;
+  clientId: string;
+  allowedDomain: string;
+  hasClientSecret: boolean;
+  redirectUri: string;
 }
 
 export interface WorkflowDefinition {
@@ -419,10 +423,10 @@ export const api = {
     f<Me | TwoFactorChallenge>('/api/auth/login/email-otp/verify', post({ email, code })),
   logout: () => fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }),
   me: () => f<Me>('/api/auth/me'),
-  signup: (req: { email: string; displayName: string; password: string; confirmPassword: string }) =>
-    f<SignupResult>('/api/auth/signup', post(req)),
-  verifyEmail: (email: string, code: string) => f<Me>('/api/auth/verify-email', post({ email, code })),
-  resendVerification: (email: string) => f<{ sent: boolean }>('/api/auth/resend-verification', post({ email })),
+  googleEnabled: () => f<{ enabled: boolean }>('/api/auth/google/enabled'),
+  getGoogleIdp: () => f<GoogleIdpSettings>('/api/identity-provider/google/'),
+  saveGoogleIdp: (s: { enabled: boolean; clientId: string; clientSecret?: string; allowedDomain: string }) =>
+    f<{ saved: boolean }>('/api/identity-provider/google/', put(s)),
   forgotPassword: (email: string) => f<{ sent: boolean }>('/api/auth/forgot-password', post({ email })),
   resetPassword: (token: string, password: string, confirmPassword: string) =>
     f<{ reset: boolean }>('/api/auth/reset-password', post({ token, password, confirmPassword })),
