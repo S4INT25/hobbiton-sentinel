@@ -22,7 +22,4 @@ public static class TwoFactorCodes
         var totp = new Totp(Base32Encoding.ToBytes(secret));
         return totp.VerifyTotp(code.Trim(), out _, VerificationWindow.RfcSpecifiedNetworkDelay);
     }
-
-    public static string GenerateEmailCode() =>
-        RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
 }

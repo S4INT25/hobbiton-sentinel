@@ -234,54 +234,6 @@ public static class AdminApiEndpoints
             return await CompletePrimaryLoginAsync(user, userStore, cache, audit, ctx);
         }).AllowAnonymous();
 
-        // Passwordless alternative to /auth/login — same downstream TOTP 2FA gate via CompletePrimaryLoginAsync.
-        api.MapPost("/auth/login/email-otp/request", async (RequestLoginOtpRequest req, IUserStore userStore,
-            EmailClient emailClient) =>
-        {
-            var email = req.Email.Trim().ToLowerInvariant();
-            var user = await userStore.GetByEmailAsync(email);
-            // Always 200 — don't reveal whether the email exists, is verified, or is active.
-            if (user is { IsActive: true, EmailVerified: true } && CanIssueNewOtp(user))
-            {
-                SetEmailOtp(user);
-                await userStore.SaveAsync(user);
-                await SendEmailOtp(emailClient, user, "Your Sentinel sign-in code",
-                    $"Your sign-in code is **{user.EmailOtpCode}**. It expires in 10 minutes.\n\n" +
-                    "If you did not request this, ignore this email.");
-            }
-
-            return Results.Ok(new { sent = true });
-        }).AllowAnonymous();
-
-        api.MapPost("/auth/login/email-otp/verify", async (VerifyLoginOtpRequest req, IUserStore userStore,
-            IAuditLogStore audit, IFusionCache cache, HttpContext ctx) =>
-        {
-            var email = req.Email.Trim().ToLowerInvariant();
-            var user = await userStore.GetByEmailAsync(email);
-
-            if (user is null || !user.IsActive || !user.EmailVerified || user.EmailOtpCode is null
-                || user.EmailOtpCodeExpiry is null || user.EmailOtpCodeExpiry < DateTime.UtcNow
-                || user.EmailOtpAttempts >= 5)
-            {
-                await AuditAction(audit, ctx, "login_failed", "auth", email);
-                return Results.BadRequest(new { error = "This code has expired. Request a new one." });
-            }
-
-            if (user.EmailOtpCode != req.Code.Trim())
-            {
-                user.EmailOtpAttempts++;
-                await userStore.SaveAsync(user);
-                await AuditAction(audit, ctx, "login_failed", "auth", email);
-                return Results.BadRequest(new { error = "Incorrect code." });
-            }
-
-            user.EmailOtpCode = null;
-            user.EmailOtpCodeExpiry = null;
-            await userStore.SaveAsync(user);
-
-            return await CompletePrimaryLoginAsync(user, userStore, cache, audit, ctx);
-        }).AllowAnonymous();
-
         // Completes login after /auth/login returned twoFactorRequired.
         api.MapPost("/auth/login/2fa", async (TwoFactorLoginRequest req, IUserStore userStore,
             IAuditLogStore audit, IFusionCache cache, HttpContext ctx) =>
@@ -1075,21 +1027,7 @@ public static class AdminApiEndpoints
         new("display_name", user.DisplayName)
     ];
 
-    private static void SetEmailOtp(AdminUser user)
-    {
-        user.EmailOtpCode = TwoFactorCodes.GenerateEmailCode();
-        user.EmailOtpCodeExpiry = DateTime.UtcNow.AddMinutes(10);
-        user.EmailOtpAttempts = 0;
-    }
-
-    // A pending code less than a minute old is still in the recipient's inbox — don't re-send yet.
-    private static bool CanIssueNewOtp(AdminUser user) =>
-        user.EmailOtpCodeExpiry is null || user.EmailOtpCodeExpiry < DateTime.UtcNow.AddMinutes(9);
-
-    private static Task SendEmailOtp(EmailClient emailClient, AdminUser user, string subject, string body) =>
-        emailClient.SendAsync(subject: subject, body: body, severity: "info", recipients: [user.Email!]);
-
-    // Shared tail for both primary-login paths (password, email-OTP): either hand off to TOTP or sign in.
+    // Password login tail: either hand off to TOTP or sign in.
     private static async Task<IResult> CompletePrimaryLoginAsync(AdminUser user, IUserStore userStore,
         IFusionCache cache, IAuditLogStore audit, HttpContext ctx)
     {
@@ -1181,10 +1119,6 @@ public record ForgotPasswordRequest(string Email);
 public record ResetPasswordRequest(string Token, string Password, string ConfirmPassword);
 
 public record TwoFactorLoginRequest(string Challenge, string Code);
-
-public record RequestLoginOtpRequest(string Email);
-
-public record VerifyLoginOtpRequest(string Email, string Code);
 
 public record TwoFactorCodeRequest(string Code);
 

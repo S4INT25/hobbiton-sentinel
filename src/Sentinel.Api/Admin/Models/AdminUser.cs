@@ -20,11 +20,6 @@ public class AdminUser
     // Legacy self-signup accounts may be unverified; Google sign-in marks them verified.
     public bool EmailVerified { get; set; } = true;
 
-    // Pending one-time code slot — shared by signup verification and passwordless email-OTP login.
-    public string? EmailOtpCode { get; set; }
-    public DateTime? EmailOtpCodeExpiry { get; set; }
-    public int EmailOtpAttempts { get; set; }
-
     public bool TwoFactorEnabled { get; set; }
     public string? TwoFactorSecret { get; set; }
 }
