@@ -73,6 +73,12 @@ export default function CaseDetail() {
       <div className="flex items-center gap-3 min-w-0">
         <Link to="/cases" className="text-gray-500 hover:text-gray-300 text-sm shrink-0">← Cases</Link>
         <h1 className="font-display text-lg font-semibold text-white truncate">{c.title}</h1>
+        <Link
+          to={`/chat?q=${encodeURIComponent(`Deep dive on fraud case ${id}`)}`}
+          className="ml-auto shrink-0 px-3 py-1.5 text-xs bg-gray-800/80 hover:bg-gray-700 text-gray-300 rounded-md border border-gray-700 transition-colors"
+        >
+          Deep Dive in Chat
+        </Link>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">

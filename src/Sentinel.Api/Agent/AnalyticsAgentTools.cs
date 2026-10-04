@@ -245,6 +245,29 @@ public static class AnalyticsAgentTools
         ),
 
         ChatTool.CreateFunctionTool(
+            functionName: "get_case",
+            functionDescription: """
+                                 Look up a Sentinel fraud investigation case — its evidence, affected entities,
+                                 severity, confidence, status, analyst notes and suggested follow-up queries.
+                                 Pass "case_id" for one case; omit it to list all open cases.
+                                 Call this FIRST whenever the user mentions a case ID or asks about open cases —
+                                 the case carries the entities and timeframe you need before querying anything.
+                                 """,
+            functionParameters: BinaryData.FromString("""
+                                                      {
+                                                          "type": "object",
+                                                          "properties": {
+                                                              "case_id": {
+                                                                  "type": "string",
+                                                                  "description": "The 8-character case ID e.g. 'A1B2C3D4'. Omit to list all open cases."
+                                                              }
+                                                          },
+                                                          "required": []
+                                                      }
+                                                      """)
+        ),
+
+        ChatTool.CreateFunctionTool(
             functionName: "save_memory",
             functionDescription: """
                                  Save a durable business definition to the agent knowledge base.

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using OpenAI.Chat;
 using Sentinel.Admin.Models;
 using Sentinel.Admin.Stores;
@@ -594,7 +595,7 @@ public class FraudAgent(
                 "resolve_case" => await ResolveCaseAsync(root),
                 "send_alert" => await email.SendAsync(
                     root.GetProperty("subject").GetString()!,
-                    root.GetProperty("body").GetString()!,
+                    await LinkifyCaseIdsAsync(root.GetProperty("body").GetString()!),
                     root.TryGetProperty("severity", out var sev) ? sev.GetString()! : "watching",
                     senderName: "Sentinel", subjectPrefix: "[SENTINEL]", template: "incident"),
                 "lookup_ip" => await ipLookup.LookupAsync(
@@ -612,6 +613,37 @@ public class FraudAgent(
             logger.LogError(ex, "Tool execution failed: {Tool}", toolCall.FunctionName);
             return $"Tool error: {ex.Message}";
         }
+    }
+
+    private static readonly Regex CaseIdRegex = new(@"`?\b([0-9A-F]{8})\b`?", RegexOptions.Compiled);
+
+    private async Task<string> LinkifyCaseIdsAsync(string body)
+    {
+        var baseUrl = config["Email:DashboardUrl"]?.TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(baseUrl)) return body;
+
+        var known = new List<string>();
+        foreach (var id in CaseIdRegex.Matches(body).Select(m => m.Groups[1].Value).Distinct())
+            if (await caseStore.GetCaseAsync(id) != null)
+                known.Add(id);
+
+        return LinkifyCaseIds(body, baseUrl, known);
+    }
+
+    /// <summary>Turns known case IDs in the alert body into links that open a chat deep-dive on that case.</summary>
+    public static string LinkifyCaseIds(string body, string baseUrl, IReadOnlyCollection<string> knownIds)
+    {
+        if (knownIds.Count == 0) return body;
+        var ids = knownIds.ToHashSet();
+
+        // ponytail: single pass so the ids inside the urls we just inserted are not rewritten again
+        return CaseIdRegex.Replace(body, m =>
+        {
+            var id = m.Groups[1].Value;
+            return ids.Contains(id)
+                ? $"[{id}]({baseUrl}/chat?q={Uri.EscapeDataString($"Deep dive on fraud case {id}")})"
+                : m.Value;
+        });
     }
 
     private async Task<string> ExecuteSqlAsync(JsonElement root)

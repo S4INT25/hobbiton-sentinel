@@ -43,6 +43,7 @@ export default function Chat() {
   const [shareCopiedId, setShareCopiedId] = useState<string | null>(null);
   const [deleteConvId, setDeleteConvId] = useState<string | null>(null);
   const [chartTypeOverrides, setChartTypeOverrides] = useState<Record<string, string>>({});
+  const seededRef = useRef(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -145,6 +146,16 @@ export default function Chat() {
     if (inputRef.current) inputRef.current.style.height = 'auto';
     askMut.mutate(prompt);
   };
+
+  // deep-dive link from an email alert: /chat?q=<prompt>
+  useEffect(() => {
+    const q = searchParams.get('q');
+    if (!q || seededRef.current || jobId || !database) return;
+    seededRef.current = true;
+    setSearchParams({}, { replace: true });
+    askMut.mutate(q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, database, jobId]);
 
   const quickAsk = (prompt: string) => {
     if (jobId) return;
