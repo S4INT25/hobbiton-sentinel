@@ -62,10 +62,9 @@ public static class Tripwires
     /// nobody can run in a test is worse than SQL that lives next to the code. Move these to
     /// Postgres when someone genuinely needs to add a rule without a deploy.
     ///
-    /// Every rule here is absolute, never rate-based. Velocity thresholds on this platform produce
-    /// noise, not signal: betting and toll merchants legitimately sustain 50-200 disbursements/hour,
-    /// so a rate rule has to be measured against each merchant's own 30-day baseline. That belongs
-    /// in the agent, which can look the baseline up — not in a tripwire that must answer yes/no.
+    /// No rule here uses a fixed rate. Velocity thresholds on this platform produce noise, not
+    /// signal: betting and toll merchants legitimately sustain 50-200 disbursements/hour. The one
+    /// velocity rule (large_disbursement_burst) is measured against the merchant's own 30-day peak.
     /// </summary>
     public static IReadOnlyList<Tripwire> All =>
     [
@@ -110,6 +109,54 @@ public static class Tripwires
                AND t.amount >= 10000
                AND m.created_at > t.created_at - INTERVAL 7 DAY
              GROUP BY entity_key, merchant_name, merchant_created_at
+             """),
+
+        new("large_disbursement_burst",
+            "A merchant sent 3+ disbursements of 10,000 or more within 15 minutes, over double its "
+            + "busiest 15 minutes of large payouts in the previous 30 days. Draining a wallet in "
+            + "maximum-size chunks looks like this; so does a merchant's first big payroll run.",
+            // Backtested 2026-10-05: 4 hits in 30 days. A fixed "10k within seconds" rule would have
+            // hit 162 times, because six merchants routinely send 2-3 large payouts at once.
+            // The peak uses fixed 15-minute buckets while the live window slides, so a burst
+            // straddling a bucket edge can fire slightly early. That errs toward alerting.
+            $"""
+             SELECT
+                 toString(c.merchant_id)   AS entity_key,
+                 m.name                    AS merchant_name,
+                 c.txn_count               AS txn_count,
+                 c.total_amount            AS total_amount,
+                 c.latest_txn              AS latest_txn,
+                 coalesce(h.peak_15m, 0)   AS previous_peak_15m
+             FROM (
+                 SELECT merchant_id, count() AS txn_count, sum(amount) AS total_amount,
+                        max(created_at) AS latest_txn
+                 FROM lipila_blaze.public_transactions FINAL
+                 WHERE _peerdb_is_deleted = 0
+                   AND type = 'disbursement'
+                   AND status IN ('successful', 'pending')
+                   AND amount >= 10000
+                   AND created_at > now() - INTERVAL {LookbackMinutes} MINUTE
+                 GROUP BY merchant_id
+                 HAVING txn_count >= 3
+             ) c
+             LEFT JOIN (
+                 SELECT merchant_id, max(n) AS peak_15m
+                 FROM (
+                     SELECT merchant_id, toStartOfInterval(created_at, INTERVAL {LookbackMinutes} MINUTE) AS bucket,
+                            count() AS n
+                     FROM lipila_blaze.public_transactions FINAL
+                     WHERE _peerdb_is_deleted = 0
+                       AND type = 'disbursement'
+                       AND status IN ('successful', 'pending')
+                       AND amount >= 10000
+                       AND created_at BETWEEN now() - INTERVAL 30 DAY
+                                          AND now() - INTERVAL {LookbackMinutes} MINUTE
+                     GROUP BY merchant_id, bucket
+                 )
+                 GROUP BY merchant_id
+             ) h ON h.merchant_id = c.merchant_id
+             LEFT JOIN {Merchants} m ON m.id = c.merchant_id
+             WHERE c.txn_count > 2 * coalesce(h.peak_15m, 0)
              """),
 
         // The two rules below are integrity checks, not behavioural ones. Every pattern in
