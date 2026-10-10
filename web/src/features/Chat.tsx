@@ -14,6 +14,20 @@ const EFFORT_KEY = 'sentinel.chat.effort';
 // Live trace shows only the newest steps; older ones collapse into a "+N earlier steps" line.
 const TRACE_LIMIT = 4;
 
+// Web Speech API — not in TS's lib.dom yet; webkit-prefixed on Safari.
+type SpeechRec = {
+  continuous: boolean;
+  interimResults: boolean;
+  start(): void;
+  stop(): void;
+  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onend: (() => void) | null;
+};
+type SpeechRecCtor = new () => SpeechRec;
+const SpeechRecognitionImpl: SpeechRecCtor | undefined =
+  (window as unknown as { SpeechRecognition?: SpeechRecCtor; webkitSpeechRecognition?: SpeechRecCtor }).SpeechRecognition ??
+  (window as unknown as { webkitSpeechRecognition?: SpeechRecCtor }).webkitSpeechRecognition;
+
 type MessageVM = {
   role: string;
   content: string;
@@ -36,6 +50,7 @@ export default function Chat() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(true);
+  const [mobileHistory, setMobileHistory] = useState(false);
   const [historyQuery, setHistoryQuery] = useState('');
   const [menuConvId, setMenuConvId] = useState<string | null>(null);
   const [renameId, setRenameId] = useState<string | null>(null);
@@ -44,8 +59,10 @@ export default function Chat() {
   const [deleteConvId, setDeleteConvId] = useState<string | null>(null);
   const [chartTypeOverrides, setChartTypeOverrides] = useState<Record<string, string>>({});
   const seededRef = useRef(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const recRef = useRef<SpeechRec | null>(null);
+  const [listening, setListening] = useState(false);
 
   const { data: products = [] } = useQuery({ queryKey: ['products-enabled'], queryFn: api.enabledProducts });
   const { data: models = [] } = useQuery({ queryKey: ['models-enabled'], queryFn: api.enabledModels });
@@ -125,9 +142,14 @@ export default function Chat() {
     return groupConversations(filtered);
   }, [conversations, historyQuery]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length, job?.streamEvents?.length]);
+  // Scroll only the message list — scrollIntoView also drags the page/header around on iOS.
+  // New messages always jump to the bottom; live-trace ticks only follow if the user hasn't scrolled up to read.
+  const scrollToBottom = (force: boolean) => {
+    const el = scrollRef.current;
+    if (el && (force || el.scrollHeight - el.scrollTop - el.clientHeight < 160)) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  };
+  useEffect(() => scrollToBottom(true), [messages.length]);
+  useEffect(() => scrollToBottom(false), [job?.streamEvents?.length]);
 
   const askMut = useMutation({
     mutationFn: (prompt: string) => api.ask(prompt, database, activeId ?? undefined, mode, model || undefined, effort || undefined),
@@ -139,9 +161,30 @@ export default function Chat() {
     },
   });
 
+  // Live dictation: interim results stream into the textarea while you talk; the text stays editable.
+  const toggleDictation = () => {
+    if (recRef.current) { recRef.current.stop(); return; }
+    if (!SpeechRecognitionImpl) return;
+    const rec = new SpeechRecognitionImpl();
+    rec.continuous = true;
+    rec.interimResults = true;
+    const base = input.trimEnd();
+    rec.onresult = (e) => {
+      const spoken = Array.from(e.results, (res) => res[0].transcript).join('');
+      setInput(base ? `${base} ${spoken}` : spoken);
+      requestAnimationFrame(autoGrow);
+    };
+    rec.onend = () => { recRef.current = null; setListening(false); };
+    recRef.current = rec;
+    rec.start();
+    setListening(true);
+  };
+  useEffect(() => () => recRef.current?.stop(), []);
+
   const send = () => {
     const prompt = input.trim();
     if (!prompt || jobId) return;
+    recRef.current?.stop();
     setInput('');
     if (inputRef.current) inputRef.current.style.height = 'auto';
     askMut.mutate(prompt);
@@ -163,6 +206,7 @@ export default function Chat() {
   };
 
   const newConversation = () => {
+    setMobileHistory(false);
     selectConv(null);
     setJobId(null);
     setPendingPrompt(null);
@@ -226,16 +270,9 @@ export default function Chat() {
     },
   ];
 
-  return (
-    <div className="flex h-[calc(100vh-6rem)] md:h-full -m-4 md:-m-6 print:h-auto print:m-0">
-      {/* Conversation history — docked panel */}
-      <motion.div
-        id="chat-history-panel"
-        initial={false}
-        animate={{ width: historyOpen ? 264 : 0 }}
-        transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-        className="border-r border-gray-800/80 flex-col shrink-0 overflow-hidden hidden md:flex bg-gray-950/40"
-      >
+  // shared by the docked desktop panel and the mobile drawer
+  const historyPanel = (
+      <>
         <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-800/80 min-w-[16.5rem]">
           <span className="kicker">History</span>
           <div className="flex items-center gap-1.5">
@@ -245,7 +282,7 @@ export default function Chat() {
             >
               + New
             </button>
-            <button onClick={() => setHistoryOpen(false)} className="p-1 text-gray-500 hover:text-gray-300 rounded hover:bg-gray-800 transition-colors">
+            <button onClick={() => (mobileHistory ? setMobileHistory(false) : setHistoryOpen(false))} className="p-1 text-gray-500 hover:text-gray-300 rounded hover:bg-gray-800 transition-colors">
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7" />
               </svg>
@@ -273,7 +310,7 @@ export default function Chat() {
               {g.items.map((conv) => (
             <div
               key={conv.id}
-              onClick={() => { selectConv(conv.id); setJobId(null); setPendingPrompt(null); }}
+              onClick={() => { selectConv(conv.id); setJobId(null); setPendingPrompt(null); setMobileHistory(false); }}
               className={`relative px-2.5 py-2 rounded-lg border cursor-pointer group transition-colors ${
                 conv.id === activeId
                   ? 'bg-emerald-500/[0.07] border-emerald-500/25'
@@ -302,7 +339,7 @@ export default function Chat() {
                   </div>
                   <button
                     onClick={(e) => { e.stopPropagation(); setMenuConvId(menuConvId === conv.id ? null : conv.id); }}
-                    className="absolute right-1.5 top-2 p-1 text-gray-600 hover:text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity rounded"
+                    className="absolute right-1.5 top-2 p-1 text-gray-600 hover:text-gray-300 md:opacity-0 md:group-hover:opacity-100 transition-opacity rounded"
                   >
                     <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M12 8a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z" />
@@ -348,6 +385,20 @@ export default function Chat() {
             <div className="px-2.5 py-4 font-mono text-[11px] text-gray-600">No chats match “{historyQuery}”</div>
           )}
         </div>
+      </>
+  );
+
+  return (
+    <div className="flex h-[calc(100%+2rem)] md:h-[calc(100%+3rem)] -m-4 md:-m-6 print:h-auto print:m-0">
+      {/* Conversation history — docked panel */}
+      <motion.div
+        id="chat-history-panel"
+        initial={false}
+        animate={{ width: historyOpen ? 264 : 0 }}
+        transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+        className="border-r border-gray-800/80 flex-col shrink-0 overflow-hidden hidden md:flex bg-gray-950/40"
+      >
+        {historyPanel}
       </motion.div>
 
       {/* Main column */}
@@ -355,6 +406,12 @@ export default function Chat() {
         {/* Toolbar */}
         <div id="chat-toolbar" className="flex items-center justify-between gap-2 px-4 py-2 border-b border-gray-800/80 bg-gray-950/40 backdrop-blur-sm">
           <div className="flex items-center gap-2 min-w-0">
+            <button onClick={() => setMobileHistory(true)} className="md:hidden flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-gray-800 rounded-lg text-gray-400 hover:text-gray-200 hover:border-gray-700 transition-colors" title="Chat history">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              History
+            </button>
             {!historyOpen && (
               <button onClick={() => setHistoryOpen(true)} className="p-1.5 text-gray-500 hover:text-gray-300 rounded-md hover:bg-gray-900 transition-colors hidden md:block" title="Show history">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -393,8 +450,8 @@ export default function Chat() {
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto print:overflow-visible print:h-auto">
-          <div className="max-w-4xl mx-auto w-full px-4 py-5 space-y-4">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain print:overflow-visible print:h-auto">
+          <div className="max-w-4xl mx-auto w-full px-3 sm:px-4 py-4 sm:py-5 space-y-4">
             {empty && (
               <div className="flex flex-col items-center justify-center text-center pt-[10vh] rise">
                 <div className="radar h-20 w-20 mb-6" aria-hidden />
@@ -423,7 +480,7 @@ export default function Chat() {
             {messages.map((msg, idx) =>
               msg.role === 'user' ? (
                 <div key={idx} className="flex justify-end rise" style={{ animationDelay: `${Math.min(idx * 40, 300)}ms` }}>
-                  <div className="max-w-xl px-4 py-2.5 bg-emerald-500/[0.13] border border-emerald-500/25 rounded-2xl rounded-br-md text-sm text-gray-100 whitespace-pre-wrap shadow-[0_2px_16px_-8px_rgb(16_185_129/0.25)]">
+                  <div className="max-w-[85%] sm:max-w-xl break-words px-4 py-2.5 bg-emerald-500/[0.13] border border-emerald-500/25 rounded-2xl rounded-br-md text-sm text-gray-100 whitespace-pre-wrap shadow-[0_2px_16px_-8px_rgb(16_185_129/0.25)]">
                     {msg.content}
                   </div>
                 </div>
@@ -492,15 +549,14 @@ export default function Chat() {
                 </div>
               </div>
             )}
-            <div ref={bottomRef} />
           </div>
         </div>
 
         {/* Input */}
-        <div id="chat-input-area" className="px-4 pb-4 pt-1">
+        <div id="chat-input-area" className="px-3 sm:px-4 pb-3 sm:pb-4 pt-1">
           <form
             onSubmit={(e) => { e.preventDefault(); send(); }}
-            className="max-w-4xl mx-auto rounded-2xl border border-gray-700/70 bg-gray-900/70 backdrop-blur-md px-3.5 pt-3 pb-2.5 transition-all focus-within:border-emerald-400/50 focus-within:shadow-[0_0_28px_-10px_rgb(16_185_129/0.4)]"
+            className="max-w-4xl mx-auto rounded-2xl border border-gray-700/70 bg-gray-900/70 backdrop-blur-md px-3 sm:px-3.5 pt-3 pb-2.5 transition-all focus-within:border-emerald-400/50 focus-within:shadow-[0_0_28px_-10px_rgb(16_185_129/0.4)]"
           >
             <textarea
               ref={inputRef}
@@ -522,6 +578,25 @@ export default function Chat() {
                 <EffortSelect value={effort} onChange={setEffort} disabled={loading} />
                 <ModeSwitch value={mode} onChange={setMode} disabled={loading} />
               </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+              {SpeechRecognitionImpl && (
+                <button
+                  type="button"
+                  onClick={toggleDictation}
+                  disabled={loading}
+                  title={listening ? 'Stop dictation' : 'Dictate'}
+                  aria-pressed={listening}
+                  className={`h-8 w-8 rounded-xl border flex items-center justify-center transition-colors disabled:opacity-30 ${
+                    listening
+                      ? 'border-rose-500/50 bg-rose-500/15 text-rose-300 animate-pulse'
+                      : 'border-gray-800 text-gray-400 hover:text-gray-200 hover:border-gray-700'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-14 0m7 7v3m-4 0h8M12 15a3 3 0 003-3V6a3 3 0 10-6 0v6a3 3 0 003 3z" />
+                  </svg>
+                </button>
+              )}
               <button
                 type="submit"
                 disabled={loading || !input.trim()}
@@ -536,13 +611,41 @@ export default function Chat() {
                   </svg>
                 )}
               </button>
+              </div>
             </div>
           </form>
-          <div className="max-w-4xl mx-auto mt-1.5 px-1 font-mono text-[10px] text-gray-700">
+          <div className="hidden md:block max-w-4xl mx-auto mt-1.5 px-1 font-mono text-[10px] text-gray-700">
             Enter to send · Shift+Enter for a new line
           </div>
         </div>
       </div>
+
+      {/* Mobile history drawer */}
+      <AnimatePresence>
+        {mobileHistory && (
+          <>
+            <motion.div
+              key="history-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-40 bg-black/60 md:hidden"
+              onClick={() => setMobileHistory(false)}
+            />
+            <motion.div
+              key="history-drawer"
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+              className="fixed inset-y-0 left-0 z-50 w-[85%] max-w-xs flex flex-col bg-gray-950 border-r border-gray-800/80 md:hidden"
+            >
+              {historyPanel}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {deleteConvId && (
@@ -580,10 +683,10 @@ function EffortSelect({
         title="Reasoning effort (only applies to reasoning-capable models)"
         className="appearance-none pl-8 pr-7 py-1.5 rounded-lg border border-gray-800 bg-gray-950/60 text-xs text-gray-200 hover:border-gray-700 transition-colors disabled:opacity-50 focus:outline-none focus:border-emerald-400/50 cursor-pointer"
       >
-        <option value="">Default effort</option>
-        <option value="low">Low effort</option>
-        <option value="medium">Medium effort</option>
-        <option value="high">High effort</option>
+        <option value="">Default</option>
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
       </select>
       <svg className="w-3 h-3 text-gray-600 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
@@ -614,7 +717,7 @@ function ModelSelect({
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         title="Model"
-        className="appearance-none pl-8 pr-7 py-1.5 rounded-lg border border-gray-800 bg-gray-950/60 text-xs text-gray-200 hover:border-gray-700 transition-colors disabled:opacity-50 focus:outline-none focus:border-emerald-400/50 max-w-[11rem] truncate cursor-pointer"
+        className="appearance-none pl-8 pr-7 py-1.5 rounded-lg border border-gray-800 bg-gray-950/60 text-xs text-gray-200 hover:border-gray-700 transition-colors disabled:opacity-50 focus:outline-none focus:border-emerald-400/50 max-w-[8.5rem] sm:max-w-[11rem] truncate cursor-pointer"
       >
         {models.map((m) => (
           <option key={m.modelId} value={m.modelId}>
@@ -671,7 +774,7 @@ function ProductSelect({
         <svg className="w-3.5 h-3.5 text-emerald-500/80 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
         </svg>
-        <span className="max-w-[9rem] truncate">{current?.displayName ?? 'Select database'}</span>
+        <span className="max-w-[6rem] sm:max-w-[9rem] truncate">{current?.displayName ?? 'Select database'}</span>
         <svg className={`w-3 h-3 text-gray-600 transition-transform duration-200 shrink-0 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
         </svg>
@@ -759,7 +862,7 @@ function ModeSwitch({ value, onChange, disabled }: { value: string; onChange: (v
           <svg className="relative w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d={m.icon} />
           </svg>
-          <span className="relative">{m.label}</span>
+          <span className="relative hidden sm:inline">{m.label}</span>
         </button>
       ))}
     </div>
@@ -839,7 +942,7 @@ function AssistantMessage({
   );
 
   return (
-    <div className="panel space-y-3 max-w-full p-4 border-l-2 border-l-emerald-500/40">
+    <div className="panel space-y-3 max-w-full p-3 sm:p-4 border-l-2 border-l-emerald-500/40">
       <div className="flex items-center justify-between -mb-1">
         <span className="kicker text-emerald-600/80">Sentinel</span>
         {entry.timestamp && (

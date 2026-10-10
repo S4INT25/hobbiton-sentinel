@@ -33,9 +33,12 @@ body {
   color: #f2f7f4;
 }
 
-:focus-visible {
-  outline: 2px solid rgb(52 211 153 / 0.7);
-  outline-offset: 2px;
+/* In a layer so `focus:outline-none` utilities can opt out; unlayered it beat every utility. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid rgb(52 211 153 / 0.7);
+    outline-offset: 2px;
+  }
 }
 
 /* ── custom scrollbars, everywhere ── */
@@ -232,6 +235,8 @@ kbd {
 /* ── markdown inside chat messages ── */
 .prose-chat {
   @apply text-sm text-gray-300 leading-relaxed;
+  /* long ids / inline code must wrap, not widen the page on phones */
+  overflow-wrap: anywhere;
 }
 .prose-chat h1,
 .prose-chat h2,
@@ -255,7 +260,7 @@ kbd {
 }
 .prose-chat pre code { @apply bg-transparent p-0; }
 .prose-chat table {
-  @apply w-full text-xs my-2 border-collapse;
+  @apply block max-w-full overflow-x-auto text-xs my-2 border-collapse;
 }
 .prose-chat th {
   font-family: var(--font-mono);

@@ -262,7 +262,7 @@ function Shell({ me, children }: { me: Me; children: React.ReactNode }) {
   );
 
   return (
-    <div className="h-screen bg-gray-950 flex flex-col relative print:h-auto">
+    <div className="h-dvh bg-gray-950 flex flex-col relative print:h-auto">
       <div className="atmosphere" aria-hidden />
       <header className="md:hidden sticky top-0 z-20 bg-gray-950/95 backdrop-blur-sm border-b border-gray-800/80 px-4 py-2.5 flex items-center justify-between">
         <button onClick={() => setMobileNav((v) => !v)} className="p-1.5 -ml-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/60 transition-all">
@@ -289,7 +289,7 @@ function Shell({ me, children }: { me: Me; children: React.ReactNode }) {
           onToggleCollapse={toggleCollapse}
           onOpenPalette={() => setPaletteOpen(true)}
         />
-        <main className="flex-1 min-w-0 overflow-y-auto p-4 md:p-6 print:overflow-visible print:h-auto print:p-0">
+        <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 md:p-6 print:overflow-visible print:h-auto print:p-0">
           <motion.div
             key={location.pathname}
             initial={{ opacity: 0, y: 8 }}
@@ -338,7 +338,7 @@ export default function App() {
 
   if (checking) {
     return (
-      <div className="h-screen flex items-center justify-center bg-gray-950">
+      <div className="h-dvh flex items-center justify-center bg-gray-950">
         <div className="radar h-16 w-16 opacity-70" />
       </div>
     );
